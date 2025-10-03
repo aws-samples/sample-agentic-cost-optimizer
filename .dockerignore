@@ -1,0 +1,18 @@
+# Infrastructure (CDK)
+infra/
+
+# Kiro specs
+.kiro/
+
+# Git
+.git/
+.gitignore
+
+# Documentation
+*.md
+
+# Test/response files
+*.json
+payload.json
+response.json
+lambda-response*.json

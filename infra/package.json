@@ -1,0 +1,24 @@
+{
+  "name": "infra",
+  "private": true,
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "watch": "tsc -w",
+    "clean": "rm -rf cdk.out",
+    "synth": "cdk synth",
+    "deploy:dev": "cdk deploy --require-approval never -c env=dev",
+    "destroy:dev": "cdk destroy -c env=dev",
+    "prettier": "prettier . --write"
+  },
+  "dependencies": {
+    "aws-cdk-lib": "^2.156.0",
+    "constructs": "10.3.0"
+  },
+  "devDependencies": {
+    "aws-cdk": "^2.156.0",
+    "typescript": "^5.6.3",
+    "@types/node": "^22.7.9",
+    "prettier": "^3.3.3",
+    "@trivago/prettier-plugin-sort-imports": "^4.3.0"
+  }
+}

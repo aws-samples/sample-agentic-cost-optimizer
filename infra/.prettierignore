@@ -1,0 +1,11 @@
+# CDK build output
+cdk.out/
+
+# TypeScript compiled files (keep source .ts files)
+*.js
+*.d.ts
+!*.config.js
+
+# Dependencies
+node_modules/
+package-lock.json
