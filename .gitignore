@@ -1,0 +1,18 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Node/CDK
+infra/node_modules/
+infra/dist/
+infra/cdk.out/
+
+# Local Config
+.idea
+/.vscode/settings.json
+infra/bin/infra.d.ts
+.gitignore
+infra/bin/infra.js
+infra/lib/infra-stack.d.ts
+infra/lib/infra-stack.js

@@ -1,0 +1,29 @@
+[project]
+name = "agentic-cost-optimizer"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = []
+
+[dependency-groups]
+agents = [
+  "strands-agents",
+  "bedrock-agentcore"
+]
+dev = [
+  "ruff",
+  "pre-commit"
+]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 88
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
+fixable = ["ALL"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
