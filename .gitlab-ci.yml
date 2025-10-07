@@ -22,11 +22,15 @@ test:
 deploy:
   stage: deploy
   image: ghcr.io/astral-sh/uv:python3.12-bookworm-slim
+  services:
+    - docker:dind
   variables:
     AWS_DEFAULT_REGION: us-east-1
     CDK_DEFAULT_REGION: us-east-1
     CDK_DEFAULT_ACCOUNT: "249634239082"
     AWS_CREDS_TARGET_ROLE: "arn:aws:iam::249634239082:role/GitLabCI-AgenticCostOptimizer"
+    DOCKER_HOST: tcp://docker:2375
+    DOCKER_TLS_CERTDIR: ""
   cache:
     - key: python-deps
       paths:
