@@ -25,6 +25,8 @@ deploy:
   image: ghcr.io/astral-sh/uv:python3.12-bookworm-slim
   variables:
     AWS_DEFAULT_REGION: us-east-1
+    CDK_DEFAULT_REGION: us-east-1
+    CDK_DEFAULT_ACCOUNT: "249634239082"
     AWS_CREDS_TARGET_ROLE: "arn:aws:iam::249634239082:role/GitLabCI-AgenticCostOptimizer"
   cache:
     - key: python-deps
