@@ -6,6 +6,12 @@ repos:
         args: [--fix]
       - id: ruff-format
 
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.4.0
+    hooks:
+      - id: no-commit-to-branch
+        args: ['--branch', 'main']
+
   - repo: local
     hooks:
       - id: prettier

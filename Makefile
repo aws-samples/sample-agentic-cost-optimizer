@@ -3,7 +3,7 @@ REQ_DIR := requirements
 DOCKER_IMAGE_NAME := strands-agent
 DOCKER_TAG := latest
 
-.PHONY: help setup init pre-commit-install format lint run docker-build cdk-bootstrap cdk-deploy cdk-hotswap cdk-watch cdk-destroy clean
+.PHONY: help setup init pre-commit-install check run docker-build cdk-bootstrap cdk-deploy cdk-hotswap cdk-watch cdk-destroy gitlab-bootstrap gitlab-destroy clean
 
 help:
 	@echo "Development Workflow:"
@@ -12,14 +12,15 @@ help:
 	@echo "  make pre-commit-install - Install pre-commit hooks"
 	@echo ""
 	@echo "Code Quality:"
-	@echo "  make format       - Format code with Ruff and Prettier"
-	@echo "  make lint         - Lint code with Ruff"
+	@echo "  make check        - Run all code quality checks (pre-commit)"
 	@echo ""
 	@echo "Development:"
 	@echo "  make run          - Run the sample local agent"
 	@echo "  make docker-build - Build Docker image for agent"
 	@echo ""
 	@echo "AWS Deployment:"
+	@echo "  make gitlab-bootstrap - Setup GitLab credential vendor role (run once)"
+	@echo "  make gitlab-destroy - Destroy GitLab credential vendor role"
 	@echo "  make cdk-bootstrap - Bootstrap CDK (run once per AWS account/region)"
 	@echo "  make cdk-deploy   - Deploy CDK stack to AWS"
 	@echo "  make cdk-hotswap  - Fast deploy Lambda changes only"
@@ -47,15 +48,9 @@ pre-commit-install:
 	GIT_CONFIG=/dev/null uv run pre-commit install
 	@echo "✓ Pre-commit hooks installed"
 
-format:
-	uv run ruff format .
-	uv run ruff check --fix .
-	cd infra && npx prettier --write "**/*.{js,ts,json,md,yaml,yml}"
-	@echo "✓ Code formatted"
-
-lint:
-	uv run ruff check .
-	@echo "✓ Python linting completed"
+check:
+	uv run pre-commit run --all-files
+	@echo "✓ Code quality checks completed"
 
 run:
 	PYTHONPATH=src uv run python -m agents.main
@@ -88,6 +83,17 @@ cdk-destroy:
 	@echo "Destroying CDK stack..."
 	cd infra && npm run destroy:dev
 	@echo "✓ CDK stack destroyed"
+
+gitlab-bootstrap:
+	@echo "Setting up GitLab credential vendor role..."
+	cd infra && npm run build && npx cdk bootstrap
+	cd infra && npx cdk deploy --app "npx ts-node bin/gitlab-bootstrap.ts" AgenticCostOptimizerGitLabCredentialVendor --require-approval never
+	@echo "✓ GitLab credential vendor setup completed"
+
+gitlab-destroy:
+	@echo "Destroying GitLab credential vendor role..."
+	cd infra && npx cdk destroy --app "npx ts-node bin/gitlab-bootstrap.ts" AgenticCostOptimizerGitLabCredentialVendor --force
+	@echo "✓ GitLab credential vendor role destroyed"
 
 clean:
 	rm -rf .venv .pytest_cache __pycache__ */__pycache__ *.pyc .ruff_cache requirements .build dist
