@@ -15,7 +15,12 @@ export class GitLabCredentialVendorStack extends cdk.Stack {
     // GitLab CI/CD Role for AWS Credential Vendor
     const gitlabRole = new iam.Role(this, 'GitLabCIRole', {
       roleName: 'GitLabCI-AgenticCostOptimizer',
-      assumedBy: new iam.ArnPrincipal('arn:aws:iam::979517299116:role/gitlab-runners-prod'),
+      assumedBy: new iam.PrincipalWithConditions(new iam.ArnPrincipal('arn:aws:iam::979517299116:role/gitlab-runners-prod'), {
+        StringEquals: {
+          'aws:PrincipalTag/GitLab:Group': 'aamorosi',
+          'aws:PrincipalTag/GitLab:Project': 'agentic-cost-optimizer',
+        },
+      }).withSessionTags(),
       managedPolicies: [iam.ManagedPolicy.fromAwsManagedPolicyName('PowerUserAccess')],
     });
 
