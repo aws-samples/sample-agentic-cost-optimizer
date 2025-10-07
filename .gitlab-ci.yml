@@ -1,0 +1,46 @@
+stages:
+  - test
+  - deploy
+
+variables: {}
+
+test:
+  stage: test
+  image: ghcr.io/astral-sh/uv:python3.12-bookworm-slim
+  cache:
+    key: python-deps
+    paths:
+      - .venv/
+      - ~/.cache/uv/
+  before_script:
+    - apt-get update && apt-get install -y git make nodejs npm
+  script:
+    - make init
+    - make check
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+
+deploy:
+  stage: deploy
+  image: ghcr.io/astral-sh/uv:python3.12-bookworm-slim
+  variables:
+    AWS_DEFAULT_REGION: us-east-1
+    AWS_CREDS_TARGET_ROLE: "arn:aws:iam::249634239082:role/GitLabCI-AgenticCostOptimizer"
+  cache:
+    key: node-deps
+    paths:
+      - infra/node_modules/
+  before_script:
+    - apt-get update && apt-get install -y git make nodejs npm
+    - npm install -g aws-cdk
+  script:
+    - make cdk-deploy
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+      changes:
+        - "src/**/*"
+        - "infra/**/*"
+        - "requirements/**/*"
+        - "pyproject.toml"
+        - "uv.lock"
+        - "Dockerfile"
