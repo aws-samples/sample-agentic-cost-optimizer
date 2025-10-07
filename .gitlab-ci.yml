@@ -35,8 +35,9 @@ deploy:
       paths:
         - infra/node_modules/
   before_script:
-    - apt-get update && apt-get install -y git make nodejs npm
+    - apt-get update && apt-get install -y git make nodejs npm docker.io
     - npm install -g aws-cdk
+    - dockerd &
   script:
     - make init
     - make cdk-deploy
