@@ -2,18 +2,20 @@ import os
 
 from bedrock_agentcore.runtime import BedrockAgentCoreApp
 from strands import Agent
+from strands_tools import use_aws
 
-# Read S3_BUCKET_NAME environment variable
-s3_bucket_name = os.environ.get("S3_BUCKET_NAME")
+# Global env variables
+os.environ["BYPASS_TOOL_CONSENT"] = "true"
 
-# Print the S3 bucket name when the agent starts
-if s3_bucket_name:
-    print(f"Agent starting with S3 bucket: {s3_bucket_name}")
-else:
-    print("Agent starting - S3_BUCKET_NAME environment variable not set")
+# Resource specific environment variable
+s3_bucket_name = os.environ.get("S3_BUCKET_NAME", "default-bucket")
+
+SYSTEM_PROMPT = ""
+SYSTEM_PROMPT += open("src/agents/prompt.md").read()
+SYSTEM_PROMPT = SYSTEM_PROMPT.replace("{s3_bucket_name}", s3_bucket_name)
 
 # Create an agent with default settings
-agent = Agent()
+agent = Agent(system_prompt=SYSTEM_PROMPT, tools=[use_aws])
 
 # Create BedrockAgentCore app
 app = BedrockAgentCoreApp()

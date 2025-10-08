@@ -1,56 +1,53 @@
-import * as cdk from 'aws-cdk-lib';
+import { TypeScriptCode } from '@mrgrain/cdk-esbuild';
+import { CfnOutput, CfnResource, Duration, RemovalPolicy, Stack, type StackProps } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 
-import * as ecr_assets from 'aws-cdk-lib/aws-ecr-assets';
-import * as iam from 'aws-cdk-lib/aws-iam';
-import * as lambda from 'aws-cdk-lib/aws-lambda';
-import * as s3 from 'aws-cdk-lib/aws-s3';
+import { DockerImageAsset, Platform } from 'aws-cdk-lib/aws-ecr-assets';
+import { Effect, PolicyDocument, PolicyStatement, Role, ServicePrincipal } from 'aws-cdk-lib/aws-iam';
+import { Function as LambdaFunction, Runtime } from 'aws-cdk-lib/aws-lambda';
+import { Bucket, BucketEncryption } from 'aws-cdk-lib/aws-s3';
 
-export class InfraStack extends cdk.Stack {
-  public readonly agentDataBucket: s3.Bucket;
-
-  public readonly agentDockerImage: ecr_assets.DockerImageAsset;
-
-  constructor(scope: Construct, id: string, props?: cdk.StackProps) {
+export class InfraStack extends Stack {
+  constructor(scope: Construct, id: string, props?: StackProps) {
     super(scope, id, props);
 
     // Get environment from context
     const environment = this.node.tryGetContext('env') || 'dev';
 
     // Create S3 bucket for agent data storage
-    this.agentDataBucket = new s3.Bucket(this, 'AgentDataBucket', {
+    const agentDataBucket = new Bucket(this, 'AgentDataBucket', {
       bucketName: `agent-data-${environment}-${this.account}-${this.region}`,
-      removalPolicy: cdk.RemovalPolicy.DESTROY, // For development/POC
+      removalPolicy: RemovalPolicy.DESTROY, // For development/POC
       versioned: true,
-      encryption: s3.BucketEncryption.S3_MANAGED,
+      encryption: BucketEncryption.S3_MANAGED,
       enforceSSL: true,
     });
 
     // Output the bucket name for use by other resources
-    new cdk.CfnOutput(this, 'AgentDataBucketName', {
-      value: this.agentDataBucket.bucketName,
+    new CfnOutput(this, 'AgentDataBucketName', {
+      value: agentDataBucket.bucketName,
       description: 'Name of the S3 bucket for agent data storage',
     });
 
     // Build and push Docker image to ECR automatically
-    this.agentDockerImage = new ecr_assets.DockerImageAsset(this, 'AgentDockerImage', {
+    const agentDockerImage = new DockerImageAsset(this, 'AgentDockerImage', {
       directory: '../', // Build from project root where Dockerfile is located
       file: 'Dockerfile',
       buildArgs: {
         ENVIRONMENT: environment,
       },
-      platform: ecr_assets.Platform.LINUX_ARM64,
+      platform: Platform.LINUX_ARM64,
     });
 
     // Output the image URI with tag
-    new cdk.CfnOutput(this, 'AgentImageUri', {
-      value: this.agentDockerImage.imageUri,
+    new CfnOutput(this, 'AgentImageUri', {
+      value: agentDockerImage.imageUri,
       description: 'URI of the built Docker image in ECR',
     });
 
     // Create IAM role for Agent Core runtime (matching agentcore configure generated role)
-    const agentCoreRole = new iam.Role(this, 'AgentCoreRole', {
-      assumedBy: new iam.ServicePrincipal('bedrock-agentcore.amazonaws.com').withConditions({
+    const agentCoreRole = new Role(this, 'AgentCoreRole', {
+      assumedBy: new ServicePrincipal('bedrock-agentcore.amazonaws.com').withConditions({
         StringEquals: {
           'aws:SourceAccount': this.account,
         },
@@ -60,46 +57,46 @@ export class InfraStack extends cdk.Stack {
       }),
       description: 'IAM role for Agent Core runtime execution',
       inlinePolicies: {
-        AgentCoreExecutionPolicy: new iam.PolicyDocument({
+        AgentCoreExecutionPolicy: new PolicyDocument({
           statements: [
             // ECR permissions for container image access
-            new iam.PolicyStatement({
+            new PolicyStatement({
               sid: 'ECRImageAccess',
-              effect: iam.Effect.ALLOW,
+              effect: Effect.ALLOW,
               actions: ['ecr:BatchGetImage', 'ecr:GetDownloadUrlForLayer'],
               resources: [`arn:aws:ecr:${this.region}:${this.account}:repository/*`],
             }),
-            new iam.PolicyStatement({
+            new PolicyStatement({
               sid: 'ECRTokenAccess',
-              effect: iam.Effect.ALLOW,
+              effect: Effect.ALLOW,
               actions: ['ecr:GetAuthorizationToken'],
               resources: ['*'],
             }),
             // CloudWatch Logs permissions (split into multiple statements like working role)
-            new iam.PolicyStatement({
-              effect: iam.Effect.ALLOW,
+            new PolicyStatement({
+              effect: Effect.ALLOW,
               actions: ['logs:DescribeLogStreams', 'logs:CreateLogGroup'],
               resources: [`arn:aws:logs:${this.region}:${this.account}:log-group:/aws/bedrock-agentcore/runtimes/*`],
             }),
-            new iam.PolicyStatement({
-              effect: iam.Effect.ALLOW,
+            new PolicyStatement({
+              effect: Effect.ALLOW,
               actions: ['logs:DescribeLogGroups'],
               resources: [`arn:aws:logs:${this.region}:${this.account}:log-group:*`],
             }),
-            new iam.PolicyStatement({
-              effect: iam.Effect.ALLOW,
+            new PolicyStatement({
+              effect: Effect.ALLOW,
               actions: ['logs:CreateLogStream', 'logs:PutLogEvents'],
               resources: [`arn:aws:logs:${this.region}:${this.account}:log-group:/aws/bedrock-agentcore/runtimes/*:log-stream:*`],
             }),
             // X-Ray tracing permissions
-            new iam.PolicyStatement({
-              effect: iam.Effect.ALLOW,
+            new PolicyStatement({
+              effect: Effect.ALLOW,
               actions: ['xray:PutTraceSegments', 'xray:PutTelemetryRecords', 'xray:GetSamplingRules', 'xray:GetSamplingTargets'],
               resources: ['*'],
             }),
             // CloudWatch metrics permissions
-            new iam.PolicyStatement({
-              effect: iam.Effect.ALLOW,
+            new PolicyStatement({
+              effect: Effect.ALLOW,
               actions: ['cloudwatch:PutMetricData'],
               resources: ['*'],
               conditions: {
@@ -109,22 +106,22 @@ export class InfraStack extends cdk.Stack {
               },
             }),
             // BedrockAgentCore Runtime permissions
-            new iam.PolicyStatement({
+            new PolicyStatement({
               sid: 'BedrockAgentCoreRuntime',
-              effect: iam.Effect.ALLOW,
+              effect: Effect.ALLOW,
               actions: ['bedrock-agentcore:InvokeAgentRuntime'],
               resources: [`arn:aws:bedrock-agentcore:${this.region}:${this.account}:runtime/*`],
             }),
             // BedrockAgentCore Memory permissions
-            new iam.PolicyStatement({
+            new PolicyStatement({
               sid: 'BedrockAgentCoreMemoryCreateMemory',
-              effect: iam.Effect.ALLOW,
+              effect: Effect.ALLOW,
               actions: ['bedrock-agentcore:CreateMemory'],
               resources: ['*'],
             }),
-            new iam.PolicyStatement({
+            new PolicyStatement({
               sid: 'BedrockAgentCoreMemory',
-              effect: iam.Effect.ALLOW,
+              effect: Effect.ALLOW,
               actions: [
                 'bedrock-agentcore:CreateEvent',
                 'bedrock-agentcore:GetEvent',
@@ -141,9 +138,9 @@ export class InfraStack extends cdk.Stack {
               resources: [`arn:aws:bedrock-agentcore:${this.region}:${this.account}:memory/*`],
             }),
             // BedrockAgentCore Identity permissions
-            new iam.PolicyStatement({
+            new PolicyStatement({
               sid: 'BedrockAgentCoreIdentityGetResourceApiKey',
-              effect: iam.Effect.ALLOW,
+              effect: Effect.ALLOW,
               actions: ['bedrock-agentcore:GetResourceApiKey'],
               resources: [
                 `arn:aws:bedrock-agentcore:${this.region}:${this.account}:token-vault/default`,
@@ -152,15 +149,15 @@ export class InfraStack extends cdk.Stack {
                 `arn:aws:bedrock-agentcore:${this.region}:${this.account}:workload-identity-directory/default/workload-identity/agent-*`,
               ],
             }),
-            new iam.PolicyStatement({
+            new PolicyStatement({
               sid: 'BedrockAgentCoreIdentityGetCredentialProviderClientSecret',
-              effect: iam.Effect.ALLOW,
+              effect: Effect.ALLOW,
               actions: ['secretsmanager:GetSecretValue'],
               resources: [`arn:aws:secretsmanager:${this.region}:${this.account}:secret:bedrock-agentcore-identity!default/oauth2/*`],
             }),
-            new iam.PolicyStatement({
+            new PolicyStatement({
               sid: 'BedrockAgentCoreIdentityGetResourceOauth2Token',
-              effect: iam.Effect.ALLOW,
+              effect: Effect.ALLOW,
               actions: ['bedrock-agentcore:GetResourceOauth2Token'],
               resources: [
                 `arn:aws:bedrock-agentcore:${this.region}:${this.account}:token-vault/default`,
@@ -169,9 +166,9 @@ export class InfraStack extends cdk.Stack {
                 `arn:aws:bedrock-agentcore:${this.region}:${this.account}:workload-identity-directory/default/workload-identity/agent-*`,
               ],
             }),
-            new iam.PolicyStatement({
+            new PolicyStatement({
               sid: 'BedrockAgentCoreIdentityGetWorkloadAccessToken',
-              effect: iam.Effect.ALLOW,
+              effect: Effect.ALLOW,
               actions: [
                 'bedrock-agentcore:GetWorkloadAccessToken',
                 'bedrock-agentcore:GetWorkloadAccessTokenForJWT',
@@ -183,9 +180,9 @@ export class InfraStack extends cdk.Stack {
               ],
             }),
             // Bedrock model invocation permissions (enhanced)
-            new iam.PolicyStatement({
+            new PolicyStatement({
               sid: 'BedrockModelInvocation',
-              effect: iam.Effect.ALLOW,
+              effect: Effect.ALLOW,
               actions: ['bedrock:InvokeModel', 'bedrock:InvokeModelWithResponseStream', 'bedrock:ApplyGuardrail'],
               resources: [
                 'arn:aws:bedrock:*::foundation-model/*',
@@ -194,9 +191,9 @@ export class InfraStack extends cdk.Stack {
               ],
             }),
             // BedrockAgentCore Code Interpreter permissions
-            new iam.PolicyStatement({
+            new PolicyStatement({
               sid: 'BedrockAgentCoreCodeInterpreter',
-              effect: iam.Effect.ALLOW,
+              effect: Effect.ALLOW,
               actions: [
                 'bedrock-agentcore:CreateCodeInterpreter',
                 'bedrock-agentcore:StartCodeInterpreterSession',
@@ -220,45 +217,69 @@ export class InfraStack extends cdk.Stack {
     });
 
     // Grant S3 bucket access to the Agent Core role
-    this.agentDataBucket.grantReadWrite(agentCoreRole);
+    agentDataBucket.grantReadWrite(agentCoreRole);
+    agentCoreRole.addToPolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: ['lambda:GetFunctionConfiguration', 'lambda:ListFunctions'],
+        resources: ['*'], // TODO: tighten this down if possible
+      }),
+    );
+    agentCoreRole.addToPolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: [
+          'cloudwatch:StartQuery',
+          'cloudwatch:StopQuery',
+          'cloudwatch:GetQueryResults',
+          'logs:DescribeLogGroups',
+          'logs:DescribeLogStreams',
+          'logs:GetLogEvents',
+          'logs:GetLogRecord',
+          'logs:FilterLogEvents',
+        ],
+        resources: ['*'], // TODO: tighten this down if possible
+      }),
+    );
 
     // Create Agent Core runtime using CfnResource
-    const agentCoreRuntime = new cdk.CfnResource(this, 'AgentCoreRuntime', {
+    const agentCoreRuntime = new CfnResource(this, 'AgentCoreRuntime', {
       type: 'AWS::BedrockAgentCore::Runtime',
       properties: {
         AgentRuntimeName: `agentRuntime${environment}`,
         RoleArn: agentCoreRole.roleArn,
         AgentRuntimeArtifact: {
           ContainerConfiguration: {
-            ContainerUri: this.agentDockerImage.imageUri,
+            ContainerUri: agentDockerImage.imageUri,
           },
         },
         NetworkConfiguration: {
           NetworkMode: 'PUBLIC',
         },
         EnvironmentVariables: {
-          S3_BUCKET_NAME: this.agentDataBucket.bucketName,
+          BYPASS_TOOL_CONSENT: 'true',
+          S3_BUCKET_NAME: agentDataBucket.bucketName,
           ENVIRONMENT: environment,
         },
       },
     });
 
     // Output the runtime ARN for Lambda function reference
-    new cdk.CfnOutput(this, 'AgentCoreRuntimeArn', {
+    new CfnOutput(this, 'AgentCoreRuntimeArn', {
       value: agentCoreRuntime.getAtt('AgentRuntimeArn').toString(),
       description: 'ARN of the Agent Core runtime',
     });
 
     // Create Lambda function for agent invocation
-    const agentInvokerFunction = new lambda.Function(this, 'AgentInvokerFunction', {
-      runtime: lambda.Runtime.PYTHON_3_11,
-      handler: 'agent-invoker.lambda_handler',
-      code: lambda.Code.fromAsset('lambda'),
-      timeout: cdk.Duration.minutes(5),
+    const agentInvokerFunction = new LambdaFunction(this, 'AgentInvokerFunction', {
+      functionName: `AgentInvokerFunction-${environment}`,
+      runtime: Runtime.NODEJS_22_X,
+      handler: 'agent-invoker.handler',
+      code: new TypeScriptCode('lambda/agent-invoker.ts'),
+      timeout: Duration.minutes(5),
       memorySize: 512,
       environment: {
         AGENT_CORE_RUNTIME_ARN: agentCoreRuntime.getAtt('AgentRuntimeArn').toString(),
-        S3_BUCKET_NAME: this.agentDataBucket.bucketName,
         ENVIRONMENT: environment,
       },
       description: 'Lambda function to invoke Agent Core runtime',
@@ -266,8 +287,8 @@ export class InfraStack extends cdk.Stack {
 
     // Grant Lambda permission to invoke Agent Core runtime
     agentInvokerFunction.addToRolePolicy(
-      new iam.PolicyStatement({
-        effect: iam.Effect.ALLOW,
+      new PolicyStatement({
+        effect: Effect.ALLOW,
         actions: ['bedrock-agentcore:InvokeAgentRuntime', 'bedrock-agentcore:GetRuntime'],
         resources: [agentCoreRuntime.getAtt('AgentRuntimeArn').toString(), `${agentCoreRuntime.getAtt('AgentRuntimeArn').toString()}/*`],
       }),
@@ -275,15 +296,15 @@ export class InfraStack extends cdk.Stack {
 
     // Grant Lambda permission to write logs
     agentInvokerFunction.addToRolePolicy(
-      new iam.PolicyStatement({
-        effect: iam.Effect.ALLOW,
+      new PolicyStatement({
+        effect: Effect.ALLOW,
         actions: ['logs:CreateLogGroup', 'logs:CreateLogStream', 'logs:PutLogEvents'],
         resources: ['*'],
       }),
     );
 
     // Output the Lambda function ARN
-    new cdk.CfnOutput(this, 'AgentInvokerFunctionArn', {
+    new CfnOutput(this, 'AgentInvokerFunctionArn', {
       value: agentInvokerFunction.functionArn,
       description: 'ARN of the Lambda function for agent invocation',
     });
