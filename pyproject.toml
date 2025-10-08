@@ -9,6 +9,7 @@ dependencies = []
 [dependency-groups]
 agents = [
   "strands-agents",
+  "strands-agents-tools",
   "bedrock-agentcore"
 ]
 dev = [
