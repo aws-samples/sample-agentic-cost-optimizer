@@ -21,9 +21,11 @@ test:
 
 deploy:
   stage: deploy
+  tags:
+    - size:large
   image: ghcr.io/astral-sh/uv:python3.12-bookworm-slim
   services:
-    - docker:dind
+    - docker:27-dind
   variables:
     AWS_DEFAULT_REGION: us-east-1
     CDK_DEFAULT_REGION: us-east-1
@@ -41,7 +43,6 @@ deploy:
   before_script:
     - apt-get update && apt-get install -y git make nodejs npm docker.io
     - npm install -g aws-cdk
-    - dockerd &
   script:
     - make init
     - make cdk-deploy
