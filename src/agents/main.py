@@ -9,10 +9,12 @@ os.environ["BYPASS_TOOL_CONSENT"] = "true"
 
 # Resource specific environment variable
 s3_bucket_name = os.environ.get("S3_BUCKET_NAME", "default-bucket")
+journal_table_name = os.environ.get("JOURNAL_TABLE_NAME", "default-table")
 
 SYSTEM_PROMPT = ""
 SYSTEM_PROMPT += open("src/agents/prompt.md").read()
 SYSTEM_PROMPT = SYSTEM_PROMPT.replace("{s3_bucket_name}", s3_bucket_name)
+SYSTEM_PROMPT = SYSTEM_PROMPT.replace("{journal_table_name}", journal_table_name)
 
 # Create an agent with default settings
 agent = Agent(system_prompt=SYSTEM_PROMPT, tools=[use_aws])
@@ -28,6 +30,8 @@ def invoke(payload):
 
     # Print the S3 bucket name in the response
     print(f"Processing request with S3 bucket: {s3_bucket_name}")
+    # Print DynamoDb table name
+    print(f"Processing with journal table: {journal_table_name}")
 
     # Get response from agent
     response = agent(user_message)
