@@ -54,7 +54,7 @@ run:
 
 docker-build: 
 	@echo "Building Docker image: $(DOCKER_IMAGE_NAME):$(DOCKER_TAG)"
-	docker build -t $(DOCKER_IMAGE_NAME):$(DOCKER_TAG) .
+	docker buildx build --platform linux/arm64 -t $(DOCKER_IMAGE_NAME):$(DOCKER_TAG) --load .
 	@echo "✓ Docker image built successfully"
 
 cdk-bootstrap: 
