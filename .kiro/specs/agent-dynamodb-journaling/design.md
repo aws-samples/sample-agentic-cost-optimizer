@@ -2,223 +2,215 @@
 
 ## Overview
 
-The DynamoDB journaling feature will be implemented primarily through system prompt modifications that instruct the agent to use the existing `use_aws` tool for tracking workflow phases and their statuses. This approach leverages the agent's existing AWS capabilities without requiring additional code infrastructure, making it a lightweight and maintainable solution. The agent will create and update DynamoDB records as it progresses through its cost optimization workflow phases.
+This design creates a set of Strands tools that encapsulate DynamoDB journaling operations for the cost optimization agent. The current agent prompt contains extensive DynamoDB operations embedded directly in the workflow instructions, making it complex and difficult to maintain. By extracting these operations into dedicated tools using the `@tool` decorator, we achieve better separation of concerns, improved maintainability, and cleaner agent prompts.
+
+The design leverages the existing DynamoDB schema and operations but abstracts them behind simple, semantic interfaces that the agent can call without understanding AWS API details. The tools will use `boto3` directly for DynamoDB operations and follow Strands best practices for tool development.
 
 ## Architecture
 
+### Current State Analysis
+
+The existing implementation already includes comprehensive journaling tools in `src/tools/journaling_tool.py` that:
+- Use the `use_aws` tool for DynamoDB operations
+- Implement comprehensive error handling with retry logic
+- Follow proper DynamoDB schema patterns
+- Include detailed documentation and type hints
+
+### Target Architecture
+
 ```mermaid
 graph TB
-    subgraph "Agent Execution Flow"
-        A[Agent Starts] --> B[Create Session Record]
-        B --> C[Phase: Discovery]
-        C --> D[Phase: Metrics Collection]
-        D --> E[Phase: Analysis]
-        E --> F[Phase: Recommendations]
-        F --> G[Phase: Report Generation]
-        G --> H[Update Session Complete]
+    A[Cost Optimization Agent] --> B[Journaling Tools]
+    B --> C[boto3 DynamoDB Client]
+    C --> D[DynamoDB Journal Table]
+    
+    subgraph "Journaling Tools"
+        E[check_journal_table_exists]
+        F[create_session_record]
+        G[update_session_record]
+        H[create_task_record]
+        I[update_task_record]
     end
     
-    subgraph "DynamoDB Journaling"
-        I[Session Table]
-        J[Task Records]
-        K[Status Updates]
+    subgraph "DynamoDB Schema"
+        J[Session Records]
+        K[Task Records]
+        L[TTL Cleanup]
     end
-    
-    subgraph "Existing Infrastructure"
-        L[use_aws Tool]
-        M[Agent Core Runtime]
-        N[System Prompt]
-    end
-    
-    B --> I
-    C --> J
-    D --> J
-    E --> J
-    F --> J
-    G --> J
-    J --> K
-    
-    L --> I
-    L --> J
-    N --> L
-    M --> N
 ```
 
-The design maintains the existing architecture while adding journaling instructions to the system prompt that guide the agent to use DynamoDB operations via the `use_aws` tool.
+### Design Principles
+
+1. **Minimal Changes**: Leverage existing tool structure and only replace `use_aws` calls with `boto3`
+2. **Backward Compatibility**: Maintain existing function signatures and response formats
+3. **Error Handling**: Preserve comprehensive error handling and retry logic
+4. **Documentation**: Keep concise docstrings focused on essential information
+5. **Type Safety**: Maintain existing type hints and validation
 
 ## Components and Interfaces
 
-### System Prompt Modifications
+### Tool Functions
 
-**Purpose:** Add journaling instructions to the existing system prompt that guide the agent through DynamoDB operations for session and task tracking.
+The design maintains the existing five core tools with updated implementations:
 
-**Key Additions:**
+#### 1. check_journal_table_exists()
+- **Purpose**: Verify DynamoDB table accessibility before journaling operations
+- **Current Implementation**: Uses `use_aws` with DescribeTable operation
+- **New Implementation**: Direct `boto3` DynamoDB client call
+- **Interface**: No changes to function signature or response format
 
-- **Session Management Instructions:** Create session record at start, update at completion
-- **Phase Tracking Instructions:** Create task records for each workflow phase with status updates
-- **DynamoDB Schema Instructions:** Define table structure and required attributes
-- **Error Handling Instructions:** Continue execution even if journaling fails
-- **Query Support Instructions:** Enable session and phase status retrieval for monitoring
-- **Performance Metrics Instructions:** Track timing and resource counts for analysis
+#### 2. create_session_record(session_id: str, status: str = "STARTED")
+- **Purpose**: Create session tracking records at workflow start
+- **Current Implementation**: Uses `use_aws` with PutItem operation
+- **New Implementation**: Direct `boto3` DynamoDB client call
+- **Interface**: No changes to function signature or response format
 
-**Integration Approach:**
+#### 3. update_session_record(session_id: str, status: str, start_time: str, error_message: Optional[str] = None)
+- **Purpose**: Update session completion status and calculate duration
+- **Current Implementation**: Uses `use_aws` with UpdateItem operation
+- **New Implementation**: Direct `boto3` DynamoDB client call
+- **Interface**: No changes to function signature or response format
 
-- Extend existing system prompt with journaling workflow instructions
-- Use existing `<session_id>` variable for session tracking (already used for S3 paths)
-- Leverage existing 8 workflow phases already defined in the DETERMINISTIC WORKFLOW section
-- Maintain existing S3 reporting while adding DynamoDB tracking
-- Follow existing error handling pattern: continue execution despite journaling failures
-- Add environment variable reference for configurable table name (JOURNAL_TABLE_NAME)
-- Include table creation logic if table doesn't exist (Requirement 1.4)
+#### 4. create_task_record(session_id: str, phase_name: str)
+- **Purpose**: Create task records for individual workflow phases
+- **Current Implementation**: Uses `use_aws` with PutItem operation
+- **New Implementation**: Direct `boto3` DynamoDB client call
+- **Interface**: No changes to function signature or response format
 
-### DynamoDB Table Schema
+#### 5. update_task_record(session_id: str, task_timestamp: str, status: str, error_message: Optional[str] = None)
+- **Purpose**: Update task completion status without resource count tracking
+- **Current Implementation**: Uses `use_aws` with UpdateItem operation
+- **New Implementation**: Direct `boto3` DynamoDB client call
+- **Interface**: Remove resource_count parameter from function signature
 
-**Table Name:** `agent-cost-optimization-journal` (configurable via JOURNAL_TABLE_NAME environment variable)
+### boto3 Integration Layer
 
-**Primary Key Structure:**
-- **Partition Key:** `session_id` (String) - Unique identifier for each cost optimization session
-- **Sort Key:** `record_type#timestamp` (String) - Combines record type (SESSION/TASK) with ISO timestamp for chronological ordering
+#### DynamoDB Client Management
+```python
+import boto3
+from botocore.exceptions import ClientError, BotoCoreError
 
-**Global Secondary Index (GSI):**
-- **GSI Name:** `status-date-index`
-- **Partition Key:** `status` (String) - Enables querying by status across sessions
-- **Sort Key:** `timestamp` (String) - Enables date range queries for performance analysis
+# Initialize DynamoDB client with proper session management
+dynamodb = boto3.client('dynamodb')
+```
 
-**Attributes:**
+#### Error Mapping
+Map boto3 exceptions to existing error response format:
+- `ClientError` with `ResourceNotFoundException` → `TABLE_NOT_FOUND`
+- `ClientError` with `AccessDeniedException` → `ACCESS_DENIED`
+- `ClientError` with `ConditionalCheckFailedException` → `DUPLICATE_SESSION/CONDITION_FAILED`
+- `ClientError` with `ValidationException` → `VALIDATION_ERROR`
+- Network/timeout exceptions → Retryable errors
 
-- `session_id` (String) - Session identifier
-- `record_type` (String) - "SESSION" or "TASK"
-- `timestamp` (String) - ISO 8601 timestamp
-- `status` (String) - "STARTED", "IN_PROGRESS", "COMPLETED", "FAILED"
-- `phase_name` (String) - For TASK records: "Discovery", "Metrics Collection", "Analysis", "Recommendations", "Report Generation"
-- `start_time` (String) - ISO timestamp when phase started
-- `end_time` (String) - ISO timestamp when phase completed
-- `duration_seconds` (Number) - Calculated duration for completed phases
-- `resource_count` (Number) - Number of resources processed in phase
-- `error_message` (String) - Error details for failed phases
-- `ttl` (Number) - Unix timestamp for automatic record expiration (30 days)
+#### Response Format Preservation
+Maintain existing response structure:
+```python
+# Success response
+{
+    "success": True,
+    "session_id": str,
+    "timestamp": str,
+    # ... other fields
+}
 
-**Design Rationale:**
-- GSI enables efficient querying by status and date ranges for performance analysis (Requirement 5.2)
-- Consistent attribute naming and data types support reliable querying (Requirement 5.3)
-- TTL settings provide automatic data retention management (Requirement 5.4)
-
-### Workflow Phase Integration
-
-**Existing Workflow Phases (from current prompt):**
-1. **Discovery (Inventory)** - Enumerate Lambda, API Gateway, DynamoDB, S3, Step Functions, EventBridge
-2. **Usage and Metrics Collection** - Collect CloudWatch metrics and logs (30-day + 7-day windows)
-3. **Analysis and Decision Rules** - Apply cost optimization logic consistently
-4. **Recommendation Format** - Generate specific recommendations with evidence
-5. **Cost Estimation Method** - Calculate projected savings with pricing data
-6. **Output Contract** - Generate structured plain text report
-7. **S3 Write Requirements** - Save cost_report.txt and evidence.txt files
-8. **Error Handling and Fallbacks** - Continue execution despite failures
-
-**Real-Time Status Updates:**
-- Each phase will immediately update DynamoDB when starting with "IN_PROGRESS" status (Requirement 4.1)
-- Each phase will immediately update DynamoDB when completing with "COMPLETED" status (Requirement 4.2)
-- Failed phases will immediately update DynamoDB with "FAILED" status and error message (Requirement 4.3)
-- All status changes include precise timestamps for chronological tracking (Requirement 4.4)
-
-**Journaling Integration Points:**
-- Add DynamoDB operations at the start and end of each phase
-- Use existing phase names and structure
-- Maintain existing workflow logic while adding tracking
-- Support querying sessions in progress to see completed vs running phases (Requirement 3.2)
+# Error response
+{
+    "success": False,
+    "error": str,
+    "timestamp": str,
+    "error_type": str,
+    # ... context fields
+}
+```
 
 ## Data Models
 
-### Session Record Model
+### DynamoDB Schema (Unchanged)
 
-```json
-{
-  "session_id": "session_20250108_143022_abc123",
-  "record_type": "SESSION",
-  "timestamp": "2025-01-08T14:30:22Z",
-  "status": "STARTED|COMPLETED|FAILED",
-  "start_time": "2025-01-08T14:30:22Z",
-  "end_time": "2025-01-08T14:35:45Z",
-  "duration_seconds": 323,
-  "ttl": 1738766222
-}
-```
+The existing schema is well-designed and follows DynamoDB best practices:
 
-**Session Lifecycle:**
-- Created at workflow start with "STARTED" status and session ID (Requirement 1.1, 1.2)
-- Updated to "COMPLETED" status with end timestamp when workflow finishes (Requirement 1.3)
-- Includes total session duration for performance analysis (Requirement 6.3)
+**Table Structure:**
+- **Partition Key**: `session_id` (String)
+- **Sort Key**: `record_type#timestamp` (String)
+- **GSI**: `status-date-index` (status, timestamp)
 
-### Task Record Model
+**Record Types:**
 
-```json
-{
-  "session_id": "session_20250108_143022_abc123",
-  "record_type": "TASK#2025-01-08T14:30:25Z",
-  "timestamp": "2025-01-08T14:30:25Z",
-  "status": "IN_PROGRESS|COMPLETED|FAILED",
-  "phase_name": "Discovery",
-  "start_time": "2025-01-08T14:30:25Z",
-  "end_time": "2025-01-08T14:31:10Z",
-  "duration_seconds": 45,
-  "resource_count": 12,
-  "error_message": null,
-  "ttl": 1738766222
-}
-```
+1. **Session Record**
+   ```json
+   {
+     "session_id": "session_20250108_143022",
+     "record_type": "SESSION",
+     "timestamp": "2025-01-08T14:30:22Z",
+     "status": "STARTED|COMPLETED|FAILED",
+     "start_time": "2025-01-08T14:30:22Z",
+     "end_time": "2025-01-08T14:35:45Z",
+     "duration_seconds": 323,
+     "ttl": 1738766222
+   }
+   ```
 
-**Task Lifecycle:**
-- Created when phase starts with "IN_PROGRESS" status (Requirement 2.1)
-- Updated to "COMPLETED" with timing metrics when phase succeeds (Requirement 2.2, 6.1, 6.2)
-- Updated to "FAILED" with error message when phase fails (Requirement 2.3)
-- Supports all standard workflow phases (Requirement 2.4)
-- Enables chronological ordering and progress tracking (Requirement 3.4)
+2. **Task Record**
+   ```json
+   {
+     "session_id": "session_20250108_143022",
+     "record_type": "TASK#2025-01-08T14:30:25Z",
+     "timestamp": "2025-01-08T14:30:25Z",
+     "status": "IN_PROGRESS|COMPLETED|FAILED",
+     "phase_name": "Discovery|Analysis|...",
+     "start_time": "2025-01-08T14:30:25Z",
+     "end_time": "2025-01-08T14:31:10Z",
+     "duration_seconds": 45,
+     "error_message": null,
+     "ttl": 1738766222
+   }
+   ```
+
+### Data Access Patterns
+
+The existing access patterns are efficient and follow DynamoDB best practices:
+
+1. **Check Table Existence**: `DescribeTable` operation
+2. **Create Session**: `PutItem` with session_id + "SESSION" sort key
+3. **Update Session**: `UpdateItem` with session_id + "SESSION" sort key
+4. **Create Task**: `PutItem` with session_id + "TASK#timestamp" sort key
+5. **Update Task**: `UpdateItem` with session_id + "TASK#timestamp" sort key
 
 ## Error Handling
 
-**Prompt-Based Error Handling:**
-- Instructions to continue cost optimization workflow even if DynamoDB operations fail
-- Retry logic instructions for DynamoDB operations (up to 3 attempts)
-- Fallback behavior to log errors but not halt execution
-- Clear separation between core functionality and journaling
+### Retry Strategy (Preserved)
 
-**Error Scenarios:**
+Maintain existing exponential backoff retry logic:
+- **Max Attempts**: 3
+- **Base Delay**: 1.0 seconds
+- **Backoff**: Exponential (2^attempt)
+- **Retryable Errors**: Throttling, service unavailable, network issues
 
-- DynamoDB table doesn't exist → Create table then retry operation
-- DynamoDB operation fails → Log error and continue with next phase
-- Network/permission issues → Retry with exponential backoff, then continue
+### Error Categorization (Preserved)
 
-**Query and Monitoring Support:**
-- Support querying by session ID to retrieve complete session summary (Requirement 3.1)
-- Enable monitoring of sessions in progress to see completed vs running phases (Requirement 3.2)
-- Provide error visibility for failed phases with specific error messages (Requirement 3.3)
-- Maintain chronological ordering of phases with timestamps (Requirement 3.4)
+Keep existing error type classification:
+- `TABLE_NOT_FOUND`: Table doesn't exist
+- `ACCESS_DENIED`: Insufficient permissions
+- `DUPLICATE_SESSION`: Session already exists
+- `CONDITION_FAILED`: Update condition failed
+- `VALIDATION_ERROR`: Invalid input parameters
+- `DYNAMODB_ERROR`: Other DynamoDB errors
 
+### Error Response Format (Preserved)
 
+Maintain consistent error response structure using existing `_create_error_response` utility function.
 
-## Implementation Strategy
+## Implementation Notes
 
-### Phase 1: System Prompt Enhancement
-- Add DynamoDB journaling instructions to existing system prompt
-- Define table schema and operation patterns
-- Integrate with existing workflow phases
-- Add error handling and retry logic instructions
+### Key Changes
+1. Replace `use_aws` calls with direct `boto3` DynamoDB client calls
+2. Remove `resource_count` parameter from `update_task_record` function
+3. Update import statements to use `boto3` instead of `strands_tools.use_aws`
+4. Map `boto3` exceptions to existing error response format
+5. Simplify docstrings while maintaining essential Args sections for Strands parsing
 
-### Phase 2: Testing and Refinement
-- Deploy updated prompt to existing infrastructure
-- Test with sample cost optimization requests
-- Refine journaling instructions based on actual behavior
-- Validate that core functionality remains intact
-
-### Deployment Approach
-
-**No Infrastructure Changes Required:**
-- Use existing CDK stack and Agent Core runtime
-- Leverage existing `use_aws` tool capabilities
-- Update only the system prompt file (`src/agents/prompt.md`)
-- Deploy through existing agent update mechanism
-
-**Rollback Strategy:**
-- Keep backup of original system prompt
-- Simple file replacement to revert changes
-- No infrastructure rollback needed since no new resources are created
+### AWS Integration
+- Tools will use standard `boto3` credential chain (environment variables, IAM roles, etc.)
+- Same IAM permissions required as current implementation
+- Environment variable `JOURNAL_TABLE_NAME` remains unchanged
+- DynamoDB client initialization: `boto3.client('dynamodb')`
