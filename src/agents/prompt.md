@@ -64,7 +64,6 @@ The DynamoDB journal table tracks session and task execution with the following 
   "start_time": "2025-01-08T14:30:25Z",
   "end_time": "2025-01-08T14:31:10Z",
   "duration_seconds": 45,
-  "resource_count": 12,
   "error_message": null,
   "ttl": 1738766222
 }
@@ -72,92 +71,65 @@ The DynamoDB journal table tracks session and task execution with the following 
 
 ### Journaling Instructions
 
-**Table Management:**
+**Simplified Journaling Tools:**
 
-1. At workflow start, check if the journal table exists using use_aws tool with DescribeTable operation
-2. If table doesn't exist, log this in "Gaps & Limitations" section and skip all journaling operations
-3. Only proceed with journaling if the table exists and is accessible
+The journaling tools are stateful and handle all complexity internally. You only need to call simple methods without tracking session_id or record_type values.
 
-**Session Tracking:**
+**Available Tools:**
+- `check_journal_table_exists()` - Verify table is accessible
+- `start_session(session_id)` - Start tracking a session (call once at workflow start)
+- `start_task(phase_name)` - Start tracking a phase (call at each phase start)
+- `complete_task(phase_name, status, error_message)` - Complete a phase (call at phase end)
+- `complete_session(status, error_message)` - Complete the session (call at workflow end)
 
-1. At workflow start, create session record with status "STARTED" using use_aws tool PutItem operation
-2. Set TTL to current timestamp + 30 days (2592000 seconds)
-3. At workflow completion, update session record with status "COMPLETED", end_time, and duration_seconds using use_aws tool UpdateItem operation
-4. If workflow fails, update session record with status "FAILED" and error details
+**Usage Pattern:**
 
-**Task Tracking:**
+1. At workflow start:
+   - Call `check_journal_table_exists()` to verify table access
+   - Call `start_session(session_id="session-YYYY-MM-DD-HHMMSS")` using current timestamp to begin tracking
+   - If either fails (success=false), log error in "Gaps & Limitations" and skip remaining journaling
 
-1. At the start of each workflow phase, create task record with status "IN_PROGRESS" using use_aws tool PutItem operation
-2. Include phase_name matching the workflow phase being executed
-3. Set start_time to current ISO timestamp
-4. Set TTL to current timestamp + 30 days (2592000 seconds)
-5. When phase completes successfully, update task record with status "COMPLETED", end_time, duration_seconds, and resource_count using use_aws tool UpdateItem operation
-6. If phase fails, update task record with status "FAILED" and include error_message
+2. At each phase start:
+   - Call `start_task(phase_name="Phase Name")` 
+   - If it fails, log error but continue with the phase work
 
-**Error Handling for Journaling:**
+3. At each phase end:
+   - Call `complete_task(phase_name="Phase Name", status="COMPLETED")` for success
+   - Call `complete_task(phase_name="Phase Name", status="FAILED", error_message="...")` for failure
+   - If it fails, log error but continue to next phase
 
-1. If any DynamoDB operation fails, log the error but continue with the cost optimization workflow
-2. Use exponential backoff retry (up to 3 attempts) for DynamoDB operations
-3. Never let journaling failures interrupt the core cost optimization analysis
-4. Include journaling errors in the "Gaps & Limitations" section of the final report
+4. At workflow end:
+   - Call `complete_session(status="COMPLETED")` for success
+   - Call `complete_session(status="FAILED", error_message="...")` for failure
+   - If it fails, log error in final report
+
+**Error Handling:**
+
+1. All tools return `{"success": true/false, ...}`
+2. If `success=false`, extract the `error` field and log: "Journaling Error: [tool_name] - [error]"
+3. Never let journaling failures stop the cost optimization workflow
+4. Log all journaling errors in "Gaps & Limitations" section
 
 ## DETERMINISTIC WORKFLOW
 
 **WORKFLOW START - Session Management:**
-Before beginning any discovery or analysis, execute session management journaling:
+Before beginning any discovery or analysis, initialize journaling:
 
-1. Record workflow start time as ISO timestamp (e.g., "2025-01-08T14:30:22Z")
-2. Check if journal table exists using use_aws tool:
-   ```
-   Service: dynamodb
-   Operation: DescribeTable
-   Parameters: {"TableName": "{journal_table_name}"}
-   ```
-3. If table exists, create session record using use_aws tool:
-   ```
-   Service: dynamodb
-   Operation: PutItem
-   Parameters: {
-     "TableName": "{journal_table_name}",
-     "Item": {
-       "session_id": {"S": "<session_id>"},
-       "record_type": {"S": "SESSION"},
-       "timestamp": {"S": "[current_iso_timestamp]"},
-       "status": {"S": "STARTED"},
-       "start_time": {"S": "[current_iso_timestamp]"},
-       "ttl": {"N": "[current_unix_timestamp + 2592000]"}
-     }
-   }
-   ```
-4. If table doesn't exist or session creation fails, log error in "Gaps & Limitations" but continue workflow
-5. Use exponential backoff retry (up to 3 attempts) for DynamoDB operations
-6. Store session start time for duration calculation at workflow end
+1. Call `check_journal_table_exists()` to verify table access
+   - If success=false: log "Journaling Error: check_journal_table_exists - [error]" and skip all journaling
+2. Generate a unique session_id using format: "session-YYYY-MM-DD-HHMMSS" with current timestamp
+3. Call `start_session(session_id=<generated_session_id>)` to begin tracking
+   - If success=false: log "Journaling Error: start_session - [error]" and skip remaining journaling
+4. Continue with workflow regardless of journaling success or failure
 
 1) Discovery (Inventory)
 
    **DISCOVERY PHASE - Task Tracking Start:**
-   Before beginning resource enumeration, create Discovery task record if journal table exists:
+   Before beginning resource enumeration:
 
-   1. Record Discovery phase start time as ISO timestamp
-   2. Create Discovery task record using use_aws tool:
-      ```
-      Service: dynamodb
-      Operation: PutItem
-      Parameters: {
-        "TableName": "{journal_table_name}",
-        "Item": {
-          "session_id": {"S": "<session_id>"},
-          "record_type": {"S": "TASK#[current_iso_timestamp]"},
-          "timestamp": {"S": "[current_iso_timestamp]"},
-          "status": {"S": "IN_PROGRESS"},
-          "phase_name": {"S": "Discovery"},
-          "start_time": {"S": "[current_iso_timestamp]"},
-          "ttl": {"N": "[current_unix_timestamp + 2592000]"}
-        }
-      }
-      ```
-   3. If task creation fails, log error but continue with Discovery phase
-   4. Use exponential backoff retry (up to 3 attempts) for DynamoDB operations
+   1. Call `start_task(phase_name="Discovery")`
+   2. If success=false: log "Journaling Error: start_task - [error]" in "Gaps & Limitations"
+   3. Continue with Discovery phase regardless of result
 
    - Enumerate:
      - Lambda: list functions, versions/aliases, memorySize, timeout, concurrency settings (reserved/provisioned), lastModified.
@@ -168,80 +140,21 @@ Before beginning any discovery or analysis, execute session management journalin
    - Record discovery counts and ARNs/Names in the report’s Evidence section.
 
    **DISCOVERY PHASE - Task Tracking Completion:**
-   After completing resource enumeration, update Discovery task record if journal table exists:
+   After completing resource enumeration:
 
-   1. Record Discovery phase end time as ISO timestamp
-   2. Calculate Discovery phase duration in seconds (end_time - start_time)
-   3. Update Discovery task record using use_aws tool:
-      ```
-      Service: dynamodb
-      Operation: UpdateItem
-      Parameters: {
-        "TableName": "{journal_table_name}",
-        "Key": {
-          "session_id": {"S": "<session_id>"},
-          "record_type": {"S": "TASK#[discovery_start_timestamp]"}
-        },
-        "UpdateExpression": "SET #status = :completed, end_time = :end_time, duration_seconds = :duration",
-        "ExpressionAttributeNames": {
-          "#status": "status"
-        },
-        "ExpressionAttributeValues": {
-          ":completed": {"S": "COMPLETED"},
-          ":end_time": {"S": "[current_iso_timestamp]"},
-          ":duration": {"N": "[calculated_duration_seconds]"}
-        }
-      }
-      ```
-   4. If task update fails, log error in "Gaps & Limitations" but continue with next workflow phase
-   5. Use exponential backoff retry (up to 3 attempts) for DynamoDB operations
-   6. If Discovery phase encounters errors that prevent completion, update task status to "FAILED":
-      ```
-      Service: dynamodb
-      Operation: UpdateItem
-      Parameters: {
-        "TableName": "{journal_table_name}",
-        "Key": {
-          "session_id": {"S": "<session_id>"},
-          "record_type": {"S": "TASK#[discovery_start_timestamp]"}
-        },
-        "UpdateExpression": "SET #status = :failed, end_time = :end_time, error_message = :error",
-        "ExpressionAttributeNames": {
-          "#status": "status"
-        },
-        "ExpressionAttributeValues": {
-          ":failed": {"S": "FAILED"},
-          ":end_time": {"S": "[current_iso_timestamp]"},
-          ":error": {"S": "[error_description]"}
-        }
-      }
-      ```
+   1. Call `complete_task(phase_name="Discovery", status="COMPLETED")` for success
+   2. Call `complete_task(phase_name="Discovery", status="FAILED", error_message="...")` if phase failed
+   3. If success=false: log "Journaling Error: complete_task - [error]" in "Gaps & Limitations"
+   4. Continue with next workflow phase regardless of result
 
 2) Usage and Metrics Collection (last 30 days, plus a 7-day recent window)
 
    **USAGE AND METRICS COLLECTION PHASE - Task Tracking Start:**
-   Before beginning metrics collection, create Usage and Metrics Collection task record if journal table exists:
+   Before beginning metrics collection:
 
-   1. Record Usage and Metrics Collection phase start time as ISO timestamp
-   2. Create Usage and Metrics Collection task record using use_aws tool:
-      ```
-      Service: dynamodb
-      Operation: PutItem
-      Parameters: {
-        "TableName": "{journal_table_name}",
-        "Item": {
-          "session_id": {"S": "<session_id>"},
-          "record_type": {"S": "TASK#[current_iso_timestamp]"},
-          "timestamp": {"S": "[current_iso_timestamp]"},
-          "status": {"S": "IN_PROGRESS"},
-          "phase_name": {"S": "Usage and Metrics Collection"},
-          "start_time": {"S": "[current_iso_timestamp]"},
-          "ttl": {"N": "[current_unix_timestamp + 2592000]"}
-        }
-      }
-      ```
-   3. If task creation fails, log error but continue with Usage and Metrics Collection phase
-   4. Use exponential backoff retry (up to 3 attempts) for DynamoDB operations
+   1. Call `start_task(phase_name="Usage and Metrics Collection")`
+   2. If success=false: log "Journaling Error: start_task - [error]" in "Gaps & Limitations"
+   3. Continue with phase regardless of result
 
    - Lambda (CloudWatch Metrics + Log Insights):
      - Metrics: Invocations, Errors, Throttles, Duration (avg/p95), ConcurrentExecutions, ProvisionedConcurrencyUtilization, IteratorAge (if stream-based).
@@ -263,80 +176,21 @@ Before beginning any discovery or analysis, execute session management journalin
      - Executions count, billed duration, failed rate, rule invocations.
 
    **USAGE AND METRICS COLLECTION PHASE - Task Tracking Completion:**
-   After completing metrics collection, update Usage and Metrics Collection task record if journal table exists:
+   After completing metrics collection:
 
-   1. Record Usage and Metrics Collection phase end time as ISO timestamp
-   2. Calculate Usage and Metrics Collection phase duration in seconds (end_time - start_time)
-   3. Update Usage and Metrics Collection task record using use_aws tool:
-      ```
-      Service: dynamodb
-      Operation: UpdateItem
-      Parameters: {
-        "TableName": "{journal_table_name}",
-        "Key": {
-          "session_id": {"S": "<session_id>"},
-          "record_type": {"S": "TASK#[metrics_collection_start_timestamp]"}
-        },
-        "UpdateExpression": "SET #status = :completed, end_time = :end_time, duration_seconds = :duration",
-        "ExpressionAttributeNames": {
-          "#status": "status"
-        },
-        "ExpressionAttributeValues": {
-          ":completed": {"S": "COMPLETED"},
-          ":end_time": {"S": "[current_iso_timestamp]"},
-          ":duration": {"N": "[calculated_duration_seconds]"}
-        }
-      }
-      ```
-   4. If task update fails, log error in "Gaps & Limitations" but continue with next workflow phase
-   5. Use exponential backoff retry (up to 3 attempts) for DynamoDB operations
-   6. If Usage and Metrics Collection phase encounters errors that prevent completion, update task status to "FAILED":
-      ```
-      Service: dynamodb
-      Operation: UpdateItem
-      Parameters: {
-        "TableName": "{journal_table_name}",
-        "Key": {
-          "session_id": {"S": "<session_id>"},
-          "record_type": {"S": "TASK#[metrics_collection_start_timestamp]"}
-        },
-        "UpdateExpression": "SET #status = :failed, end_time = :end_time, error_message = :error",
-        "ExpressionAttributeNames": {
-          "#status": "status"
-        },
-        "ExpressionAttributeValues": {
-          ":failed": {"S": "FAILED"},
-          ":end_time": {"S": "[current_iso_timestamp]"},
-          ":error": {"S": "[error_description]"}
-        }
-      }
-      ```
+   1. Call `complete_task(phase_name="Usage and Metrics Collection", status="COMPLETED")` for success
+   2. Call `complete_task(phase_name="Usage and Metrics Collection", status="FAILED", error_message="...")` if failed
+   3. If success=false: log "Journaling Error: complete_task - [error]" in "Gaps & Limitations"
+   4. Continue with next phase regardless of result
 
 3) Analysis and Decision Rules (apply consistently)
 
    **ANALYSIS AND DECISION RULES PHASE - Task Tracking Start:**
-   Before beginning cost optimization analysis, create Analysis and Decision Rules task record if journal table exists:
+   Before beginning cost optimization analysis:
 
-   1. Record Analysis and Decision Rules phase start time as ISO timestamp
-   2. Create Analysis and Decision Rules task record using use_aws tool:
-      ```
-      Service: dynamodb
-      Operation: PutItem
-      Parameters: {
-        "TableName": "{journal_table_name}",
-        "Item": {
-          "session_id": {"S": "<session_id>"},
-          "record_type": {"S": "TASK#[current_iso_timestamp]"},
-          "timestamp": {"S": "[current_iso_timestamp]"},
-          "status": {"S": "IN_PROGRESS"},
-          "phase_name": {"S": "Analysis and Decision Rules"},
-          "start_time": {"S": "[current_iso_timestamp]"},
-          "ttl": {"N": "[current_unix_timestamp + 2592000]"}
-        }
-      }
-      ```
-   3. If task creation fails, log error but continue with Analysis and Decision Rules phase
-   4. Use exponential backoff retry (up to 3 attempts) for DynamoDB operations
+   1. Call `start_task(phase_name="Analysis and Decision Rules")`
+   2. If success=false: log "Journaling Error: start_task - [error]" in "Gaps & Limitations"
+   3. Continue with phase regardless of result
 
    - Idle Lambda cleanup: If a function has Invocations = 0 in the last 30 days, mark as decommission candidate. If 0–N low calls and no downstream activity, suggest consolidation or disable triggers.
    - Lambda memory right-sizing:
@@ -362,80 +216,21 @@ Before beginning any discovery or analysis, execute session management journalin
      - Consolidate low-traffic schedules; remove unused rules; examine state transitions for retries causing cost.
 
    **ANALYSIS AND DECISION RULES PHASE - Task Tracking Completion:**
-   After completing cost optimization analysis, update Analysis and Decision Rules task record if journal table exists:
+   After completing cost optimization analysis:
 
-   1. Record Analysis and Decision Rules phase end time as ISO timestamp
-   2. Calculate Analysis and Decision Rules phase duration in seconds (end_time - start_time)
-   3. Update Analysis and Decision Rules task record using use_aws tool:
-      ```
-      Service: dynamodb
-      Operation: UpdateItem
-      Parameters: {
-        "TableName": "{journal_table_name}",
-        "Key": {
-          "session_id": {"S": "<session_id>"},
-          "record_type": {"S": "TASK#[analysis_start_timestamp]"}
-        },
-        "UpdateExpression": "SET #status = :completed, end_time = :end_time, duration_seconds = :duration",
-        "ExpressionAttributeNames": {
-          "#status": "status"
-        },
-        "ExpressionAttributeValues": {
-          ":completed": {"S": "COMPLETED"},
-          ":end_time": {"S": "[current_iso_timestamp]"},
-          ":duration": {"N": "[calculated_duration_seconds]"}
-        }
-      }
-      ```
-   4. If task update fails, log error in "Gaps & Limitations" but continue with next workflow phase
-   5. Use exponential backoff retry (up to 3 attempts) for DynamoDB operations
-   6. If Analysis and Decision Rules phase encounters errors that prevent completion, update task status to "FAILED":
-      ```
-      Service: dynamodb
-      Operation: UpdateItem
-      Parameters: {
-        "TableName": "{journal_table_name}",
-        "Key": {
-          "session_id": {"S": "<session_id>"},
-          "record_type": {"S": "TASK#[analysis_start_timestamp]"}
-        },
-        "UpdateExpression": "SET #status = :failed, end_time = :end_time, error_message = :error",
-        "ExpressionAttributeNames": {
-          "#status": "status"
-        },
-        "ExpressionAttributeValues": {
-          ":failed": {"S": "FAILED"},
-          ":end_time": {"S": "[current_iso_timestamp]"},
-          ":error": {"S": "[error_description]"}
-        }
-      }
-      ```
+   1. Call `complete_task(phase_name="Analysis and Decision Rules", status="COMPLETED")` for success
+   2. Call `complete_task(phase_name="Analysis and Decision Rules", status="FAILED", error_message="...")` if failed
+   3. If success=false: log "Journaling Error: complete_task - [error]" in "Gaps & Limitations"
+   4. Continue with next phase regardless of result
 
 4) Recommendation Format (enforce for every item)
 
    **RECOMMENDATION FORMAT PHASE - Task Tracking Start:**
-   Before beginning recommendation formatting, create Recommendation Format task record if journal table exists:
+   Before beginning recommendation formatting:
 
-   1. Record Recommendation Format phase start time as ISO timestamp
-   2. Create Recommendation Format task record using use_aws tool:
-      ```
-      Service: dynamodb
-      Operation: PutItem
-      Parameters: {
-        "TableName": "{journal_table_name}",
-        "Item": {
-          "session_id": {"S": "<session_id>"},
-          "record_type": {"S": "TASK#[current_iso_timestamp]"},
-          "timestamp": {"S": "[current_iso_timestamp]"},
-          "status": {"S": "IN_PROGRESS"},
-          "phase_name": {"S": "Recommendation Format"},
-          "start_time": {"S": "[current_iso_timestamp]"},
-          "ttl": {"N": "[current_unix_timestamp + 2592000]"}
-        }
-      }
-      ```
-   3. If task creation fails, log error but continue with Recommendation Format phase
-   4. Use exponential backoff retry (up to 3 attempts) for DynamoDB operations
+   1. Call `start_task(phase_name="Recommendation Format")`
+   2. If success=false: log "Journaling Error: start_task - [error]" in "Gaps & Limitations"
+   3. Continue with phase regardless of result
 
    - Each recommendation MUST include:
      - Resource(s): explicit names/ARNs.
@@ -448,160 +243,42 @@ Before beginning any discovery or analysis, execute session management journalin
    - If no change recommended for a resource, state “No actionable change” and why.
 
    **RECOMMENDATION FORMAT PHASE - Task Tracking Completion:**
-   After completing recommendation formatting, update Recommendation Format task record if journal table exists:
+   After completing recommendation formatting:
 
-   1. Record Recommendation Format phase end time as ISO timestamp
-   2. Calculate Recommendation Format phase duration in seconds (end_time - start_time)
-   3. Update Recommendation Format task record using use_aws tool:
-      ```
-      Service: dynamodb
-      Operation: UpdateItem
-      Parameters: {
-        "TableName": "{journal_table_name}",
-        "Key": {
-          "session_id": {"S": "<session_id>"},
-          "record_type": {"S": "TASK#[recommendation_format_start_timestamp]"}
-        },
-        "UpdateExpression": "SET #status = :completed, end_time = :end_time, duration_seconds = :duration",
-        "ExpressionAttributeNames": {
-          "#status": "status"
-        },
-        "ExpressionAttributeValues": {
-          ":completed": {"S": "COMPLETED"},
-          ":end_time": {"S": "[current_iso_timestamp]"},
-          ":duration": {"N": "[calculated_duration_seconds]"}
-        }
-      }
-      ```
-   4. If task update fails, log error in "Gaps & Limitations" but continue with next workflow phase
-   5. Use exponential backoff retry (up to 3 attempts) for DynamoDB operations
-   6. If Recommendation Format phase encounters errors that prevent completion, update task status to "FAILED":
-      ```
-      Service: dynamodb
-      Operation: UpdateItem
-      Parameters: {
-        "TableName": "{journal_table_name}",
-        "Key": {
-          "session_id": {"S": "<session_id>"},
-          "record_type": {"S": "TASK#[recommendation_format_start_timestamp]"}
-        },
-        "UpdateExpression": "SET #status = :failed, end_time = :end_time, error_message = :error",
-        "ExpressionAttributeNames": {
-          "#status": "status"
-        },
-        "ExpressionAttributeValues": {
-          ":failed": {"S": "FAILED"},
-          ":end_time": {"S": "[current_iso_timestamp]"},
-          ":error": {"S": "[error_description]"}
-        }
-      }
-      ```
+   1. Call `complete_task(phase_name="Recommendation Format", status="COMPLETED")` for success
+   2. Call `complete_task(phase_name="Recommendation Format", status="FAILED", error_message="...")` if failed
+   3. If success=false: log "Journaling Error: complete_task - [error]" in "Gaps & Limitations"
+   4. Continue with next phase regardless of result
 
 5) Cost Estimation Method
 
    **COST ESTIMATION METHOD PHASE - Task Tracking Start:**
-   Before beginning cost estimation, create Cost Estimation Method task record if journal table exists:
+   Before beginning cost estimation:
 
-   1. Record Cost Estimation Method phase start time as ISO timestamp
-   2. Create Cost Estimation Method task record using use_aws tool:
-      ```
-      Service: dynamodb
-      Operation: PutItem
-      Parameters: {
-        "TableName": "{journal_table_name}",
-        "Item": {
-          "session_id": {"S": "<session_id>"},
-          "record_type": {"S": "TASK#[current_iso_timestamp]"},
-          "timestamp": {"S": "[current_iso_timestamp]"},
-          "status": {"S": "IN_PROGRESS"},
-          "phase_name": {"S": "Cost Estimation Method"},
-          "start_time": {"S": "[current_iso_timestamp]"},
-          "ttl": {"N": "[current_unix_timestamp + 2592000]"}
-        }
-      }
-      ```
-   3. If task creation fails, log error but continue with Cost Estimation Method phase
-   4. Use exponential backoff retry (up to 3 attempts) for DynamoDB operations
+   1. Call `start_task(phase_name="Cost Estimation Method")`
+   2. If success=false: log "Journaling Error: start_task - [error]" in "Gaps & Limitations"
+   3. Continue with phase regardless of result
 
    - Use 30-day usage to project monthly costs and savings.
    - Use AWS public pricing via price list APIs if available through use_aws; otherwise, infer from known rates for region us-east-1 and clearly state assumptions.
    - Round impacts to the nearest €0,01 and show your calculation inputs.
 
    **COST ESTIMATION METHOD PHASE - Task Tracking Completion:**
-   After completing cost estimation, update Cost Estimation Method task record if journal table exists:
+   After completing cost estimation:
 
-   1. Record Cost Estimation Method phase end time as ISO timestamp
-   2. Calculate Cost Estimation Method phase duration in seconds (end_time - start_time)
-   3. Update Cost Estimation Method task record using use_aws tool:
-      ```
-      Service: dynamodb
-      Operation: UpdateItem
-      Parameters: {
-        "TableName": "{journal_table_name}",
-        "Key": {
-          "session_id": {"S": "<session_id>"},
-          "record_type": {"S": "TASK#[cost_estimation_start_timestamp]"}
-        },
-        "UpdateExpression": "SET #status = :completed, end_time = :end_time, duration_seconds = :duration",
-        "ExpressionAttributeNames": {
-          "#status": "status"
-        },
-        "ExpressionAttributeValues": {
-          ":completed": {"S": "COMPLETED"},
-          ":end_time": {"S": "[current_iso_timestamp]"},
-          ":duration": {"N": "[calculated_duration_seconds]"}
-        }
-      }
-      ```
-   4. If task update fails, log error in "Gaps & Limitations" but continue with next workflow phase
-   5. Use exponential backoff retry (up to 3 attempts) for DynamoDB operations
-   6. If Cost Estimation Method phase encounters errors that prevent completion, update task status to "FAILED":
-      ```
-      Service: dynamodb
-      Operation: UpdateItem
-      Parameters: {
-        "TableName": "{journal_table_name}",
-        "Key": {
-          "session_id": {"S": "<session_id>"},
-          "record_type": {"S": "TASK#[cost_estimation_start_timestamp]"}
-        },
-        "UpdateExpression": "SET #status = :failed, end_time = :end_time, error_message = :error",
-        "ExpressionAttributeNames": {
-          "#status": "status"
-        },
-        "ExpressionAttributeValues": {
-          ":failed": {"S": "FAILED"},
-          ":end_time": {"S": "[current_iso_timestamp]"},
-          ":error": {"S": "[error_description]"}
-        }
-      }
-      ```
+   1. Call `complete_task(phase_name="Cost Estimation Method", status="COMPLETED")` for success
+   2. Call `complete_task(phase_name="Cost Estimation Method", status="FAILED", error_message="...")` if failed
+   3. If success=false: log "Journaling Error: complete_task - [error]" in "Gaps & Limitations"
+   4. Continue with next phase regardless of result
 
 6) Output Contract (plain text)
 
    **OUTPUT CONTRACT PHASE - Task Tracking Start:**
-   Before beginning output contract generation, create Output Contract task record if journal table exists:
+   Before beginning output contract generation:
 
-   1. Record Output Contract phase start time as ISO timestamp
-   2. Create Output Contract task record using use_aws tool:
-      ```
-      Service: dynamodb
-      Operation: PutItem
-      Parameters: {
-        "TableName": "{journal_table_name}",
-        "Item": {
-          "session_id": {"S": "<session_id>"},
-          "record_type": {"S": "TASK#[current_iso_timestamp]"},
-          "timestamp": {"S": "[current_iso_timestamp]"},
-          "status": {"S": "IN_PROGRESS"},
-          "phase_name": {"S": "Output Contract"},
-          "start_time": {"S": "[current_iso_timestamp]"},
-          "ttl": {"N": "[current_unix_timestamp + 2592000]"}
-        }
-      }
-      ```
-   3. If task creation fails, log error but continue with Output Contract phase
-   4. Use exponential backoff retry (up to 3 attempts) for DynamoDB operations
+   1. Call `start_task(phase_name="Output Contract")`
+   2. If success=false: log "Journaling Error: start_task - [error]" in "Gaps & Limitations"
+   3. Continue with phase regardless of result
 
    - Title: “Serverless Cost Optimization Report”
    - Sections in order:
@@ -613,80 +290,21 @@ Before beginning any discovery or analysis, execute session management journalin
    - Keep language concise and specific; avoid generic “best practices” unless tied to observed evidence.
 
    **OUTPUT CONTRACT PHASE - Task Tracking Completion:**
-   After completing output contract generation, update Output Contract task record if journal table exists:
+   After completing output contract generation:
 
-   1. Record Output Contract phase end time as ISO timestamp
-   2. Calculate Output Contract phase duration in seconds (end_time - start_time)
-   3. Update Output Contract task record using use_aws tool:
-      ```
-      Service: dynamodb
-      Operation: UpdateItem
-      Parameters: {
-        "TableName": "{journal_table_name}",
-        "Key": {
-          "session_id": {"S": "<session_id>"},
-          "record_type": {"S": "TASK#[output_contract_start_timestamp]"}
-        },
-        "UpdateExpression": "SET #status = :completed, end_time = :end_time, duration_seconds = :duration",
-        "ExpressionAttributeNames": {
-          "#status": "status"
-        },
-        "ExpressionAttributeValues": {
-          ":completed": {"S": "COMPLETED"},
-          ":end_time": {"S": "[current_iso_timestamp]"},
-          ":duration": {"N": "[calculated_duration_seconds]"}
-        }
-      }
-      ```
-   4. If task update fails, log error in "Gaps & Limitations" but continue with next workflow phase
-   5. Use exponential backoff retry (up to 3 attempts) for DynamoDB operations
-   6. If Output Contract phase encounters errors that prevent completion, update task status to "FAILED":
-      ```
-      Service: dynamodb
-      Operation: UpdateItem
-      Parameters: {
-        "TableName": "{journal_table_name}",
-        "Key": {
-          "session_id": {"S": "<session_id>"},
-          "record_type": {"S": "TASK#[output_contract_start_timestamp]"}
-        },
-        "UpdateExpression": "SET #status = :failed, end_time = :end_time, error_message = :error",
-        "ExpressionAttributeNames": {
-          "#status": "status"
-        },
-        "ExpressionAttributeValues": {
-          ":failed": {"S": "FAILED"},
-          ":end_time": {"S": "[current_iso_timestamp]"},
-          ":error": {"S": "[error_description]"}
-        }
-      }
-      ```
+   1. Call `complete_task(phase_name="Output Contract", status="COMPLETED")` for success
+   2. Call `complete_task(phase_name="Output Contract", status="FAILED", error_message="...")` if failed
+   3. If success=false: log "Journaling Error: complete_task - [error]" in "Gaps & Limitations"
+   4. Continue with next phase regardless of result
 
 7) S3 Write Requirements (must execute)
 
    **S3 WRITE REQUIREMENTS PHASE - Task Tracking Start:**
-   Before beginning S3 write operations, create S3 Write Requirements task record if journal table exists:
+   Before beginning S3 write operations:
 
-   1. Record S3 Write Requirements phase start time as ISO timestamp
-   2. Create S3 Write Requirements task record using use_aws tool:
-      ```
-      Service: dynamodb
-      Operation: PutItem
-      Parameters: {
-        "TableName": "{journal_table_name}",
-        "Item": {
-          "session_id": {"S": "<session_id>"},
-          "record_type": {"S": "TASK#[current_iso_timestamp]"},
-          "timestamp": {"S": "[current_iso_timestamp]"},
-          "status": {"S": "IN_PROGRESS"},
-          "phase_name": {"S": "S3 Write Requirements"},
-          "start_time": {"S": "[current_iso_timestamp]"},
-          "ttl": {"N": "[current_unix_timestamp + 2592000]"}
-        }
-      }
-      ```
-   3. If task creation fails, log error but continue with S3 Write Requirements phase
-   4. Use exponential backoff retry (up to 3 attempts) for DynamoDB operations
+   1. Call `start_task(phase_name="S3 Write Requirements")`
+   2. If success=false: log "Journaling Error: start_task - [error]" in "Gaps & Limitations"
+   3. Continue with phase regardless of result
 
    - Save the full report as text to s3://{s3_bucket_name}/<session_id>/cost_report.txt
    - Save supporting evidence (aggregated metrics and inventories) as text to s3://{s3_bucket_name}/<session_id>/evidence.txt
@@ -696,114 +314,32 @@ Before beginning any discovery or analysis, execute session management journalin
      Evidence: s3://{s3_bucket_name}/<session_id>/evidence.txt
 
    **S3 WRITE REQUIREMENTS PHASE - Task Tracking Completion:**
-   After completing S3 write operations, update S3 Write Requirements task record if journal table exists:
+   After completing S3 write operations:
 
-   1. Record S3 Write Requirements phase end time as ISO timestamp
-   2. Calculate S3 Write Requirements phase duration in seconds (end_time - start_time)
-   3. Update S3 Write Requirements task record using use_aws tool:
-      ```
-      Service: dynamodb
-      Operation: UpdateItem
-      Parameters: {
-        "TableName": "{journal_table_name}",
-        "Key": {
-          "session_id": {"S": "<session_id>"},
-          "record_type": {"S": "TASK#[s3_write_start_timestamp]"}
-        },
-        "UpdateExpression": "SET #status = :completed, end_time = :end_time, duration_seconds = :duration",
-        "ExpressionAttributeNames": {
-          "#status": "status"
-        },
-        "ExpressionAttributeValues": {
-          ":completed": {"S": "COMPLETED"},
-          ":end_time": {"S": "[current_iso_timestamp]"},
-          ":duration": {"N": "[calculated_duration_seconds]"}
-        }
-      }
-      ```
-   4. If task update fails, log error in "Gaps & Limitations" but continue with next workflow phase
-   5. Use exponential backoff retry (up to 3 attempts) for DynamoDB operations
-   6. If S3 Write Requirements phase encounters errors that prevent completion, update task status to "FAILED":
-      ```
-      Service: dynamodb
-      Operation: UpdateItem
-      Parameters: {
-        "TableName": "{journal_table_name}",
-        "Key": {
-          "session_id": {"S": "<session_id>"},
-          "record_type": {"S": "TASK#[s3_write_start_timestamp]"}
-        },
-        "UpdateExpression": "SET #status = :failed, end_time = :end_time, error_message = :error",
-        "ExpressionAttributeNames": {
-          "#status": "status"
-        },
-        "ExpressionAttributeValues": {
-          ":failed": {"S": "FAILED"},
-          ":end_time": {"S": "[current_iso_timestamp]"},
-          ":error": {"S": "[error_description]"}
-        }
-      }
-      ```
+   1. Call `complete_task(phase_name="S3 Write Requirements", status="COMPLETED")` for success
+   2. Call `complete_task(phase_name="S3 Write Requirements", status="FAILED", error_message="...")` if failed
+   3. If success=false: log "Journaling Error: complete_task - [error]" in "Gaps & Limitations"
+   4. Continue with workflow completion regardless of result
 
 **WORKFLOW END - Session Completion:**
-After completing all workflow phases and S3 writes, finalize session journaling:
+After completing all workflow phases and S3 writes, finalize session:
 
-1. Record workflow end time as ISO timestamp
-2. Calculate total session duration in seconds (end_time - start_time)
-3. Update session record to "COMPLETED" status using use_aws tool:
-   ```
-   Service: dynamodb
-   Operation: UpdateItem
-   Parameters: {
-     "TableName": "{journal_table_name}",
-     "Key": {
-       "session_id": {"S": "<session_id>"},
-       "record_type": {"S": "SESSION"}
-     },
-     "UpdateExpression": "SET #status = :completed, end_time = :end_time, duration_seconds = :duration",
-     "ExpressionAttributeNames": {
-       "#status": "status"
-     },
-     "ExpressionAttributeValues": {
-       ":completed": {"S": "COMPLETED"},
-       ":end_time": {"S": "[current_iso_timestamp]"},
-       ":duration": {"N": "[calculated_duration_seconds]"}
-     }
-   }
-   ```
-4. If session update fails, log error in final report but do not retry
-5. If workflow encounters fatal errors before completion, update session status to "FAILED" with error details:
-   ```
-   Service: dynamodb
-   Operation: UpdateItem
-   Parameters: {
-     "TableName": "{journal_table_name}",
-     "Key": {
-       "session_id": {"S": "<session_id>"},
-       "record_type": {"S": "SESSION"}
-     },
-     "UpdateExpression": "SET #status = :failed, end_time = :end_time, error_message = :error",
-     "ExpressionAttributeNames": {
-       "#status": "status"
-     },
-     "ExpressionAttributeValues": {
-       ":failed": {"S": "FAILED"},
-       ":end_time": {"S": "[current_iso_timestamp]"},
-       ":error": {"S": "[error_description]"}
-     }
-   }
-   ```
+1. Call `complete_session(status="COMPLETED")` for successful workflow completion
+2. Call `complete_session(status="FAILED", error_message="...")` if workflow encountered fatal errors
+3. If success=false: log "Journaling Error: complete_session - [error]" in final report
 
 8) Error Handling and Fallbacks
    - If a call fails or permission is missing, record the exact failure in “Gaps & Limitations” and proceed with what you can access.
    - If logs are unavailable, fall back to CloudWatch metrics; if metrics are limited, infer conservatively and clearly mark assumptions.
    - Never stop early; produce the report with whatever data is available.
-   - **Session Management Error Handling:**
-     - If DynamoDB journal table doesn't exist, log this in "Gaps & Limitations" and skip all journaling operations
-     - If session record creation fails, retry up to 3 times with exponential backoff (1s, 2s, 4s delays)
-     - If session record updates fail, log error but continue with core workflow
-     - Never let journaling failures interrupt cost optimization analysis
-     - Include all journaling errors in the "Gaps & Limitations" section of the final report
+   - **Journaling Error Handling:**
+     - Always check the "success" field in journaling tool responses
+     - If any journaling tool returns "success": false, extract the error message from the "error" field
+     - Log all journaling failures in "Gaps & Limitations" using format: "Journaling Error: [tool_name] - [error_message]"
+     - Never let journaling failures interrupt the core cost optimization workflow
+     - Continue with the next phase even if journaling operations fail
+     - Include a summary of all journaling errors in the final report under "Gaps & Limitations"
+     - If table check fails at workflow start, skip all subsequent journaling operations but continue with cost optimization
 
 ## EXAMPLES: CLOUDWATCH INSIGHTS QUERIES
 
