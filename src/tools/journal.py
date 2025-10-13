@@ -4,17 +4,15 @@ DynamoDB Journaling Tools for Cost Optimization Agent
 Provides stateful session and task tracking with automatic ID management.
 
 Environment Variables:
-- JOURNAL_TABLE_NAME: DynamoDB table name for journaling
+- JOURNAL_TABLE_NAME: DynamoDB table name for journaling Tasks and session.
 """
 
-import json
 import os
-import time
 from datetime import datetime, timezone
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Dict, Optional
 
 import boto3
-from botocore.exceptions import BotoCoreError, ClientError
+from botocore.exceptions import ClientError
 
 from strands import tool
 
@@ -41,44 +39,6 @@ def _create_error_response(
     return response
 
 
-def _retry_with_backoff(
-    operation_func: Callable[[], Dict[str, Any]],
-    max_attempts: int = 3,
-    base_delay: float = 1.0,
-) -> Dict[str, Any]:
-    for attempt in range(max_attempts):
-        try:
-            result = operation_func()
-
-            if isinstance(result, dict) and "error" in result:
-                error_msg = result["error"].lower()
-                retryable_errors = [
-                    "throttling",
-                    "provisioned throughput exceeded",
-                    "service unavailable",
-                    "internal server error",
-                    "timeout",
-                    "connection",
-                    "network",
-                ]
-                is_retryable = any(err in error_msg for err in retryable_errors)
-
-                if not is_retryable or attempt == max_attempts - 1:
-                    return result
-
-                time.sleep(base_delay * (2**attempt))
-                continue
-
-            return result
-
-        except Exception as e:
-            if attempt == max_attempts - 1:
-                raise e
-            time.sleep(base_delay * (2**attempt))
-
-    return {"error": "Maximum retry attempts exceeded"}
-
-
 @tool
 def check_journal_table_exists() -> Dict[str, Any]:
     """Check if the DynamoDB journal table exists and is accessible."""
@@ -91,21 +51,13 @@ def check_journal_table_exists() -> Dict[str, Any]:
                 {"error_type": "CONFIGURATION_ERROR"},
             )
 
-        def _describe_table():
-            try:
-                response = dynamodb.describe_table(TableName=table_name)
-                return response
-            except ClientError as e:
-                return {
-                    "error": f"{e.response['Error']['Code']}: {e.response['Error']['Message']}"
-                }
-            except Exception as e:
-                return {"error": str(e)}
-
-        result = _retry_with_backoff(_describe_table)
-
-        if "error" in result:
-            error_msg = result["error"]
+        try:
+            response = dynamodb.describe_table(TableName=table_name)
+            table_status = response.get("Table", {}).get("TableStatus", "UNKNOWN")
+        except ClientError as e:
+            error_msg = (
+                f"{e.response['Error']['Code']}: {e.response['Error']['Message']}"
+            )
             if "ResourceNotFoundException" in error_msg:
                 error_type = "TABLE_NOT_FOUND"
             elif "AccessDenied" in error_msg:
@@ -117,8 +69,6 @@ def check_journal_table_exists() -> Dict[str, Any]:
                 f"Table check failed: {error_msg}",
                 {"table_name": table_name, "error_type": error_type},
             )
-
-        table_status = result.get("Table", {}).get("TableStatus", "UNKNOWN")
 
         return {
             "success": True,
@@ -155,30 +105,19 @@ def start_session(session_id: str) -> Dict[str, Any]:
         _session_cache["start_time"] = timestamp
         _session_cache["tasks"] = {}
 
-        def _put_session():
-            try:
-                item = {
-                    "session_id": {"S": session_id},
-                    "record_type": {"S": "SESSION"},
-                    "timestamp": {"S": timestamp},
-                    "status": {"S": "STARTED"},
-                    "start_time": {"S": timestamp},
-                    "ttl": {"N": str(ttl)},
-                }
-                dynamodb.put_item(TableName=table_name, Item=item)
-                return {"success": True}
-            except ClientError as e:
-                return {
-                    "error": f"{e.response['Error']['Code']}: {e.response['Error']['Message']}"
-                }
-            except Exception as e:
-                return {"error": str(e)}
-
-        result = _retry_with_backoff(_put_session)
-
-        if "error" in result:
+        try:
+            item = {
+                "session_id": {"S": session_id},
+                "record_type": {"S": "SESSION"},
+                "timestamp": {"S": timestamp},
+                "status": {"S": "STARTED"},
+                "start_time": {"S": timestamp},
+                "ttl": {"N": str(ttl)},
+            }
+            dynamodb.put_item(TableName=table_name, Item=item)
+        except ClientError as e:
             return _create_error_response(
-                f"Failed to create session: {result['error']}",
+                f"Failed to create session: {e.response['Error']['Code']}: {e.response['Error']['Message']}",
                 {"session_id": session_id},
             )
 
@@ -231,31 +170,20 @@ def start_task(phase_name: str, session_id: Optional[str] = None) -> Dict[str, A
             "session_id": session_id,
         }
 
-        def _put_task():
-            try:
-                item = {
-                    "session_id": {"S": session_id},
-                    "record_type": {"S": record_type},
-                    "timestamp": {"S": timestamp},
-                    "status": {"S": "IN_PROGRESS"},
-                    "phase_name": {"S": phase_name},
-                    "start_time": {"S": timestamp},
-                    "ttl": {"N": str(ttl)},
-                }
-                dynamodb.put_item(TableName=table_name, Item=item)
-                return {"success": True}
-            except ClientError as e:
-                return {
-                    "error": f"{e.response['Error']['Code']}: {e.response['Error']['Message']}"
-                }
-            except Exception as e:
-                return {"error": str(e)}
-
-        result = _retry_with_backoff(_put_task)
-
-        if "error" in result:
+        try:
+            item = {
+                "session_id": {"S": session_id},
+                "record_type": {"S": record_type},
+                "timestamp": {"S": timestamp},
+                "status": {"S": "IN_PROGRESS"},
+                "phase_name": {"S": phase_name},
+                "start_time": {"S": timestamp},
+                "ttl": {"N": str(ttl)},
+            }
+            dynamodb.put_item(TableName=table_name, Item=item)
+        except ClientError as e:
             return _create_error_response(
-                f"Failed to create task: {result['error']}",
+                f"Failed to create task: {e.response['Error']['Code']}: {e.response['Error']['Message']}",
                 {"session_id": session_id, "phase_name": phase_name},
             )
 
@@ -358,42 +286,31 @@ def complete_task(
         except Exception:
             duration_seconds = 0
 
-        def _update_task():
-            try:
-                update_expr = "SET #status = :status, end_time = :end_time, duration_seconds = :duration"
-                expr_values = {
-                    ":status": {"S": status},
-                    ":end_time": {"S": end_time},
-                    ":duration": {"N": str(duration_seconds)},
-                }
+        try:
+            update_expr = "SET #status = :status, end_time = :end_time, duration_seconds = :duration"
+            expr_values = {
+                ":status": {"S": status},
+                ":end_time": {"S": end_time},
+                ":duration": {"N": str(duration_seconds)},
+            }
 
-                if error_message:
-                    update_expr += ", error_message = :error_message"
-                    expr_values[":error_message"] = {"S": error_message}
+            if error_message:
+                update_expr += ", error_message = :error_message"
+                expr_values[":error_message"] = {"S": error_message}
 
-                dynamodb.update_item(
-                    TableName=table_name,
-                    Key={
-                        "session_id": {"S": session_id},
-                        "record_type": {"S": record_type},
-                    },
-                    UpdateExpression=update_expr,
-                    ExpressionAttributeNames={"#status": "status"},
-                    ExpressionAttributeValues=expr_values,
-                )
-                return {"success": True}
-            except ClientError as e:
-                return {
-                    "error": f"{e.response['Error']['Code']}: {e.response['Error']['Message']}"
-                }
-            except Exception as e:
-                return {"error": str(e)}
-
-        result = _retry_with_backoff(_update_task)
-
-        if "error" in result:
+            dynamodb.update_item(
+                TableName=table_name,
+                Key={
+                    "session_id": {"S": session_id},
+                    "record_type": {"S": record_type},
+                },
+                UpdateExpression=update_expr,
+                ExpressionAttributeNames={"#status": "status"},
+                ExpressionAttributeValues=expr_values,
+            )
+        except ClientError as e:
             return _create_error_response(
-                f"Failed to update task: {result['error']}",
+                f"Failed to update task: {e.response['Error']['Code']}: {e.response['Error']['Message']}",
                 {"session_id": session_id, "phase_name": phase_name},
             )
 
@@ -469,42 +386,31 @@ def complete_session(
         except Exception:
             duration_seconds = 0
 
-        def _update_session():
-            try:
-                update_expr = "SET #status = :status, end_time = :end_time, duration_seconds = :duration"
-                expr_values = {
-                    ":status": {"S": status},
-                    ":end_time": {"S": end_time},
-                    ":duration": {"N": str(duration_seconds)},
-                }
+        try:
+            update_expr = "SET #status = :status, end_time = :end_time, duration_seconds = :duration"
+            expr_values = {
+                ":status": {"S": status},
+                ":end_time": {"S": end_time},
+                ":duration": {"N": str(duration_seconds)},
+            }
 
-                if error_message:
-                    update_expr += ", error_message = :error_message"
-                    expr_values[":error_message"] = {"S": error_message}
+            if error_message:
+                update_expr += ", error_message = :error_message"
+                expr_values[":error_message"] = {"S": error_message}
 
-                dynamodb.update_item(
-                    TableName=table_name,
-                    Key={
-                        "session_id": {"S": session_id},
-                        "record_type": {"S": "SESSION"},
-                    },
-                    UpdateExpression=update_expr,
-                    ExpressionAttributeNames={"#status": "status"},
-                    ExpressionAttributeValues=expr_values,
-                )
-                return {"success": True}
-            except ClientError as e:
-                return {
-                    "error": f"{e.response['Error']['Code']}: {e.response['Error']['Message']}"
-                }
-            except Exception as e:
-                return {"error": str(e)}
-
-        result = _retry_with_backoff(_update_session)
-
-        if "error" in result:
+            dynamodb.update_item(
+                TableName=table_name,
+                Key={
+                    "session_id": {"S": session_id},
+                    "record_type": {"S": "SESSION"},
+                },
+                UpdateExpression=update_expr,
+                ExpressionAttributeNames={"#status": "status"},
+                ExpressionAttributeValues=expr_values,
+            )
+        except ClientError as e:
             return _create_error_response(
-                f"Failed to update session: {result['error']}",
+                f"Failed to update session: {e.response['Error']['Code']}: {e.response['Error']['Message']}",
                 {"session_id": session_id},
             )
 
