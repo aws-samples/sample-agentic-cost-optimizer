@@ -9,12 +9,26 @@ Environment Variables:
 
 import os
 from datetime import datetime, timezone
+from enum import Enum
 from typing import Any, Dict, Optional
 
 import boto3
 from botocore.exceptions import ClientError
 
-from strands import tool
+from strands import tool, ToolContext
+
+
+class TaskStatus(str, Enum):
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+    CANCELLED = "CANCELLED"
+    SKIPPED = "SKIPPED"
+
+
+class SessionStatus(str, Enum):
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+
 
 dynamodb = boto3.client("dynamodb")
 
@@ -42,8 +56,10 @@ def _create_error_response(
 @tool
 def check_journal_table_exists() -> Dict[str, Any]:
     """Check if the DynamoDB journal table exists and is accessible."""
+
     try:
         table_name = os.environ.get("JOURNAL_TABLE_NAME", "")
+
 
         if not table_name:
             return _create_error_response(
@@ -70,28 +86,30 @@ def check_journal_table_exists() -> Dict[str, Any]:
                 {"table_name": table_name, "error_type": error_type},
             )
 
-        return {
+        result = {
             "success": True,
             "table_name": table_name,
             "table_status": table_status,
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
+        return result
+
     except Exception as e:
         return _create_error_response(f"Unexpected error: {str(e)}")
 
 
-@tool
-def start_session(session_id: str) -> Dict[str, Any]:
+@tool(context=True)
+def start_session(tool_context: ToolContext) -> Dict[str, Any]:
     """
-    Start a new journaling session.
+    Start a new journaling session using session_id from invocation state.
+    """
 
-    Args:
-        session_id: Unique identifier for this session
-    """
     try:
+        session_id = tool_context.invocation_state.get("session_id")
+
         if not session_id:
-            return _create_error_response("session_id is required")
+            return _create_error_response("session_id not found in invocation state")
 
         table_name = os.environ.get("JOURNAL_TABLE_NAME", "")
         if not table_name:
@@ -121,7 +139,7 @@ def start_session(session_id: str) -> Dict[str, Any]:
                 {"session_id": session_id},
             )
 
-        return {
+        result = {
             "success": True,
             "session_id": session_id,
             "start_time": timestamp,
@@ -129,29 +147,33 @@ def start_session(session_id: str) -> Dict[str, Any]:
             "timestamp": timestamp,
         }
 
+        return result
+
     except Exception as e:
         return _create_error_response(f"Unexpected error: {str(e)}")
 
 
-@tool
-def start_task(phase_name: str, session_id: Optional[str] = None) -> Dict[str, Any]:
+@tool(context=True)
+def start_task(phase_name: str, tool_context: ToolContext) -> Dict[str, Any]:
     """
     Start tracking a new task/phase.
 
     Args:
         phase_name: Name of the workflow phase
-        session_id: Optional session ID (uses cached if not provided)
     """
+
     try:
         if not phase_name:
             return _create_error_response("phase_name is required")
 
-        if not session_id:
-            session_id = _session_cache.get("session_id")
+        session_id = tool_context.invocation_state.get(
+            "session_id"
+        ) or _session_cache.get("session_id")
+
 
         if not session_id:
             return _create_error_response(
-                "No active session found. Call start_session() first or provide session_id.",
+                "No active session found. Call start_session() first.",
                 {"error_type": "NO_SESSION"},
             )
 
@@ -226,12 +248,12 @@ def _find_task_by_phase(session_id: str, phase_name: str) -> Optional[Dict[str, 
         return None
 
 
-@tool
+@tool(context=True)
 def complete_task(
     phase_name: str,
-    status: str = "COMPLETED",
+    tool_context: ToolContext,
+    status: TaskStatus = TaskStatus.COMPLETED,
     error_message: Optional[str] = None,
-    session_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Complete a task/phase and update its status.
@@ -240,14 +262,16 @@ def complete_task(
         phase_name: Name of the phase to complete (must match start_task call)
         status: Final status (COMPLETED, FAILED, CANCELLED, or SKIPPED)
         error_message: Optional error message if status is FAILED
-        session_id: Optional session ID (uses cached if not provided)
     """
+
     try:
         if not phase_name:
             return _create_error_response("phase_name is required")
 
-        if not session_id:
-            session_id = _session_cache.get("session_id")
+        session_id = tool_context.invocation_state.get(
+            "session_id"
+        ) or _session_cache.get("session_id")
+
 
         if not session_id:
             return _create_error_response(
@@ -327,11 +351,11 @@ def complete_task(
         return _create_error_response(f"Unexpected error: {str(e)}")
 
 
-@tool
+@tool(context=True)
 def complete_session(
-    status: str = "COMPLETED",
+    tool_context: ToolContext,
+    status: SessionStatus = SessionStatus.COMPLETED,
     error_message: Optional[str] = None,
-    session_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Complete a session and finalize tracking.
@@ -339,15 +363,17 @@ def complete_session(
     Args:
         status: Final status (COMPLETED or FAILED)
         error_message: Optional error message if status is FAILED
-        session_id: Optional session ID (uses cached if not provided)
     """
+
     try:
-        if not session_id:
-            session_id = _session_cache.get("session_id")
+        session_id = tool_context.invocation_state.get(
+            "session_id"
+        ) or _session_cache.get("session_id")
+
 
         if not session_id:
             return _create_error_response(
-                "No active session found. Provide session_id parameter.",
+                "No active session found.",
                 {"error_type": "NO_SESSION"},
             )
 
