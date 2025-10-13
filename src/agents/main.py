@@ -1,4 +1,6 @@
 import os
+import uuid
+from datetime import datetime, timezone
 
 from bedrock_agentcore.runtime import BedrockAgentCoreApp
 from strands import Agent
@@ -57,8 +59,13 @@ def invoke(payload):
     # Print DynamoDb table name
     print(f"Processing with journal table: {journal_table_name}")
 
-    # Get response from agent
-    response = agent(user_message)
+    # Generate unique session ID for this invocation
+    current_time = datetime.now(timezone.utc)
+    session_id = f"session-{current_time.strftime('%Y-%m-%d-%H%M%S')}-{str(uuid.uuid4())[:8]}"
+    print(f"Generated session ID: {session_id}")
+    
+    # Get response from agent with session_id in invocation state
+    response = agent(user_message, session_id=session_id)
 
     # Include S3 bucket info in response
     response_with_bucket = f"S3 Bucket: {s3_bucket_name}\n\n{response}"
