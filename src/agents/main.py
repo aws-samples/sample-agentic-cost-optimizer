@@ -12,13 +12,7 @@ import os
 
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 
-from tools import (
-    check_journal_table_exists,
-    start_session,
-    start_task,
-    complete_task,
-    complete_session,
-)
+from tools import journal
 
 # Global env variables
 os.environ["BYPASS_TOOL_CONSENT"] = "true"
@@ -37,11 +31,7 @@ agent = Agent(
     system_prompt=SYSTEM_PROMPT,
     tools=[
         use_aws,
-        check_journal_table_exists,
-        start_session,
-        start_task,
-        complete_task,
-        complete_session,
+        journal,
     ],
 )
 
@@ -61,9 +51,11 @@ def invoke(payload):
 
     # Generate unique session ID for this invocation
     current_time = datetime.now(timezone.utc)
-    session_id = f"session-{current_time.strftime('%Y-%m-%d-%H%M%S')}-{str(uuid.uuid4())[:8]}"
+    session_id = (
+        f"session-{current_time.strftime('%Y-%m-%d-%H%M%S')}-{str(uuid.uuid4())[:8]}"
+    )
     print(f"Generated session ID: {session_id}")
-    
+
     # Get response from agent with session_id in invocation state
     response = agent(user_message, session_id=session_id)
 
