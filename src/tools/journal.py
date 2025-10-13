@@ -1,7 +1,7 @@
 """
-DynamoDB Journaling Tools for Cost Optimization Agent
+Unified DynamoDB Journaling Tool for Cost Optimization Agent
 
-Provides stateful session and task tracking with automatic ID management.
+Provides stateful session and task tracking with automatic ID management through a single tool interface.
 
 Environment Variables:
 - JOURNAL_TABLE_NAME: DynamoDB table name for journaling Tasks and session.
@@ -53,14 +53,10 @@ def _create_error_response(
     return response
 
 
-@tool
-def check_journal_table_exists() -> Dict[str, Any]:
+def _check_table_exists() -> Dict[str, Any]:
     """Check if the DynamoDB journal table exists and is accessible."""
-
     try:
         table_name = os.environ.get("JOURNAL_TABLE_NAME", "")
-
-
         if not table_name:
             return _create_error_response(
                 "JOURNAL_TABLE_NAME environment variable not set",
@@ -86,28 +82,20 @@ def check_journal_table_exists() -> Dict[str, Any]:
                 {"table_name": table_name, "error_type": error_type},
             )
 
-        result = {
+        return {
             "success": True,
             "table_name": table_name,
             "table_status": table_status,
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
-
-        return result
-
     except Exception as e:
         return _create_error_response(f"Unexpected error: {str(e)}")
 
 
-@tool(context=True)
-def start_session(tool_context: ToolContext) -> Dict[str, Any]:
-    """
-    Start a new journaling session using session_id from invocation state.
-    """
-
+def _start_session(tool_context: ToolContext) -> Dict[str, Any]:
+    """Start a new journaling session using session_id from invocation state."""
     try:
         session_id = tool_context.invocation_state.get("session_id")
-
         if not session_id:
             return _create_error_response("session_id not found in invocation state")
 
@@ -139,29 +127,19 @@ def start_session(tool_context: ToolContext) -> Dict[str, Any]:
                 {"session_id": session_id},
             )
 
-        result = {
+        return {
             "success": True,
             "session_id": session_id,
             "start_time": timestamp,
             "status": "STARTED",
             "timestamp": timestamp,
         }
-
-        return result
-
     except Exception as e:
         return _create_error_response(f"Unexpected error: {str(e)}")
 
 
-@tool(context=True)
-def start_task(phase_name: str, tool_context: ToolContext) -> Dict[str, Any]:
-    """
-    Start tracking a new task/phase.
-
-    Args:
-        phase_name: Name of the workflow phase
-    """
-
+def _start_task(phase_name: str, tool_context: ToolContext) -> Dict[str, Any]:
+    """Start tracking a new task/phase."""
     try:
         if not phase_name:
             return _create_error_response("phase_name is required")
@@ -169,8 +147,6 @@ def start_task(phase_name: str, tool_context: ToolContext) -> Dict[str, Any]:
         session_id = tool_context.invocation_state.get(
             "session_id"
         ) or _session_cache.get("session_id")
-
-
         if not session_id:
             return _create_error_response(
                 "No active session found. Call start_session() first.",
@@ -216,7 +192,6 @@ def start_task(phase_name: str, tool_context: ToolContext) -> Dict[str, Any]:
             "status": "IN_PROGRESS",
             "timestamp": timestamp,
         }
-
     except Exception as e:
         return _create_error_response(f"Unexpected error: {str(e)}")
 
@@ -242,28 +217,18 @@ def _find_task_by_phase(session_id: str, phase_name: str) -> Optional[Dict[str, 
                     "record_type": item.get("record_type", {}).get("S", ""),
                     "start_time": item.get("start_time", {}).get("S", ""),
                 }
-
         return None
     except Exception:
         return None
 
 
-@tool(context=True)
-def complete_task(
+def _complete_task(
     phase_name: str,
     tool_context: ToolContext,
     status: TaskStatus = TaskStatus.COMPLETED,
     error_message: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """
-    Complete a task/phase and update its status.
-
-    Args:
-        phase_name: Name of the phase to complete (must match start_task call)
-        status: Final status (COMPLETED, FAILED, CANCELLED, or SKIPPED)
-        error_message: Optional error message if status is FAILED
-    """
-
+    """Complete a task/phase and update its status."""
     try:
         if not phase_name:
             return _create_error_response("phase_name is required")
@@ -271,16 +236,13 @@ def complete_task(
         session_id = tool_context.invocation_state.get(
             "session_id"
         ) or _session_cache.get("session_id")
-
-
         if not session_id:
             return _create_error_response(
-                "No active session found. Provide session_id parameter.",
+                "No active session found.",
                 {"error_type": "NO_SESSION"},
             )
 
         task_info = _session_cache["tasks"].get(phase_name)
-
         if not task_info or task_info.get("session_id") != session_id:
             task_info = _find_task_by_phase(session_id, phase_name)
 
@@ -300,7 +262,6 @@ def complete_task(
 
         record_type = task_info["record_type"]
         start_time = task_info["start_time"]
-
         current_time = datetime.now(timezone.utc)
         end_time = current_time.isoformat()
 
@@ -313,7 +274,7 @@ def complete_task(
         try:
             update_expr = "SET #status = :status, end_time = :end_time, duration_seconds = :duration"
             expr_values = {
-                ":status": {"S": status},
+                ":status": {"S": status.value},
                 ":end_time": {"S": end_time},
                 ":duration": {"N": str(duration_seconds)},
             }
@@ -342,39 +303,27 @@ def complete_task(
             "success": True,
             "session_id": session_id,
             "phase_name": phase_name,
-            "status": status,
+            "status": status.value,
             "duration_seconds": duration_seconds,
             "timestamp": end_time,
         }
-
     except Exception as e:
         return _create_error_response(f"Unexpected error: {str(e)}")
 
 
-@tool(context=True)
-def complete_session(
+def _complete_session(
     tool_context: ToolContext,
     status: SessionStatus = SessionStatus.COMPLETED,
     error_message: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """
-    Complete a session and finalize tracking.
-
-    Args:
-        status: Final status (COMPLETED or FAILED)
-        error_message: Optional error message if status is FAILED
-    """
-
+    """Complete a session and finalize tracking."""
     try:
         session_id = tool_context.invocation_state.get(
             "session_id"
         ) or _session_cache.get("session_id")
-
-
         if not session_id:
             return _create_error_response(
-                "No active session found.",
-                {"error_type": "NO_SESSION"},
+                "No active session found.", {"error_type": "NO_SESSION"}
             )
 
         start_time = _session_cache.get("start_time")
@@ -415,7 +364,7 @@ def complete_session(
         try:
             update_expr = "SET #status = :status, end_time = :end_time, duration_seconds = :duration"
             expr_values = {
-                ":status": {"S": status},
+                ":status": {"S": status.value},
                 ":end_time": {"S": end_time},
                 ":duration": {"N": str(duration_seconds)},
             }
@@ -426,10 +375,7 @@ def complete_session(
 
             dynamodb.update_item(
                 TableName=table_name,
-                Key={
-                    "session_id": {"S": session_id},
-                    "record_type": {"S": "SESSION"},
-                },
+                Key={"session_id": {"S": session_id}, "record_type": {"S": "SESSION"}},
                 UpdateExpression=update_expr,
                 ExpressionAttributeNames={"#status": "status"},
                 ExpressionAttributeValues=expr_values,
@@ -447,10 +393,53 @@ def complete_session(
         return {
             "success": True,
             "session_id": session_id,
-            "status": status,
+            "status": status.value,
             "duration_seconds": duration_seconds,
             "timestamp": end_time,
         }
-
     except Exception as e:
         return _create_error_response(f"Unexpected error: {str(e)}")
+
+
+@tool(context=True)
+def journal(
+    action: str,
+    tool_context: ToolContext,
+    phase_name: Optional[str] = None,
+    status: Optional[str] = None,
+    error_message: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Unified DynamoDB journaling tool for session and task tracking.
+
+    Args:
+        action: Action to perform (check_table, start_session, start_task, complete_task, complete_session)
+        phase_name: Name of the task/phase (required for start_task and complete_task)
+        status: Status for completion (COMPLETED, FAILED, CANCELLED, SKIPPED for tasks; COMPLETED, FAILED for sessions)
+        error_message: Optional error message for failed completions
+
+    Returns:
+        Dictionary with success status and operation results
+    """
+    if action == "check_table":
+        return _check_table_exists()
+    elif action == "start_session":
+        return _start_session(tool_context)
+    elif action == "start_task":
+        if not phase_name:
+            return _create_error_response(
+                "phase_name is required for start_task action"
+            )
+        return _start_task(phase_name, tool_context)
+    elif action == "complete_task":
+        if not phase_name:
+            return _create_error_response(
+                "phase_name is required for complete_task action"
+            )
+        task_status = TaskStatus(status) if status else TaskStatus.COMPLETED
+        return _complete_task(phase_name, tool_context, task_status, error_message)
+    elif action == "complete_session":
+        session_status = SessionStatus(status) if status else SessionStatus.COMPLETED
+        return _complete_session(tool_context, session_status, error_message)
+    else:
+        return _create_error_response(f"Unknown action: {action}")
