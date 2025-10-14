@@ -7,12 +7,7 @@ from strands import Agent
 from strands_tools import use_aws
 
 # Import all journaling tools
-import sys
-import os
-
-sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
-
-from tools import journal
+from ..tools import journal
 
 # Global env variables
 os.environ["BYPASS_TOOL_CONSENT"] = "true"
