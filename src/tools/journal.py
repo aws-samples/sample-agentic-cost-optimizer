@@ -1,7 +1,8 @@
 """
 Unified DynamoDB Journaling Tool for Cost Optimization Agent
 
-Provides stateful session and task tracking with automatic ID management through a single tool interface.
+Provides stateful session and task tracking with automatic ID management
+through a single tool interface.
 
 Environment Variables:
 - JOURNAL_TABLE_NAME: DynamoDB table name for journaling Tasks and session.
@@ -14,8 +15,7 @@ from typing import Any, Dict, Optional
 
 import boto3
 from botocore.exceptions import ClientError
-
-from strands import tool, ToolContext
+from strands import ToolContext, tool
 
 
 class TaskStatus(str, Enum):
@@ -55,7 +55,9 @@ def _create_error_response(
 
 def _get_session_id(tool_context: ToolContext) -> Optional[str]:
     """Get session ID from context or cache."""
-    return tool_context.invocation_state.get("session_id") or _session_cache.get("session_id")
+    return tool_context.invocation_state.get("session_id") or _session_cache.get(
+        "session_id"
+    )
 
 
 def _get_table_name() -> Optional[str]:
@@ -81,7 +83,9 @@ def _calculate_duration(start_time: str) -> int:
         return 0
 
 
-def _create_dynamodb_item(session_id: str, record_type: str, timestamp: str, ttl: int, **kwargs) -> Dict[str, Any]:
+def _create_dynamodb_item(
+    session_id: str, record_type: str, timestamp: str, ttl: int, **kwargs
+) -> Dict[str, Any]:
     """Create a DynamoDB item with common fields."""
     item = {
         "session_id": {"S": session_id},
@@ -94,19 +98,28 @@ def _create_dynamodb_item(session_id: str, record_type: str, timestamp: str, ttl
     return item
 
 
-def _update_dynamodb_item(session_id: str, record_type: str, status: str, end_time: str, duration: int, error_message: Optional[str] = None) -> Dict[str, Any]:
+def _update_dynamodb_item(
+    session_id: str,
+    record_type: str,
+    status: str,
+    end_time: str,
+    duration: int,
+    error_message: Optional[str] = None,
+) -> Dict[str, Any]:
     """Create update expression and values for DynamoDB."""
-    update_expr = "SET #status = :status, end_time = :end_time, duration_seconds = :duration"
+    update_expr = (
+        "SET #status = :status, end_time = :end_time, " "duration_seconds = :duration"
+    )
     expr_values = {
         ":status": {"S": status},
         ":end_time": {"S": end_time},
         ":duration": {"N": str(duration)},
     }
-    
+
     if error_message:
         update_expr += ", error_message = :error_message"
         expr_values[":error_message"] = {"S": error_message}
-    
+
     return {
         "UpdateExpression": update_expr,
         "ExpressionAttributeNames": {"#status": "status"},
@@ -114,15 +127,19 @@ def _update_dynamodb_item(session_id: str, record_type: str, status: str, end_ti
         "Key": {
             "session_id": {"S": session_id},
             "record_type": {"S": record_type},
-        }
+        },
     }
 
 
-def _handle_dynamodb_error(operation: str, error: ClientError, context: Dict[str, str]) -> Dict[str, Any]:
+def _handle_dynamodb_error(
+    operation: str, error: ClientError, context: Dict[str, str]
+) -> Dict[str, Any]:
     """Handle DynamoDB client errors consistently."""
+    error_code = error.response["Error"]["Code"]
+    error_msg = error.response["Error"]["Message"]
     return _create_error_response(
-        f"Failed to {operation}: {error.response['Error']['Code']}: {error.response['Error']['Message']}",
-        context
+        f"Failed to {operation}: {error_code}: {error_msg}",
+        context,
     )
 
 
@@ -145,12 +162,18 @@ def _start_session(tool_context: ToolContext) -> Dict[str, Any]:
 
         try:
             item = _create_dynamodb_item(
-                session_id, "SESSION", timestamp, ttl,
-                status="STARTED", start_time=timestamp
+                session_id,
+                "SESSION",
+                timestamp,
+                ttl,
+                status="STARTED",
+                start_time=timestamp,
             )
             dynamodb.put_item(TableName=table_name, Item=item)
         except ClientError as e:
-            return _handle_dynamodb_error("create session", e, {"session_id": session_id})
+            return _handle_dynamodb_error(
+                "create session", e, {"session_id": session_id}
+            )
 
         return {
             "success": True,
@@ -191,12 +214,19 @@ def _start_task(phase_name: str, tool_context: ToolContext) -> Dict[str, Any]:
 
         try:
             item = _create_dynamodb_item(
-                session_id, record_type, timestamp, ttl,
-                status="IN_PROGRESS", phase_name=phase_name, start_time=timestamp
+                session_id,
+                record_type,
+                timestamp,
+                ttl,
+                status="IN_PROGRESS",
+                phase_name=phase_name,
+                start_time=timestamp,
             )
             dynamodb.put_item(TableName=table_name, Item=item)
         except ClientError as e:
-            return _handle_dynamodb_error("create task", e, {"session_id": session_id, "phase_name": phase_name})
+            return _handle_dynamodb_error(
+                "create task", e, {"session_id": session_id, "phase_name": phase_name}
+            )
 
         return {
             "success": True,
@@ -217,7 +247,9 @@ def _find_task_by_phase(session_id: str, phase_name: str) -> Optional[Dict[str, 
 
         response = dynamodb.query(
             TableName=table_name,
-            KeyConditionExpression="session_id = :sid AND begins_with(record_type, :task)",
+            KeyConditionExpression=(
+                "session_id = :sid AND begins_with(record_type, :task)"
+            ),
             ExpressionAttributeValues={
                 ":sid": {"S": session_id},
                 ":task": {"S": "TASK#"},
@@ -259,7 +291,8 @@ def _complete_task(
 
         if not task_info:
             return _create_error_response(
-                f"Task '{phase_name}' not found for session '{session_id}'. Call start_task() first.",
+                f"Task '{phase_name}' not found for session '{session_id}'. "
+                f"Call start_task() first.",
                 {
                     "error_type": "TASK_NOT_FOUND",
                     "phase_name": phase_name,
@@ -278,11 +311,18 @@ def _complete_task(
 
         try:
             update_params = _update_dynamodb_item(
-                session_id, record_type, status.value, end_time, duration_seconds, error_message
+                session_id,
+                record_type,
+                status.value,
+                end_time,
+                duration_seconds,
+                error_message,
             )
             dynamodb.update_item(TableName=table_name, **update_params)
         except ClientError as e:
-            return _handle_dynamodb_error("update task", e, {"session_id": session_id, "phase_name": phase_name})
+            return _handle_dynamodb_error(
+                "update task", e, {"session_id": session_id, "phase_name": phase_name}
+            )
 
         return {
             "success": True,
@@ -342,11 +382,18 @@ def _complete_session(
 
         try:
             update_params = _update_dynamodb_item(
-                session_id, "SESSION", status.value, end_time, duration_seconds, error_message
+                session_id,
+                "SESSION",
+                status.value,
+                end_time,
+                duration_seconds,
+                error_message,
             )
             dynamodb.update_item(TableName=table_name, **update_params)
         except ClientError as e:
-            return _handle_dynamodb_error("update session", e, {"session_id": session_id})
+            return _handle_dynamodb_error(
+                "update session", e, {"session_id": session_id}
+            )
 
         _session_cache["session_id"] = None
         _session_cache["start_time"] = None
@@ -375,9 +422,12 @@ def journal(
     Unified DynamoDB journaling tool for session and task tracking.
 
     Args:
-        action: Action to perform (check_table, start_session, start_task, complete_task, complete_session)
-        phase_name: Name of the task/phase (required for start_task and complete_task)
-        status: Status for completion (COMPLETED, FAILED, CANCELLED, SKIPPED for tasks; COMPLETED, FAILED for sessions)
+        action: Action to perform (check_table, start_session, start_task,
+            complete_task, complete_session)
+        phase_name: Name of the task/phase (required for start_task and
+            complete_task)
+        status: Status for completion (COMPLETED, FAILED, CANCELLED, SKIPPED
+            for tasks; COMPLETED, FAILED for sessions)
         error_message: Optional error message for failed completions
 
     Returns:
