@@ -30,7 +30,7 @@ class SessionStatus(str, Enum):
     FAILED = "FAILED"
 
 
-dynamodb = boto3.client("dynamodb")
+dynamodb = boto3.resource("dynamodb")
 
 _session_cache: Dict[str, Any] = {
     "session_id": None,
@@ -88,13 +88,12 @@ def _create_dynamodb_item(
 ) -> Dict[str, Any]:
     """Create a DynamoDB item with common fields."""
     item = {
-        "session_id": {"S": session_id},
-        "record_type": {"S": record_type},
-        "timestamp": {"S": timestamp},
-        "ttl": {"N": str(ttl)},
+        "session_id": session_id,
+        "record_type": record_type,
+        "timestamp": timestamp,
+        "ttl": ttl,
     }
-    for key, value in kwargs.items():
-        item[key] = {"S": str(value)}
+    item.update(kwargs)
     return item
 
 
@@ -111,22 +110,22 @@ def _update_dynamodb_item(
         "SET #status = :status, end_time = :end_time, " "duration_seconds = :duration"
     )
     expr_values = {
-        ":status": {"S": status},
-        ":end_time": {"S": end_time},
-        ":duration": {"N": str(duration)},
+        ":status": status,
+        ":end_time": end_time,
+        ":duration": duration,
     }
 
     if error_message:
         update_expr += ", error_message = :error_message"
-        expr_values[":error_message"] = {"S": error_message}
+        expr_values[":error_message"] = error_message
 
     return {
         "UpdateExpression": update_expr,
         "ExpressionAttributeNames": {"#status": "status"},
         "ExpressionAttributeValues": expr_values,
         "Key": {
-            "session_id": {"S": session_id},
-            "record_type": {"S": record_type},
+            "session_id": session_id,
+            "record_type": record_type,
         },
     }
 
@@ -161,6 +160,7 @@ def _start_session(tool_context: ToolContext) -> Dict[str, Any]:
         _session_cache["tasks"] = {}
 
         try:
+            table = dynamodb.Table(table_name)
             item = _create_dynamodb_item(
                 session_id,
                 "SESSION",
@@ -169,7 +169,7 @@ def _start_session(tool_context: ToolContext) -> Dict[str, Any]:
                 status="STARTED",
                 start_time=timestamp,
             )
-            dynamodb.put_item(TableName=table_name, Item=item)
+            table.put_item(Item=item)
         except ClientError as e:
             return _handle_dynamodb_error(
                 "create session", e, {"session_id": session_id}
@@ -213,6 +213,7 @@ def _start_task(phase_name: str, tool_context: ToolContext) -> Dict[str, Any]:
         }
 
         try:
+            table = dynamodb.Table(table_name)
             item = _create_dynamodb_item(
                 session_id,
                 record_type,
@@ -222,7 +223,7 @@ def _start_task(phase_name: str, tool_context: ToolContext) -> Dict[str, Any]:
                 phase_name=phase_name,
                 start_time=timestamp,
             )
-            dynamodb.put_item(TableName=table_name, Item=item)
+            table.put_item(Item=item)
         except ClientError as e:
             return _handle_dynamodb_error(
                 "create task", e, {"session_id": session_id, "phase_name": phase_name}
@@ -245,22 +246,22 @@ def _find_task_by_phase(session_id: str, phase_name: str) -> Optional[Dict[str, 
         if not table_name:
             return None
 
-        response = dynamodb.query(
-            TableName=table_name,
+        table = dynamodb.Table(table_name)
+        response = table.query(
             KeyConditionExpression=(
                 "session_id = :sid AND begins_with(record_type, :task)"
             ),
             ExpressionAttributeValues={
-                ":sid": {"S": session_id},
-                ":task": {"S": "TASK#"},
+                ":sid": session_id,
+                ":task": "TASK#",
             },
         )
 
         for item in response.get("Items", []):
-            if item.get("phase_name", {}).get("S") == phase_name:
+            if item.get("phase_name") == phase_name:
                 return {
-                    "record_type": item.get("record_type", {}).get("S", ""),
-                    "start_time": item.get("start_time", {}).get("S", ""),
+                    "record_type": item.get("record_type", ""),
+                    "start_time": item.get("start_time", ""),
                 }
         return None
     except Exception:
@@ -310,6 +311,7 @@ def _complete_task(
         duration_seconds = _calculate_duration(start_time)
 
         try:
+            table = dynamodb.Table(table_name)
             update_params = _update_dynamodb_item(
                 session_id,
                 record_type,
@@ -318,7 +320,7 @@ def _complete_task(
                 duration_seconds,
                 error_message,
             )
-            dynamodb.update_item(TableName=table_name, **update_params)
+            table.update_item(**update_params)
         except ClientError as e:
             return _handle_dynamodb_error(
                 "update task", e, {"session_id": session_id, "phase_name": phase_name}
@@ -355,15 +357,15 @@ def _complete_session(
         if not start_time:
             try:
                 table_name = _get_table_name()
-                response = dynamodb.get_item(
-                    TableName=table_name,
+                table = dynamodb.Table(table_name)
+                response = table.get_item(
                     Key={
-                        "session_id": {"S": session_id},
-                        "record_type": {"S": "SESSION"},
+                        "session_id": session_id,
+                        "record_type": "SESSION",
                     },
                 )
                 item = response.get("Item", {})
-                start_time = item.get("start_time", {}).get("S")
+                start_time = item.get("start_time")
             except Exception:
                 pass
 
@@ -381,6 +383,7 @@ def _complete_session(
         duration_seconds = _calculate_duration(start_time)
 
         try:
+            table = dynamodb.Table(table_name)
             update_params = _update_dynamodb_item(
                 session_id,
                 "SESSION",
@@ -389,7 +392,7 @@ def _complete_session(
                 duration_seconds,
                 error_message,
             )
-            dynamodb.update_item(TableName=table_name, **update_params)
+            table.update_item(**update_params)
         except ClientError as e:
             return _handle_dynamodb_error(
                 "update session", e, {"session_id": session_id}
