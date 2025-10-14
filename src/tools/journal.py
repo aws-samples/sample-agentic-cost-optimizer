@@ -53,45 +53,6 @@ def _create_error_response(
     return response
 
 
-def _check_table_exists() -> Dict[str, Any]:
-    """Check if the DynamoDB journal table exists and is accessible."""
-    try:
-        table_name = os.environ.get("JOURNAL_TABLE_NAME", "")
-        if not table_name:
-            return _create_error_response(
-                "JOURNAL_TABLE_NAME environment variable not set",
-                {"error_type": "CONFIGURATION_ERROR"},
-            )
-
-        try:
-            response = dynamodb.describe_table(TableName=table_name)
-            table_status = response.get("Table", {}).get("TableStatus", "UNKNOWN")
-        except ClientError as e:
-            error_msg = (
-                f"{e.response['Error']['Code']}: {e.response['Error']['Message']}"
-            )
-            if "ResourceNotFoundException" in error_msg:
-                error_type = "TABLE_NOT_FOUND"
-            elif "AccessDenied" in error_msg:
-                error_type = "ACCESS_DENIED"
-            else:
-                error_type = "DYNAMODB_ERROR"
-
-            return _create_error_response(
-                f"Table check failed: {error_msg}",
-                {"table_name": table_name, "error_type": error_type},
-            )
-
-        return {
-            "success": True,
-            "table_name": table_name,
-            "table_status": table_status,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-        }
-    except Exception as e:
-        return _create_error_response(f"Unexpected error: {str(e)}")
-
-
 def _start_session(tool_context: ToolContext) -> Dict[str, Any]:
     """Start a new journaling session using session_id from invocation state."""
     try:
@@ -421,9 +382,7 @@ def journal(
     Returns:
         Dictionary with success status and operation results
     """
-    if action == "check_table":
-        return _check_table_exists()
-    elif action == "start_session":
+    if action == "start_session":
         return _start_session(tool_context)
     elif action == "start_task":
         if not phase_name:
