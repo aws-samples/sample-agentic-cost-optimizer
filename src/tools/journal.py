@@ -53,6 +53,79 @@ def _create_error_response(
     return response
 
 
+def _get_session_id(tool_context: ToolContext) -> Optional[str]:
+    """Get session ID from context or cache."""
+    return tool_context.invocation_state.get("session_id") or _session_cache.get("session_id")
+
+
+def _get_table_name() -> Optional[str]:
+    """Get table name from environment."""
+    return os.environ.get("JOURNAL_TABLE_NAME", "")
+
+
+def _create_timestamp_and_ttl() -> tuple[str, int]:
+    """Create timestamp and TTL for DynamoDB items."""
+    current_time = datetime.now(timezone.utc)
+    timestamp = current_time.isoformat()
+    ttl = int(current_time.timestamp()) + (30 * 24 * 60 * 60)
+    return timestamp, ttl
+
+
+def _calculate_duration(start_time: str) -> int:
+    """Calculate duration in seconds from start time."""
+    try:
+        current_time = datetime.now(timezone.utc)
+        start_dt = datetime.fromisoformat(start_time.replace("Z", "+00:00"))
+        return int((current_time - start_dt).total_seconds())
+    except Exception:
+        return 0
+
+
+def _create_dynamodb_item(session_id: str, record_type: str, timestamp: str, ttl: int, **kwargs) -> Dict[str, Any]:
+    """Create a DynamoDB item with common fields."""
+    item = {
+        "session_id": {"S": session_id},
+        "record_type": {"S": record_type},
+        "timestamp": {"S": timestamp},
+        "ttl": {"N": str(ttl)},
+    }
+    for key, value in kwargs.items():
+        item[key] = {"S": str(value)}
+    return item
+
+
+def _update_dynamodb_item(session_id: str, record_type: str, status: str, end_time: str, duration: int, error_message: Optional[str] = None) -> Dict[str, Any]:
+    """Create update expression and values for DynamoDB."""
+    update_expr = "SET #status = :status, end_time = :end_time, duration_seconds = :duration"
+    expr_values = {
+        ":status": {"S": status},
+        ":end_time": {"S": end_time},
+        ":duration": {"N": str(duration)},
+    }
+    
+    if error_message:
+        update_expr += ", error_message = :error_message"
+        expr_values[":error_message"] = {"S": error_message}
+    
+    return {
+        "UpdateExpression": update_expr,
+        "ExpressionAttributeNames": {"#status": "status"},
+        "ExpressionAttributeValues": expr_values,
+        "Key": {
+            "session_id": {"S": session_id},
+            "record_type": {"S": record_type},
+        }
+    }
+
+
+def _handle_dynamodb_error(operation: str, error: ClientError, context: Dict[str, str]) -> Dict[str, Any]:
+    """Handle DynamoDB client errors consistently."""
+    return _create_error_response(
+        f"Failed to {operation}: {error.response['Error']['Code']}: {error.response['Error']['Message']}",
+        context
+    )
+
+
 def _start_session(tool_context: ToolContext) -> Dict[str, Any]:
     """Start a new journaling session using session_id from invocation state."""
     try:
@@ -60,33 +133,24 @@ def _start_session(tool_context: ToolContext) -> Dict[str, Any]:
         if not session_id:
             return _create_error_response("session_id not found in invocation state")
 
-        table_name = os.environ.get("JOURNAL_TABLE_NAME", "")
+        table_name = _get_table_name()
         if not table_name:
             return _create_error_response("JOURNAL_TABLE_NAME not set")
 
-        current_time = datetime.now(timezone.utc)
-        timestamp = current_time.isoformat()
-        ttl = int(current_time.timestamp()) + (30 * 24 * 60 * 60)
+        timestamp, ttl = _create_timestamp_and_ttl()
 
         _session_cache["session_id"] = session_id
         _session_cache["start_time"] = timestamp
         _session_cache["tasks"] = {}
 
         try:
-            item = {
-                "session_id": {"S": session_id},
-                "record_type": {"S": "SESSION"},
-                "timestamp": {"S": timestamp},
-                "status": {"S": "STARTED"},
-                "start_time": {"S": timestamp},
-                "ttl": {"N": str(ttl)},
-            }
+            item = _create_dynamodb_item(
+                session_id, "SESSION", timestamp, ttl,
+                status="STARTED", start_time=timestamp
+            )
             dynamodb.put_item(TableName=table_name, Item=item)
         except ClientError as e:
-            return _create_error_response(
-                f"Failed to create session: {e.response['Error']['Code']}: {e.response['Error']['Message']}",
-                {"session_id": session_id},
-            )
+            return _handle_dynamodb_error("create session", e, {"session_id": session_id})
 
         return {
             "success": True,
@@ -105,22 +169,18 @@ def _start_task(phase_name: str, tool_context: ToolContext) -> Dict[str, Any]:
         if not phase_name:
             return _create_error_response("phase_name is required")
 
-        session_id = tool_context.invocation_state.get(
-            "session_id"
-        ) or _session_cache.get("session_id")
+        session_id = _get_session_id(tool_context)
         if not session_id:
             return _create_error_response(
                 "No active session found. Call start_session() first.",
                 {"error_type": "NO_SESSION"},
             )
 
-        table_name = os.environ.get("JOURNAL_TABLE_NAME", "")
+        table_name = _get_table_name()
         if not table_name:
             return _create_error_response("JOURNAL_TABLE_NAME not set")
 
-        current_time = datetime.now(timezone.utc)
-        timestamp = current_time.isoformat()
-        ttl = int(current_time.timestamp()) + (30 * 24 * 60 * 60)
+        timestamp, ttl = _create_timestamp_and_ttl()
         record_type = f"TASK#{timestamp}"
 
         _session_cache["tasks"][phase_name] = {
@@ -130,21 +190,13 @@ def _start_task(phase_name: str, tool_context: ToolContext) -> Dict[str, Any]:
         }
 
         try:
-            item = {
-                "session_id": {"S": session_id},
-                "record_type": {"S": record_type},
-                "timestamp": {"S": timestamp},
-                "status": {"S": "IN_PROGRESS"},
-                "phase_name": {"S": phase_name},
-                "start_time": {"S": timestamp},
-                "ttl": {"N": str(ttl)},
-            }
+            item = _create_dynamodb_item(
+                session_id, record_type, timestamp, ttl,
+                status="IN_PROGRESS", phase_name=phase_name, start_time=timestamp
+            )
             dynamodb.put_item(TableName=table_name, Item=item)
         except ClientError as e:
-            return _create_error_response(
-                f"Failed to create task: {e.response['Error']['Code']}: {e.response['Error']['Message']}",
-                {"session_id": session_id, "phase_name": phase_name},
-            )
+            return _handle_dynamodb_error("create task", e, {"session_id": session_id, "phase_name": phase_name})
 
         return {
             "success": True,
@@ -159,7 +211,7 @@ def _start_task(phase_name: str, tool_context: ToolContext) -> Dict[str, Any]:
 
 def _find_task_by_phase(session_id: str, phase_name: str) -> Optional[Dict[str, str]]:
     try:
-        table_name = os.environ.get("JOURNAL_TABLE_NAME", "")
+        table_name = _get_table_name()
         if not table_name:
             return None
 
@@ -194,9 +246,7 @@ def _complete_task(
         if not phase_name:
             return _create_error_response("phase_name is required")
 
-        session_id = tool_context.invocation_state.get(
-            "session_id"
-        ) or _session_cache.get("session_id")
+        session_id = _get_session_id(tool_context)
         if not session_id:
             return _create_error_response(
                 "No active session found.",
@@ -217,48 +267,22 @@ def _complete_task(
                 },
             )
 
-        table_name = os.environ.get("JOURNAL_TABLE_NAME", "")
+        table_name = _get_table_name()
         if not table_name:
             return _create_error_response("JOURNAL_TABLE_NAME not set")
 
         record_type = task_info["record_type"]
         start_time = task_info["start_time"]
-        current_time = datetime.now(timezone.utc)
-        end_time = current_time.isoformat()
+        end_time = datetime.now(timezone.utc).isoformat()
+        duration_seconds = _calculate_duration(start_time)
 
         try:
-            start_dt = datetime.fromisoformat(start_time.replace("Z", "+00:00"))
-            duration_seconds = int((current_time - start_dt).total_seconds())
-        except Exception:
-            duration_seconds = 0
-
-        try:
-            update_expr = "SET #status = :status, end_time = :end_time, duration_seconds = :duration"
-            expr_values = {
-                ":status": {"S": status.value},
-                ":end_time": {"S": end_time},
-                ":duration": {"N": str(duration_seconds)},
-            }
-
-            if error_message:
-                update_expr += ", error_message = :error_message"
-                expr_values[":error_message"] = {"S": error_message}
-
-            dynamodb.update_item(
-                TableName=table_name,
-                Key={
-                    "session_id": {"S": session_id},
-                    "record_type": {"S": record_type},
-                },
-                UpdateExpression=update_expr,
-                ExpressionAttributeNames={"#status": "status"},
-                ExpressionAttributeValues=expr_values,
+            update_params = _update_dynamodb_item(
+                session_id, record_type, status.value, end_time, duration_seconds, error_message
             )
+            dynamodb.update_item(TableName=table_name, **update_params)
         except ClientError as e:
-            return _create_error_response(
-                f"Failed to update task: {e.response['Error']['Code']}: {e.response['Error']['Message']}",
-                {"session_id": session_id, "phase_name": phase_name},
-            )
+            return _handle_dynamodb_error("update task", e, {"session_id": session_id, "phase_name": phase_name})
 
         return {
             "success": True,
@@ -290,7 +314,7 @@ def _complete_session(
         start_time = _session_cache.get("start_time")
         if not start_time:
             try:
-                table_name = os.environ.get("JOURNAL_TABLE_NAME", "")
+                table_name = _get_table_name()
                 response = dynamodb.get_item(
                     TableName=table_name,
                     Key={
@@ -309,43 +333,20 @@ def _complete_session(
                 {"session_id": session_id},
             )
 
-        table_name = os.environ.get("JOURNAL_TABLE_NAME", "")
+        table_name = _get_table_name()
         if not table_name:
             return _create_error_response("JOURNAL_TABLE_NAME not set")
 
-        current_time = datetime.now(timezone.utc)
-        end_time = current_time.isoformat()
+        end_time = datetime.now(timezone.utc).isoformat()
+        duration_seconds = _calculate_duration(start_time)
 
         try:
-            start_dt = datetime.fromisoformat(start_time.replace("Z", "+00:00"))
-            duration_seconds = int((current_time - start_dt).total_seconds())
-        except Exception:
-            duration_seconds = 0
-
-        try:
-            update_expr = "SET #status = :status, end_time = :end_time, duration_seconds = :duration"
-            expr_values = {
-                ":status": {"S": status.value},
-                ":end_time": {"S": end_time},
-                ":duration": {"N": str(duration_seconds)},
-            }
-
-            if error_message:
-                update_expr += ", error_message = :error_message"
-                expr_values[":error_message"] = {"S": error_message}
-
-            dynamodb.update_item(
-                TableName=table_name,
-                Key={"session_id": {"S": session_id}, "record_type": {"S": "SESSION"}},
-                UpdateExpression=update_expr,
-                ExpressionAttributeNames={"#status": "status"},
-                ExpressionAttributeValues=expr_values,
+            update_params = _update_dynamodb_item(
+                session_id, "SESSION", status.value, end_time, duration_seconds, error_message
             )
+            dynamodb.update_item(TableName=table_name, **update_params)
         except ClientError as e:
-            return _create_error_response(
-                f"Failed to update session: {e.response['Error']['Code']}: {e.response['Error']['Message']}",
-                {"session_id": session_id},
-            )
+            return _handle_dynamodb_error("update session", e, {"session_id": session_id})
 
         _session_cache["session_id"] = None
         _session_cache["start_time"] = None
