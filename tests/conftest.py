@@ -1,20 +1,22 @@
 """Shared fixtures for test suite."""
 
-import sys
-from unittest.mock import MagicMock, Mock
+from unittest.mock import Mock, patch
 
 import pytest
 from botocore.exceptions import ClientError, NoCredentialsError
-
-# Mock the journal module to prevent AWS dependencies during testing
-# This must be done before any imports of src.agents.main
-sys.modules["src.tools.journal"] = MagicMock()
 
 
 @pytest.fixture
 def mock_agent():
     """Create a mock agent for testing."""
     return Mock()
+
+
+@pytest.fixture
+def mock_journal():
+    """Mock journal for test_invoke_function tests to avoid AWS dependencies."""
+    with patch("src.agents.main.journal") as mock:
+        yield mock
 
 
 @pytest.fixture
