@@ -11,7 +11,7 @@ from strands import Agent
 from strands.models import BedrockModel
 from strands_tools import use_aws
 
-from tools import journal
+from src.tools import journal
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
