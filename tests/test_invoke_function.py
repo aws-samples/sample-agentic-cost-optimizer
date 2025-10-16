@@ -11,7 +11,7 @@ class TestInvokeFunction:
     """Test cases for the invoke function with various error scenarios."""
 
     @patch("src.agents.main.agent")
-    def test_successful_agent_response(self, mock_agent):
+    def test_successful_agent_response(self, mock_agent, mock_journal):
         """Test successful agent response: agent returns response, invoke returns string."""
         mock_agent.return_value = "Hello, how can I help?"
         payload = {"prompt": "hello"}
@@ -23,7 +23,7 @@ class TestInvokeFunction:
         mock_agent.assert_called_once_with("hello", session_id=ANY)
 
     @patch("src.agents.main.agent")
-    def test_no_credentials_error(self, mock_agent, no_credentials_error, sample_payload):
+    def test_no_credentials_error(self, mock_agent, mock_journal, no_credentials_error, sample_payload):
         """Test NoCredentialsError: agent raises exception, invoke returns credentials error message."""
         mock_agent.side_effect = no_credentials_error
 
@@ -33,7 +33,7 @@ class TestInvokeFunction:
         mock_agent.assert_called_once_with("hello", session_id=ANY)
 
     @patch("src.agents.main.agent")
-    def test_throttling_exception(self, mock_agent, throttling_error, sample_payload):
+    def test_throttling_exception(self, mock_agent, mock_journal, throttling_error, sample_payload):
         """Test ClientError with ThrottlingException: invoke returns throttling message."""
         mock_agent.side_effect = throttling_error
 
@@ -43,7 +43,7 @@ class TestInvokeFunction:
         mock_agent.assert_called_once_with("hello", session_id=ANY)
 
     @patch("src.agents.main.agent")
-    def test_access_denied_exception(self, mock_agent, access_denied_error, sample_payload):
+    def test_access_denied_exception(self, mock_agent, mock_journal, access_denied_error, sample_payload):
         """Test ClientError with AccessDeniedException: invoke returns permissions message."""
         mock_agent.side_effect = access_denied_error
 
@@ -53,7 +53,7 @@ class TestInvokeFunction:
         mock_agent.assert_called_once_with("hello", session_id=ANY)
 
     @patch("src.agents.main.agent")
-    def test_unknown_client_error(self, mock_agent):
+    def test_unknown_client_error(self, mock_agent, mock_journal):
         """Test ClientError with unknown error code: invoke returns generic technical difficulties message."""
         error_response = {"Error": {"Code": "UnknownException", "Message": "Unknown error"}}
         mock_agent.side_effect = ClientError(error_response, "InvokeModel")
@@ -65,7 +65,7 @@ class TestInvokeFunction:
         mock_agent.assert_called_once_with("test", session_id=ANY)
 
     @patch("src.agents.main.agent")
-    def test_generic_exception(self, mock_agent):
+    def test_generic_exception(self, mock_agent, mock_journal):
         """Test generic Exception: invoke returns unexpected error message."""
         mock_agent.side_effect = Exception("Unexpected error")
         payload = {"prompt": "test"}
@@ -76,7 +76,7 @@ class TestInvokeFunction:
         mock_agent.assert_called_once_with("test", session_id=ANY)
 
     @patch("src.agents.main.agent")
-    def test_default_prompt_when_missing(self, mock_agent, empty_payload):
+    def test_default_prompt_when_missing(self, mock_agent, mock_journal, empty_payload):
         """Test that default prompt 'Hello' is used when prompt is missing from payload."""
         mock_agent.return_value = "Default response"
 
@@ -86,7 +86,7 @@ class TestInvokeFunction:
         mock_agent.assert_called_once_with("Hello", session_id=ANY)
 
     @patch("src.agents.main.agent")
-    def test_client_error_without_error_code(self, mock_agent):
+    def test_client_error_without_error_code(self, mock_agent, mock_journal):
         """Test ClientError without Error.Code in response: should use generic message."""
         error_response = {"Error": {"Message": "Some error without code"}}
         mock_agent.side_effect = ClientError(error_response, "InvokeModel")
@@ -98,7 +98,7 @@ class TestInvokeFunction:
         mock_agent.assert_called_once_with("test", session_id=ANY)
 
     @patch("src.agents.main.agent")
-    def test_client_error_without_error_dict(self, mock_agent):
+    def test_client_error_without_error_dict(self, mock_agent, mock_journal):
         """Test ClientError without Error dict in response: should use generic message."""
         error_response = {}  # No Error key
         mock_agent.side_effect = ClientError(error_response, "InvokeModel")
