@@ -3,7 +3,7 @@ REQ_DIR := requirements
 DOCKER_IMAGE_NAME := strands-agent
 DOCKER_TAG := latest
 
-.PHONY: help setup init pre-commit-install check run docker-build cdk-bootstrap cdk-deploy cdk-hotswap cdk-watch cdk-destroy clean
+.PHONY: help setup init pre-commit-install check test run docker-build cdk-bootstrap cdk-deploy cdk-hotswap cdk-watch cdk-destroy clean
 
 help:
 	@echo "Development Workflow:"
@@ -13,6 +13,7 @@ help:
 	@echo ""
 	@echo "Code Quality:"
 	@echo "  make check        - Run all code quality checks (pre-commit)"
+	@echo "  make test         - Run unit tests with pytest"
 	@echo ""
 	@echo "Development:"
 	@echo "  make run          - Run the sample local agent"
@@ -48,6 +49,9 @@ pre-commit-install:
 
 check:
 	uv run pre-commit run --all-files
+
+test:
+	uv run pytest tests/ -v
 
 run:
 	PYTHONPATH=src uv run python -m agents.main
