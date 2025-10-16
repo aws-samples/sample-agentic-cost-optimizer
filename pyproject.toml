@@ -14,7 +14,9 @@ agents = [
 ]
 dev = [
   "ruff",
-  "pre-commit"
+  "pre-commit",
+  "pytest",
+  "pytest-mock"
 ]
 
 [tool.ruff]

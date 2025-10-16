@@ -41,7 +41,8 @@ export class InfraStack extends Stack {
     // Create S3 bucket for agent data storage
     const agentDataBucket = new Bucket(this, 'AgentDataBucket', {
       bucketName: `agent-data-${environment}-${this.account}-${this.region}`,
-      removalPolicy: RemovalPolicy.DESTROY, // For development/POC
+      removalPolicy: RemovalPolicy.DESTROY,
+      autoDeleteObjects: true, // Automatically empty bucket on stack deletion
       versioned: true,
       encryption: BucketEncryption.S3_MANAGED,
       enforceSSL: true,
