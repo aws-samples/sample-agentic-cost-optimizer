@@ -2,130 +2,112 @@
 
 ## Overview
 
-This design creates a set of Strands tools that encapsulate DynamoDB journaling operations for the cost optimization agent. The current agent prompt contains extensive DynamoDB operations embedded directly in the workflow instructions, making it complex and difficult to maintain. By extracting these operations into dedicated tools using the `@tool` decorator, we achieve better separation of concerns, improved maintainability, and cleaner agent prompts.
+This design creates a unified Strands tool that encapsulates DynamoDB journaling operations for the cost optimization agent through a single action-based interface. Instead of multiple separate tool functions, the implementation provides a single `journal()` tool that dispatches to different operations based on an `action` parameter. This approach simplifies the agent interface while maintaining clean separation of concerns.
 
-The design leverages the existing DynamoDB schema and operations but abstracts them behind simple, semantic interfaces that the agent can call without understanding AWS API details. The tools will use `boto3` directly for DynamoDB operations and follow Strands best practices for tool development.
+The tool automatically retrieves the session ID from the invocation state and leverages `boto3.resource()` for DynamoDB operations, following Strands best practices for tool development with comprehensive error handling.
 
 ## Architecture
 
-### Current State Analysis
-
-The existing implementation already includes comprehensive journaling tools in `src/tools/journaling_tool.py` that:
-- Use the `use_aws` tool for DynamoDB operations
-- Implement comprehensive error handling with retry logic
-- Follow proper DynamoDB schema patterns
-- Include detailed documentation and type hints
-
-### Target Architecture
+### Unified Tool Architecture
 
 ```mermaid
 graph TB
-    A[Cost Optimization Agent] --> B[Journaling Tools]
-    B --> C[boto3 DynamoDB Client]
-    C --> D[DynamoDB Journal Table]
-    
-    subgraph "Journaling Tools"
-        E[check_journal_table_exists]
-        F[create_session_record]
-        G[update_session_record]
-        H[create_task_record]
-        I[update_task_record]
-    end
-    
-    subgraph "DynamoDB Schema"
-        J[Session Records]
-        K[Task Records]
-        L[TTL Cleanup]
-    end
+    A[Cost Optimization Agent] --> B[journal Tool]
+    B --> C[Action Dispatcher]
+    C --> D[start_session]
+    C --> E[start_task]
+    C --> F[complete_task]
+    C --> G[complete_session]
+    D --> H[boto3 DynamoDB Resource]
+    E --> H
+    F --> H
+    G --> H
+    H --> I[DynamoDB Journal Table]
 ```
 
 ### Design Principles
 
-1. **Minimal Changes**: Leverage existing tool structure and only replace `use_aws` calls with `boto3`
-2. **Backward Compatibility**: Maintain existing function signatures and response formats
-3. **Error Handling**: Preserve comprehensive error handling and retry logic
-4. **Documentation**: Keep concise docstrings focused on essential information
-5. **Type Safety**: Maintain existing type hints and validation
+1. **Single Tool Interface**: One `journal()` tool with action-based dispatch for simplicity
+2. **Context-Driven Session Management**: Session ID is passed through the agent's invocation state, eliminating the need for the agent to manually track or pass session identifiers
+3. **Error Handling**: Comprehensive error handling with consistent response format
+4. **Type Safety**: Enums for status values and type hints throughout
 
 ## Components and Interfaces
 
-### Tool Functions
+### Unified Tool Interface
 
-The design maintains the existing five core tools with updated implementations:
+#### journal(action, tool_context, phase_name=None, status=None, error_message=None)
 
-#### 1. check_journal_table_exists()
-- **Purpose**: Verify DynamoDB table accessibility before journaling operations
-- **Current Implementation**: Uses `use_aws` with DescribeTable operation
-- **New Implementation**: Direct `boto3` DynamoDB client call
-- **Interface**: No changes to function signature or response format
+Single tool function with action-based dispatch:
 
-#### 2. create_session_record(session_id: str, status: str = "STARTED")
-- **Purpose**: Create session tracking records at workflow start
-- **Current Implementation**: Uses `use_aws` with PutItem operation
-- **New Implementation**: Direct `boto3` DynamoDB client call
-- **Interface**: No changes to function signature or response format
+**Parameters:**
+- `action` (str): Operation to perform - "start_session", "start_task", "complete_task", "complete_session"
+- `tool_context` (ToolContext): Strands context providing invocation state
+- `phase_name` (Optional[str]): Task/phase name (required for task operations)
+- `status` (Optional[str]): Completion status (TaskStatus or SessionStatus enum values)
+- `error_message` (Optional[str]): Error details for failed operations
 
-#### 3. update_session_record(session_id: str, status: str, start_time: str, error_message: Optional[str] = None)
-- **Purpose**: Update session completion status and calculate duration
-- **Current Implementation**: Uses `use_aws` with UpdateItem operation
-- **New Implementation**: Direct `boto3` DynamoDB client call
-- **Interface**: No changes to function signature or response format
+**Actions:**
 
-#### 4. create_task_record(session_id: str, phase_name: str)
-- **Purpose**: Create task records for individual workflow phases
-- **Current Implementation**: Uses `use_aws` with PutItem operation
-- **New Implementation**: Direct `boto3` DynamoDB client call
-- **Interface**: No changes to function signature or response format
+1. **start_session**: Initialize new session using session_id from invocation state
+   - Retrieves session_id from `tool_context.invocation_state`
+   - Creates SESSION record in DynamoDB
 
-#### 5. update_task_record(session_id: str, task_timestamp: str, status: str, error_message: Optional[str] = None)
-- **Purpose**: Update task completion status without resource count tracking
-- **Current Implementation**: Uses `use_aws` with UpdateItem operation
-- **New Implementation**: Direct `boto3` DynamoDB client call
-- **Interface**: Remove resource_count parameter from function signature
+2. **start_task**: Begin tracking a task/phase
+   - Requires `phase_name` parameter
+   - Creates TASK record with timestamp-based sort key
 
-### boto3 Integration Layer
+3. **complete_task**: Finalize task with status
+   - Requires `phase_name` parameter
+   - Accepts status: COMPLETED, FAILED, CANCELLED, SKIPPED
+   - Calculates duration and updates DynamoDB
 
-#### DynamoDB Client Management
+4. **complete_session**: Finalize session with status
+   - Accepts status: COMPLETED, FAILED
+   - Calculates total duration
+
+### boto3 Integration
+
+#### DynamoDB Resource API
 ```python
 import boto3
-from botocore.exceptions import ClientError, BotoCoreError
+from botocore.exceptions import ClientError
 
-# Initialize DynamoDB client with proper session management
-dynamodb = boto3.client('dynamodb')
+# Initialize DynamoDB resource
+dynamodb = boto3.resource("dynamodb")
+
 ```
 
-#### Error Mapping
-Map boto3 exceptions to existing error response format:
-- `ClientError` with `ResourceNotFoundException` → `TABLE_NOT_FOUND`
-- `ClientError` with `AccessDeniedException` → `ACCESS_DENIED`
-- `ClientError` with `ConditionalCheckFailedException` → `DUPLICATE_SESSION/CONDITION_FAILED`
-- `ClientError` with `ValidationException` → `VALIDATION_ERROR`
-- Network/timeout exceptions → Retryable errors
+#### Error Handling
+All DynamoDB operations wrapped in try/except blocks:
+- `ClientError`: Extracted error code and message for context
+- Generic `Exception`: Caught for unexpected errors
+- No retry logic (simplified from original design)
 
-#### Response Format Preservation
-Maintain existing response structure:
+#### Response Format
+Consistent response structure:
 ```python
-# Success response
+# Success
 {
     "success": True,
     "session_id": str,
     "timestamp": str,
-    # ... other fields
+    "status": str,
+    # ... operation-specific fields
 }
 
-# Error response
+# Error
 {
     "success": False,
     "error": str,
     "timestamp": str,
-    "error_type": str,
-    # ... context fields
+    # ... optional context fields
 }
 ```
 
 ## Data Models
 
-### DynamoDB Schema (Unchanged)
+### DynamoDB Schema
 
 The existing schema is well-designed and follows DynamoDB best practices:
 
@@ -168,49 +150,69 @@ The existing schema is well-designed and follows DynamoDB best practices:
 
 ### Data Access Patterns
 
-The existing access patterns are efficient and follow DynamoDB best practices:
+Efficient access patterns for journaling operations:
 
-1. **Check Table Existence**: `DescribeTable` operation
-2. **Create Session**: `PutItem` with session_id + "SESSION" sort key
-3. **Update Session**: `UpdateItem` with session_id + "SESSION" sort key
-4. **Create Task**: `PutItem` with session_id + "TASK#timestamp" sort key
-5. **Update Task**: `UpdateItem` with session_id + "TASK#timestamp" sort key
+1. **Create Session**: Insert item with session_id partition key and "SESSION" sort key
+2. **Update Session**: Update item using session_id and "SESSION" sort key to set completion status and duration
+3. **Create Task**: Insert item with session_id partition key and "TASK#timestamp" sort key
+4. **Update Task**: Update item using session_id and "TASK#timestamp" sort key to set completion status and duration
+5. **Find Task by Phase**: Query items by session_id with sort key prefix filter when needed
 
 ## Error Handling
 
-### Retry Strategy (Preserved)
+### Error Strategy
 
-Maintain existing exponential backoff retry logic:
-- **Max Attempts**: 3
-- **Base Delay**: 1.0 seconds
-- **Backoff**: Exponential (2^attempt)
-- **Retryable Errors**: Throttling, service unavailable, network issues
+Simplified error handling without retry logic:
+- All DynamoDB operations wrapped in try/except blocks
+- `ClientError` exceptions caught and formatted with error code/message
+- Generic `Exception` caught for unexpected errors
+- Errors returned as structured responses, not raised
 
-### Error Categorization (Preserved)
+### Error Types
 
-Keep existing error type classification:
-- `TABLE_NOT_FOUND`: Table doesn't exist
-- `ACCESS_DENIED`: Insufficient permissions
-- `DUPLICATE_SESSION`: Session already exists
-- `CONDITION_FAILED`: Update condition failed
-- `VALIDATION_ERROR`: Invalid input parameters
-- `DYNAMODB_ERROR`: Other DynamoDB errors
+Common error scenarios:
 
-### Error Response Format (Preserved)
+- **NO_SESSION**: No active session found in invocation state
+- **TASK_NOT_FOUND**: Task not found in DynamoDB
+- **Missing Configuration**: JOURNAL_TABLE_NAME not set
+- **DynamoDB Errors**: ClientError with AWS error codes
+- **Validation Errors**: Missing required parameters (phase_name, etc.)
 
-Maintain consistent error response structure using existing `_create_error_response` utility function.
+### Error Response Format
+
+Consistent error structure:
+
+```python
+{
+    "success": False,
+    "error": "Error message with context",
+    "timestamp": "ISO8601 timestamp",
+    # Optional context fields
+    "error_type": "NO_SESSION",
+    "session_id": "...",
+    "phase_name": "..."
+}
+```
 
 ## Implementation Notes
 
-### Key Changes
-1. Replace `use_aws` calls with direct `boto3` DynamoDB client calls
-2. Remove `resource_count` parameter from `update_task_record` function
-3. Update import statements to use `boto3` instead of `strands_tools.use_aws`
-4. Map `boto3` exceptions to existing error response format
-5. Simplify docstrings while maintaining essential Args sections for Strands parsing
+### Key Implementation Details
+
+1. **Single Tool with Action Dispatch**: One `@tool` decorated function handles all operations via action parameter
+2. **Context-Driven Session Management**: Session ID is retrieved from `tool_context.invocation_state`, which is set by the agent during initialization, allowing the tool to automatically associate all operations with the current agent execution.
+3. **boto3 Resource API**: Uses `boto3.resource("dynamodb")` for cleaner syntax vs client API
+4. **Status Enums**: TaskStatus and SessionStatus enums for type safety
+5. **No Table Check**: Removed check_table_exists functionality for simplicity
+
+### Agent Integration
+
+- Adds journal to agent tools list
+- Generates unique session_id with timestamp and UUID
+- Passes session_id to agent via invocation state.
+
 
 ### AWS Integration
-- Tools will use standard `boto3` credential chain (environment variables, IAM roles, etc.)
-- Same IAM permissions required as current implementation
-- Environment variable `JOURNAL_TABLE_NAME` remains unchanged
-- DynamoDB client initialization: `boto3.client('dynamodb')`
+- Uses standard `boto3` credential chain (environment variables, IAM roles, etc.)
+- Requires DynamoDB permissions: PutItem, UpdateItem, Query, GetItem
+- Environment variable: `JOURNAL_TABLE_NAME` (required)
+- DynamoDB resource initialization: `boto3.resource("dynamodb")`
