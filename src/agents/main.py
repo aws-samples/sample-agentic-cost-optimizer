@@ -1,5 +1,7 @@
 import logging
 import os
+import uuid
+from datetime import datetime, timezone
 from typing import Optional
 
 from bedrock_agentcore.runtime import BedrockAgentCoreApp
@@ -8,6 +10,8 @@ from botocore.exceptions import ClientError, NoCredentialsError
 from strands import Agent
 from strands.models import BedrockModel
 from strands_tools import use_aws
+
+from src.tools import journal
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -18,6 +22,7 @@ os.environ["BYPASS_TOOL_CONSENT"] = "true"
 
 # Resource specific environment variable
 s3_bucket_name = os.environ.get("S3_BUCKET_NAME", "default-bucket")
+journal_table_name = os.environ.get("JOURNAL_TABLE_NAME", "default-table")
 
 # Boto3 configuration constants (using boto3 defaults)
 DEFAULT_MAX_ATTEMPTS = 3
@@ -77,11 +82,12 @@ def create_agent(
     )
 
     SYSTEM_PROMPT = ""
-    SYSTEM_PROMPT += open("src/agents/prompt.md").read()
+    SYSTEM_PROMPT += open(os.path.join(os.path.dirname(__file__), "prompt.md")).read()
     SYSTEM_PROMPT = SYSTEM_PROMPT.replace("{s3_bucket_name}", s3_bucket_name)
+    SYSTEM_PROMPT = SYSTEM_PROMPT.replace("{journal_table_name}", journal_table_name)
 
     # Create agent with configured model
-    return Agent(model=bedrock_model, system_prompt=SYSTEM_PROMPT, tools=[use_aws])
+    return Agent(model=bedrock_model, system_prompt=SYSTEM_PROMPT, tools=[use_aws, journal])
 
 
 # Create an agent
@@ -96,8 +102,12 @@ def invoke(payload):
     """Process user input and return a response"""
     user_message = payload.get("prompt", "Hello")
 
+    # Generate unique session ID for this invocation
+    current_time = datetime.now(timezone.utc)
+    session_id = f"session-{current_time.strftime('%Y-%m-%d-%H%M%S')}-{str(uuid.uuid4())[:8]}"
+
     try:
-        response = agent(user_message)
+        response = agent(user_message, session_id=session_id)
         return str(response)
     except NoCredentialsError as e:
         logger.error(f"AWS credentials not found: {str(e)}")

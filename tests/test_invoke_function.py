@@ -1,6 +1,6 @@
 """Unit tests for the invoke function with mocked agent."""
 
-from unittest.mock import patch
+from unittest.mock import ANY, patch
 
 from botocore.exceptions import ClientError
 
@@ -19,7 +19,8 @@ class TestInvokeFunction:
         result = invoke(payload)
 
         assert result == "Hello, how can I help?"
-        mock_agent.assert_called_once_with("hello")
+        # Use ANY for session_id since it's dynamically generated and not the focus of this test
+        mock_agent.assert_called_once_with("hello", session_id=ANY)
 
     @patch("src.agents.main.agent")
     def test_no_credentials_error(self, mock_agent, no_credentials_error, sample_payload):
@@ -29,7 +30,7 @@ class TestInvokeFunction:
         result = invoke(sample_payload)
 
         assert result == "AWS credentials are not configured. Please set up your AWS credentials."
-        mock_agent.assert_called_once_with("hello")
+        mock_agent.assert_called_once_with("hello", session_id=ANY)
 
     @patch("src.agents.main.agent")
     def test_throttling_exception(self, mock_agent, throttling_error, sample_payload):
@@ -39,7 +40,7 @@ class TestInvokeFunction:
         result = invoke(sample_payload)
 
         assert result == "I'm currently experiencing high demand. Please try again in a moment."
-        mock_agent.assert_called_once_with("hello")
+        mock_agent.assert_called_once_with("hello", session_id=ANY)
 
     @patch("src.agents.main.agent")
     def test_access_denied_exception(self, mock_agent, access_denied_error, sample_payload):
@@ -49,7 +50,7 @@ class TestInvokeFunction:
         result = invoke(sample_payload)
 
         assert result == "I don't have the necessary permissions to access the model."
-        mock_agent.assert_called_once_with("hello")
+        mock_agent.assert_called_once_with("hello", session_id=ANY)
 
     @patch("src.agents.main.agent")
     def test_unknown_client_error(self, mock_agent):
@@ -61,7 +62,7 @@ class TestInvokeFunction:
         result = invoke(payload)
 
         assert result == "I'm experiencing some technical difficulties. Please try again later."
-        mock_agent.assert_called_once_with("test")
+        mock_agent.assert_called_once_with("test", session_id=ANY)
 
     @patch("src.agents.main.agent")
     def test_generic_exception(self, mock_agent):
@@ -72,7 +73,7 @@ class TestInvokeFunction:
         result = invoke(payload)
 
         assert result == "I encountered an unexpected error. Please try again."
-        mock_agent.assert_called_once_with("test")
+        mock_agent.assert_called_once_with("test", session_id=ANY)
 
     @patch("src.agents.main.agent")
     def test_default_prompt_when_missing(self, mock_agent, empty_payload):
@@ -82,7 +83,7 @@ class TestInvokeFunction:
         result = invoke(empty_payload)
 
         assert result == "Default response"
-        mock_agent.assert_called_once_with("Hello")
+        mock_agent.assert_called_once_with("Hello", session_id=ANY)
 
     @patch("src.agents.main.agent")
     def test_client_error_without_error_code(self, mock_agent):
@@ -94,7 +95,7 @@ class TestInvokeFunction:
         result = invoke(payload)
 
         assert result == "I'm experiencing some technical difficulties. Please try again later."
-        mock_agent.assert_called_once_with("test")
+        mock_agent.assert_called_once_with("test", session_id=ANY)
 
     @patch("src.agents.main.agent")
     def test_client_error_without_error_dict(self, mock_agent):
@@ -106,4 +107,4 @@ class TestInvokeFunction:
         result = invoke(payload)
 
         assert result == "I'm experiencing some technical difficulties. Please try again later."
-        mock_agent.assert_called_once_with("test")
+        mock_agent.assert_called_once_with("test", session_id=ANY)
