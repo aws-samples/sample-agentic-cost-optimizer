@@ -55,9 +55,7 @@ def _create_error_response(
 
 def _get_session_id(tool_context: ToolContext) -> Optional[str]:
     """Get session ID from context or cache."""
-    return tool_context.invocation_state.get("session_id") or _session_cache.get(
-        "session_id"
-    )
+    return tool_context.invocation_state.get("session_id") or _session_cache.get("session_id")
 
 
 def _get_table_name() -> Optional[str]:
@@ -83,9 +81,7 @@ def _calculate_duration(start_time: str) -> int:
         return 0
 
 
-def _create_dynamodb_item(
-    session_id: str, record_type: str, timestamp: str, ttl: int, **kwargs
-) -> Dict[str, Any]:
+def _create_dynamodb_item(session_id: str, record_type: str, timestamp: str, ttl: int, **kwargs) -> Dict[str, Any]:
     """Create a DynamoDB item with common fields."""
     item = {
         "session_id": session_id,
@@ -106,9 +102,7 @@ def _update_dynamodb_item(
     error_message: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Create update expression and values for DynamoDB."""
-    update_expr = (
-        "SET #status = :status, end_time = :end_time, " "duration_seconds = :duration"
-    )
+    update_expr = "SET #status = :status, end_time = :end_time, " "duration_seconds = :duration"
     expr_values = {
         ":status": status,
         ":end_time": end_time,
@@ -130,9 +124,7 @@ def _update_dynamodb_item(
     }
 
 
-def _handle_dynamodb_error(
-    operation: str, error: ClientError, context: Dict[str, str]
-) -> Dict[str, Any]:
+def _handle_dynamodb_error(operation: str, error: ClientError, context: Dict[str, str]) -> Dict[str, Any]:
     """Handle DynamoDB client errors consistently."""
     error_code = error.response["Error"]["Code"]
     error_msg = error.response["Error"]["Message"]
@@ -171,9 +163,7 @@ def _start_session(tool_context: ToolContext) -> Dict[str, Any]:
             )
             table.put_item(Item=item)
         except ClientError as e:
-            return _handle_dynamodb_error(
-                "create session", e, {"session_id": session_id}
-            )
+            return _handle_dynamodb_error("create session", e, {"session_id": session_id})
 
         return {
             "success": True,
@@ -225,9 +215,7 @@ def _start_task(phase_name: str, tool_context: ToolContext) -> Dict[str, Any]:
             )
             table.put_item(Item=item)
         except ClientError as e:
-            return _handle_dynamodb_error(
-                "create task", e, {"session_id": session_id, "phase_name": phase_name}
-            )
+            return _handle_dynamodb_error("create task", e, {"session_id": session_id, "phase_name": phase_name})
 
         return {
             "success": True,
@@ -248,9 +236,7 @@ def _find_task_by_phase(session_id: str, phase_name: str) -> Optional[Dict[str, 
 
         table = dynamodb.Table(table_name)
         response = table.query(
-            KeyConditionExpression=(
-                "session_id = :sid AND begins_with(record_type, :task)"
-            ),
+            KeyConditionExpression=("session_id = :sid AND begins_with(record_type, :task)"),
             ExpressionAttributeValues={
                 ":sid": session_id,
                 ":task": "TASK#",
@@ -292,8 +278,7 @@ def _complete_task(
 
         if not task_info:
             return _create_error_response(
-                f"Task '{phase_name}' not found for session '{session_id}'. "
-                f"Call start_task() first.",
+                f"Task '{phase_name}' not found for session '{session_id}'. " f"Call start_task() first.",
                 {
                     "error_type": "TASK_NOT_FOUND",
                     "phase_name": phase_name,
@@ -322,9 +307,7 @@ def _complete_task(
             )
             table.update_item(**update_params)
         except ClientError as e:
-            return _handle_dynamodb_error(
-                "update task", e, {"session_id": session_id, "phase_name": phase_name}
-            )
+            return _handle_dynamodb_error("update task", e, {"session_id": session_id, "phase_name": phase_name})
 
         return {
             "success": True,
@@ -345,13 +328,9 @@ def _complete_session(
 ) -> Dict[str, Any]:
     """Complete a session and finalize tracking."""
     try:
-        session_id = tool_context.invocation_state.get(
-            "session_id"
-        ) or _session_cache.get("session_id")
+        session_id = tool_context.invocation_state.get("session_id") or _session_cache.get("session_id")
         if not session_id:
-            return _create_error_response(
-                "No active session found.", {"error_type": "NO_SESSION"}
-            )
+            return _create_error_response("No active session found.", {"error_type": "NO_SESSION"})
 
         start_time = _session_cache.get("start_time")
         if not start_time:
@@ -394,9 +373,7 @@ def _complete_session(
             )
             table.update_item(**update_params)
         except ClientError as e:
-            return _handle_dynamodb_error(
-                "update session", e, {"session_id": session_id}
-            )
+            return _handle_dynamodb_error("update session", e, {"session_id": session_id})
 
         _session_cache["session_id"] = None
         _session_cache["start_time"] = None
@@ -440,15 +417,11 @@ def journal(
         return _start_session(tool_context)
     elif action == "start_task":
         if not phase_name:
-            return _create_error_response(
-                "phase_name is required for start_task action"
-            )
+            return _create_error_response("phase_name is required for start_task action")
         return _start_task(phase_name, tool_context)
     elif action == "complete_task":
         if not phase_name:
-            return _create_error_response(
-                "phase_name is required for complete_task action"
-            )
+            return _create_error_response("phase_name is required for complete_task action")
         task_status = TaskStatus(status) if status else TaskStatus.COMPLETED
         return _complete_task(phase_name, tool_context, task_status, error_message)
     elif action == "complete_session":
