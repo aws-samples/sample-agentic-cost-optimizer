@@ -4,15 +4,15 @@ import os
 from unittest.mock import MagicMock, patch
 
 import pytest
-from strands import ToolContext
 
-from src.tools.journal import journal
+# Import the internal journal functions directly - these don't have the @tool decorator
+from src.tools.journal import _complete_session, _complete_task, _start_session, _start_task
 
 
 @pytest.fixture
 def mock_tool_context():
     """Create a mock ToolContext with session_id."""
-    context = MagicMock(spec=ToolContext)
+    context = MagicMock()
     context.invocation_state = {"session_id": "test-session-123"}
     return context
 
@@ -45,20 +45,20 @@ class TestJournalStartSession:
         """Test successful session start."""
         mock_dynamodb.Table.return_value = mock_dynamodb_table
 
-        result = journal(action="start_session", tool_context=mock_tool_context)
+        result = _start_session(tool_context=mock_tool_context)
 
         assert result["success"] is True
         assert result["session_id"] == "test-session-123"
-        assert result["status"] == "STARTED"
+        assert result["status"] == "BUSY"
         assert "timestamp" in result
         mock_dynamodb_table.put_item.assert_called_once()
 
     def test_start_session_missing_session_id(self):
         """Test start_session with missing session_id."""
-        context = MagicMock(spec=ToolContext)
+        context = MagicMock()
         context.invocation_state = {}
 
-        result = journal(action="start_session", tool_context=context)
+        result = _start_session(tool_context=context)
 
         assert result["success"] is False
         assert "session_id not found" in result["error"]
@@ -67,7 +67,7 @@ class TestJournalStartSession:
         """Test start_session with missing JOURNAL_TABLE_NAME."""
         del os.environ["JOURNAL_TABLE_NAME"]
 
-        result = journal(action="start_session", tool_context=mock_tool_context)
+        result = _start_session(tool_context=mock_tool_context)
 
         assert result["success"] is False
         assert "JOURNAL_TABLE_NAME not set" in result["error"]
@@ -89,7 +89,7 @@ class TestJournalStartTask:
         """Test successful task start."""
         mock_dynamodb.Table.return_value = mock_dynamodb_table
 
-        result = journal(action="start_task", tool_context=mock_tool_context, phase_name="Discovery")
+        result = _start_task(phase_name="Discovery", tool_context=mock_tool_context)
 
         assert result["success"] is True
         assert result["session_id"] == "test-session-123"
@@ -99,7 +99,7 @@ class TestJournalStartTask:
 
     def test_start_task_missing_phase_name(self, mock_tool_context):
         """Test start_task without phase_name."""
-        result = journal(action="start_task", tool_context=mock_tool_context)
+        result = _start_task(phase_name="", tool_context=mock_tool_context)
 
         assert result["success"] is False
         assert "phase_name is required" in result["error"]
@@ -110,10 +110,10 @@ class TestJournalStartTask:
     )
     def test_start_task_no_session(self):
         """Test start_task without active session."""
-        context = MagicMock(spec=ToolContext)
+        context = MagicMock()
         context.invocation_state = {}
 
-        result = journal(action="start_task", tool_context=context, phase_name="Discovery")
+        result = _start_task(phase_name="Discovery", tool_context=context)
 
         assert result["success"] is False
         assert "No active session" in result["error"]
@@ -141,11 +141,12 @@ class TestJournalCompleteTask:
         """Test successful task completion."""
         mock_dynamodb.Table.return_value = mock_dynamodb_table
 
-        result = journal(
-            action="complete_task",
-            tool_context=mock_tool_context,
+        from src.tools.journal import TaskStatus
+
+        result = _complete_task(
             phase_name="Discovery",
-            status="COMPLETED",
+            tool_context=mock_tool_context,
+            status=TaskStatus.COMPLETED,
         )
 
         assert result["success"] is True
@@ -157,7 +158,7 @@ class TestJournalCompleteTask:
 
     def test_complete_task_missing_phase_name(self, mock_tool_context):
         """Test complete_task without phase_name."""
-        result = journal(action="complete_task", tool_context=mock_tool_context)
+        result = _complete_task(phase_name="", tool_context=mock_tool_context)
 
         assert result["success"] is False
         assert "phase_name is required" in result["error"]
@@ -179,10 +180,11 @@ class TestJournalCompleteSession:
         """Test successful session completion."""
         mock_dynamodb.Table.return_value = mock_dynamodb_table
 
-        result = journal(
-            action="complete_session",
+        from src.tools.journal import SessionStatus
+
+        result = _complete_session(
             tool_context=mock_tool_context,
-            status="COMPLETED",
+            status=SessionStatus.COMPLETED,
         )
 
         assert result["success"] is True
@@ -197,21 +199,10 @@ class TestJournalCompleteSession:
     )
     def test_complete_session_no_active_session(self):
         """Test complete_session without active session."""
-        context = MagicMock(spec=ToolContext)
+        context = MagicMock()
         context.invocation_state = {}
 
-        result = journal(action="complete_session", tool_context=context)
+        result = _complete_session(tool_context=context)
 
         assert result["success"] is False
         assert "No active session" in result["error"]
-
-
-class TestJournalInvalidAction:
-    """Tests for invalid actions."""
-
-    def test_unknown_action(self, mock_tool_context):
-        """Test journal with unknown action."""
-        result = journal(action="invalid_action", tool_context=mock_tool_context)
-
-        assert result["success"] is False
-        assert "Unknown action" in result["error"]
