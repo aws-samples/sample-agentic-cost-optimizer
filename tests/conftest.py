@@ -1,9 +1,24 @@
 """Shared fixtures for test suite."""
 
-from unittest.mock import Mock, patch
+import sys
+from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 from botocore.exceptions import ClientError, NoCredentialsError
+
+# Mock all dependencies before any imports of src.agents.main
+mock_app = MagicMock()
+mock_app.entrypoint = lambda func: func  # Make decorator a no-op
+
+# Mock all dependencies before any imports of src.agents.main
+mocks_to_apply = {
+    "strands": MagicMock(),
+    "strands.models": MagicMock(),
+    "strands_tools": MagicMock(),
+    "bedrock_agentcore.runtime": MagicMock(BedrockAgentCoreApp=lambda: mock_app),
+}
+
+sys.modules.update(mocks_to_apply)
 
 
 @pytest.fixture
