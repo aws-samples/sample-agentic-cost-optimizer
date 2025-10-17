@@ -1,7 +1,5 @@
 import logging
 import os
-import uuid
-from datetime import datetime, timezone
 from typing import Optional
 
 from bedrock_agentcore.runtime import BedrockAgentCoreApp
@@ -13,9 +11,10 @@ from strands_tools import use_aws
 
 from src.tools import journal
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
+# Configure logging with reasonable output
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
+logger.info("Agent module loaded successfully")
 
 # Global env variables
 os.environ["BYPASS_TOOL_CONSENT"] = "true"
@@ -23,6 +22,7 @@ os.environ["BYPASS_TOOL_CONSENT"] = "true"
 # Resource specific environment variable
 s3_bucket_name = os.environ.get("S3_BUCKET_NAME", "default-bucket")
 journal_table_name = os.environ.get("JOURNAL_TABLE_NAME", "default-table")
+session_id = os.environ.get("SESSION_ID")
 
 # Boto3 configuration constants (using boto3 defaults)
 DEFAULT_MAX_ATTEMPTS = 3
@@ -91,41 +91,89 @@ def create_agent(
 
 
 # Create an agent
+logger.info("Creating agent with environment variables:")
+logger.info(f"  S3_BUCKET_NAME: {s3_bucket_name}")
+logger.info(f"  JOURNAL_TABLE_NAME: {journal_table_name}")
+logger.info(f"  SESSION_ID: {session_id}")
+logger.info(f"  AWS_REGION: {os.environ.get('AWS_REGION', 'not set')}")
+
 agent = create_agent()
+logger.info("Agent created successfully")
 
 # Create BedrockAgentCore app
 app = BedrockAgentCoreApp()
+logger.info("BedrockAgentCore app initialized")
+
+
+def background_agent_processing(user_message: str, session_id: str, task_id: str):
+    """Background function to process agent request with progress tracking"""
+    logger.info(f"--> Starting cost optimization analysis - Task: {task_id}, Session: {session_id}")
+    logger.info(f"--> User request: '{user_message}'")
+
+    try:
+        logger.info("--> Initializing agent processing...")
+        response = agent(user_message, session_id=session_id)
+        logger.info(f"--> Cost optimization analysis completed - Task: {task_id}")
+        logger.info(f"--> Final response length: {len(str(response))} characters")
+
+        app.complete_async_task(task_id)
+        return str(response)
+
+    except NoCredentialsError:
+        error_msg = "AWS credentials are not configured. Please set up your AWS credentials."
+        logger.error(f"--> Credentials error - Task: {task_id}: {error_msg}")
+        app.complete_async_task(task_id)
+        return error_msg
+    except ClientError as e:
+        error_code = e.response.get("Error", {}).get("Code", "")
+        if error_code == "ThrottlingException":
+            error_msg = "I'm currently experiencing high demand. Please try again in a moment."
+        elif error_code == "AccessDeniedException":
+            error_msg = "I don't have the necessary permissions to access the model."
+        else:
+            error_msg = "I'm experiencing some technical difficulties. Please try again later."
+
+        logger.error(f"--> AWS error - Task: {task_id}, Code: {error_code}: {error_msg}")
+        app.complete_async_task(task_id)
+        return error_msg
+    except Exception as e:
+        error_msg = "I encountered an unexpected error. Please try again."
+        logger.error(f"--> Unexpected error - Task: {task_id}: {str(e)}", exc_info=True)
+        app.complete_async_task(task_id)
+        return error_msg
 
 
 @app.entrypoint
 def invoke(payload):
     """Process user input and return a response"""
     user_message = payload.get("prompt", "Hello")
+    payload_session_id = payload.get("session_id", session_id)
 
-    # Generate unique session ID for this invocation
-    current_time = datetime.now(timezone.utc)
-    session_id = f"session-{current_time.strftime('%Y-%m-%d-%H%M%S')}-{str(uuid.uuid4())[:8]}"
+    logger.info(f"--> AgentCore invocation - Session: {payload_session_id}, Message: '{user_message}'")
 
     try:
-        response = agent(user_message, session_id=session_id)
-        return str(response)
-    except NoCredentialsError as e:
-        logger.error(f"AWS credentials not found: {str(e)}")
-        return "AWS credentials are not configured. Please set up your AWS credentials."
-    except ClientError as e:
-        error_code = e.response.get("Error", {}).get("Code", "Unknown")
-        logger.error(f"Bedrock error [{error_code}]: {str(e)}")
+        # Start tracking the async task manually (this sets status to HealthyBusy)
+        task_id = app.add_async_task("cost_analysis", {"session_id": payload_session_id, "message": user_message})
+        logger.info(f"--> Created async task: {task_id}")
 
-        # Handle common Bedrock model invocation errors
-        if error_code == "ThrottlingException":
-            return "I'm currently experiencing high demand. Please try again in a moment."
-        elif error_code == "AccessDeniedException":
-            return "I don't have the necessary permissions to access the model."
-        else:
-            return "I'm experiencing some technical difficulties. Please try again later."
+        # Start background work in a separate thread
+        import threading
+
+        thread = threading.Thread(
+            target=background_agent_processing,
+            args=(user_message, payload_session_id, task_id),
+            daemon=True,
+            name=f"AgentTask-{task_id}",
+        )
+        thread.start()
+
+        logger.info(f"--> Background analysis started - Task: {task_id}")
+
+        # Return immediately to client (AgentCore connection closes here)
+        return f"Started cost optimization analysis for session {payload_session_id}. Processing will continue in background."
     except Exception as e:
-        logger.error(f"Unexpected error: {str(e)}")
-        return "I encountered an unexpected error. Please try again."
+        logger.error(f"--> Failed to start background task: {str(e)}", exc_info=True)
+        return f"Error starting background processing: {str(e)}"
 
 
 if __name__ == "__main__":

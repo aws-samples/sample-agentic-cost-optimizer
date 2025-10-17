@@ -2,7 +2,7 @@ import { CfnResource, Stack } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 
 import { DockerImageAsset, Platform } from 'aws-cdk-lib/aws-ecr-assets';
-import { Effect, PolicyDocument, PolicyStatement, Role, ServicePrincipal } from 'aws-cdk-lib/aws-iam';
+import { Effect, ManagedPolicy, PolicyDocument, PolicyStatement, Role, ServicePrincipal } from 'aws-cdk-lib/aws-iam';
 
 export interface AgentProps {
   agentRuntimeName: string;
@@ -218,6 +218,47 @@ export class Agent extends Construct {
         }),
       },
     });
+
+    // Attach AWS SecurityAudit managed policy for comprehensive read-only access
+    this.role.addManagedPolicy(ManagedPolicy.fromAwsManagedPolicyName('SecurityAudit'));
+
+    // Add additional Lambda monitoring permissions not covered by SecurityAudit
+    this.role.addToPolicy(
+      new PolicyStatement({
+        sid: 'AdditionalLambdaMonitoring',
+        effect: Effect.ALLOW,
+        actions: ['lambda:GetFunction', 'lambda:GetFunctionConcurrency', 'lambda:GetProvisionedConcurrencyConfig'],
+        resources: ['*'],
+      }),
+    );
+
+    // Add additional CloudWatch and Logs permissions not covered by SecurityAudit
+    this.role.addToPolicy(
+      new PolicyStatement({
+        sid: 'AdditionalCloudWatchLogsMonitoring',
+        effect: Effect.ALLOW,
+        actions: [
+          'cloudwatch:GetMetricStatistics',
+          'logs:StartQuery',
+          'logs:StopQuery',
+          'logs:GetQueryResults',
+          'logs:GetLogEvents',
+          'logs:GetLogRecord',
+          'logs:FilterLogEvents',
+        ],
+        resources: ['*'],
+      }),
+    );
+
+    // Add pricing permissions for cost analysis
+    this.role.addToPolicy(
+      new PolicyStatement({
+        sid: 'PricingAccess',
+        effect: Effect.ALLOW,
+        actions: ['pricing:GetProducts'],
+        resources: ['*'],
+      }),
+    );
 
     // Create Agent Core runtime using CfnResource
     this.runtime = new CfnResource(this, 'Runtime', {

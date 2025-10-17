@@ -3,11 +3,14 @@ import { CfnOutput, Duration, RemovalPolicy, Stack, type StackProps } from 'aws-
 import { Construct } from 'constructs';
 
 import { AttributeType, Table } from 'aws-cdk-lib/aws-dynamodb';
+import { EventField, EventPattern, Rule, RuleTargetInput } from 'aws-cdk-lib/aws-events';
+import { SfnStateMachine } from 'aws-cdk-lib/aws-events-targets';
 import { Effect, PolicyStatement } from 'aws-cdk-lib/aws-iam';
 import { Function as LambdaFunction, Runtime } from 'aws-cdk-lib/aws-lambda';
 import { Bucket, BucketEncryption } from 'aws-cdk-lib/aws-s3';
 
 import { Agent } from './agent';
+import { Workflow } from './workflow';
 
 export class InfraStack extends Stack {
   public readonly agent: Agent;
@@ -61,37 +64,16 @@ export class InfraStack extends Stack {
       dockerfilePath: 'Dockerfile',
       environmentVariables: {
         S3_BUCKET_NAME: agentDataBucket.bucketName,
+        JOURNAL_TABLE_NAME: agentsTable.tableName,
+        AWS_REGION: this.region,
       },
     });
 
     // Grant S3 bucket access to the agent role
     agentDataBucket.grantReadWrite(this.agent.role);
 
-    // Add S3 agent-specific permissions for cost optimization analysis
-    this.agent.role.addToPolicy(
-      new PolicyStatement({
-        effect: Effect.ALLOW,
-        actions: ['lambda:GetFunctionConfiguration', 'lambda:ListFunctions'],
-        resources: ['*'],
-      }),
-    );
-
-    this.agent.role.addToPolicy(
-      new PolicyStatement({
-        effect: Effect.ALLOW,
-        actions: [
-          'cloudwatch:StartQuery',
-          'cloudwatch:StopQuery',
-          'cloudwatch:GetQueryResults',
-          'logs:DescribeLogGroups',
-          'logs:DescribeLogStreams',
-          'logs:GetLogEvents',
-          'logs:GetLogRecord',
-          'logs:FilterLogEvents',
-        ],
-        resources: ['*'], // TODO: tighten this down if possible
-      }),
-    );
+    // Grant DynamoDB table access to the agent role
+    agentsTable.grantReadWriteData(this.agent.role);
 
     // Output the image URI with tag
     new CfnOutput(this, 'AgentImageUri', {
@@ -141,6 +123,42 @@ export class InfraStack extends Stack {
     new CfnOutput(this, 'AgentInvokerFunctionArn', {
       value: agentInvokerFunction.functionArn,
       description: 'ARN of the Lambda function for agent invocation',
+    });
+
+    // Create Step Function workflow
+    const workflow = new Workflow(this, 'AgentWorkflow', {
+      agentInvokerFunction,
+      journalTable: agentsTable,
+    });
+
+    // Create EventBridge rule for manual triggers
+    const manualTriggerRule = new Rule(this, 'ManualTriggerRule', {
+      eventPattern: {
+        source: ['manual-trigger'],
+        detailType: ['execute-agent'],
+      } as EventPattern,
+      description: 'Rule to trigger agent workflow via manual EventBridge events',
+    });
+
+    // Add Step Function as target
+    manualTriggerRule.addTarget(
+      new SfnStateMachine(workflow.stateMachine, {
+        input: RuleTargetInput.fromObject({
+          session_id: EventField.fromPath('$.id'),
+        }),
+      }),
+    );
+
+    // Output the Step Function ARN
+    new CfnOutput(this, 'WorkflowStateMachineArn', {
+      value: workflow.stateMachine.stateMachineArn,
+      description: 'ARN of the Step Function state machine for agent workflow',
+    });
+
+    // Output the EventBridge rule ARN
+    new CfnOutput(this, 'ManualTriggerRuleArn', {
+      value: manualTriggerRule.ruleArn,
+      description: 'ARN of the EventBridge rule for manual workflow triggers',
     });
   }
 }
