@@ -17,6 +17,7 @@ help:
 	@echo ""
 	@echo "Development:"
 	@echo "  make run          - Run the sample local agent"
+	@echo "  make trigger-workflow - Trigger Step Function workflow via EventBridge"
 	@echo "  make docker-build - Build Docker image for agent"
 	@echo ""
 	@echo "AWS Deployment:"
@@ -84,6 +85,11 @@ cdk-destroy:
 	@echo "Destroying CDK stack..."
 	cd infra && npm run destroy:dev
 	@echo "✓ CDK stack destroyed"
+
+trigger-workflow:
+	@echo "Triggering Step Function workflow via EventBridge..."
+	AWS_PAGER="" aws events put-events --entries '[{"Source": "manual-trigger", "DetailType": "execute-agent", "Detail": "{}"}]'
+	@echo "✓ Workflow triggered successfully"
 
 clean:
 	rm -rf .venv .pytest_cache __pycache__ */__pycache__ *.pyc .ruff_cache requirements .build dist

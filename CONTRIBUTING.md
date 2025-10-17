@@ -34,6 +34,7 @@ npm install -g aws-cdk
 - **Run local agent**: `make run`
 - **Format and lint code**: `make check`
 - **Build Docker image**: `make docker-build`
+- **Trigger Step Function workflow**: `make trigger-workflow`
 
 ## AWS Deployment
 
@@ -104,14 +105,40 @@ aws bedrock-agentcore invoke-agent-runtime \
 # Lambda invocation
 aws lambda invoke \
   --function-name "LAMBDA_NAME" \
-  --payload "$(echo '{"message": "Hello!"}' | base64)" \
+  --payload "$(echo '{"session_id": "test-session", "prompt": "Hello!"}' | base64)" \
   response.json
 ```
+
+## Step Function Workflow Testing
+
+Test the complete agent orchestration flow including Step Function workflow and status monitoring:
+
+```bash
+# Trigger workflow via EventBridge (simplest method)
+make trigger-workflow
+
+# Or trigger manually with custom details
+aws events put-events --entries '[
+  {
+    "Source": "manual-trigger", 
+    "DetailType": "execute-agent",
+    "Detail": "{\"description\": \"Test workflow execution\"}"
+  }
+]'
+```
+
+**How it works**:
+- EventBridge generates a unique event ID that becomes the `session_id`
+- The Step Function orchestrates agent invocation and status monitoring
+- Monitor execution progress via AWS Console (Step Functions and DynamoDB)
 
 ## Project Structure
 
 - `src/agents/` - Python agent code
+- `src/tools/` - Agent tools (journal, etc.)
 - `infra/` - CDK infrastructure (TypeScript)
+- `infra/lambda/` - Lambda function code
+- `tests/` - Python test files
 - `requirements/` - Generated Python requirements files
 - `.venv/` - Python virtual environment (auto-created)
 

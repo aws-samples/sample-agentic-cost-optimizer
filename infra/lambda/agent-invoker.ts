@@ -6,23 +6,29 @@ const logger = new Logger({ serviceName: 'agentic-cost-optimizer', logLevel: 'DE
 const agentCoreClient = new BedrockAgentCoreClient({});
 const agentRuntimeArn = getStringFromEnv({ key: 'AGENT_CORE_RUNTIME_ARN' });
 
-export const handler = async (event: { prompt?: string }) => {
+export const handler = async (event: { session_id: string; prompt?: string }) => {
+  logger.info('Lambda started', { sessionId: event.session_id });
+
   try {
+    logger.info('Calling AgentCore...');
+
     const response = await agentCoreClient.send(
       new InvokeAgentRuntimeCommand({
         agentRuntimeArn,
+        runtimeSessionId: event.session_id, // Keep the session ID for consistency
         traceId: getXRayTraceIdFromEnv(),
         payload: JSON.stringify({
-          prompt: event.prompt ?? 'check any of my Lambda functions and tell me if they are overprovisioned',
+          prompt: event.prompt ?? "Check my resources and let me know if they're overprovisioned",
+          session_id: event.session_id,
         }),
       }),
     );
 
-    logger.info('Agent invoked successfully', { sessionId: response.runtimeSessionId });
+    logger.info('AgentCore responded', { sessionId: response.runtimeSessionId, status: response.statusCode });
 
     return { status: response.statusCode, sessionId: response.runtimeSessionId };
-  } catch (error) {
-    logger.error('Error invoking agent:', { error });
+  } catch (error: any) {
+    logger.error('AgentCore failed', { error: error.message, sessionId: event.session_id });
     throw error;
   }
 };

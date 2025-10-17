@@ -26,11 +26,12 @@ class TaskStatus(str, Enum):
 
 
 class SessionStatus(str, Enum):
+    BUSY = "BUSY"
     COMPLETED = "COMPLETED"
     FAILED = "FAILED"
 
 
-dynamodb = boto3.resource("dynamodb")
+dynamodb = boto3.resource("dynamodb", region_name=os.environ.get("AWS_REGION", "us-east-1"))
 
 _session_cache: Dict[str, Any] = {
     "session_id": None,
@@ -84,8 +85,8 @@ def _calculate_duration(start_time: str) -> int:
 def _create_dynamodb_item(session_id: str, record_type: str, timestamp: str, ttl: int, **kwargs) -> Dict[str, Any]:
     """Create a DynamoDB item with common fields."""
     item = {
-        "session_id": session_id,
-        "record_type": record_type,
+        "PK": session_id,  # Use PK as partition key
+        "SK": record_type,  # Use SK as sort key
         "timestamp": timestamp,
         "ttl": ttl,
     }
@@ -118,8 +119,8 @@ def _update_dynamodb_item(
         "ExpressionAttributeNames": {"#status": "status"},
         "ExpressionAttributeValues": expr_values,
         "Key": {
-            "session_id": session_id,
-            "record_type": record_type,
+            "PK": session_id,
+            "SK": record_type,
         },
     }
 
@@ -158,7 +159,7 @@ def _start_session(tool_context: ToolContext) -> Dict[str, Any]:
                 "SESSION",
                 timestamp,
                 ttl,
-                status="STARTED",
+                status="BUSY",
                 start_time=timestamp,
             )
             table.put_item(Item=item)
@@ -169,7 +170,7 @@ def _start_session(tool_context: ToolContext) -> Dict[str, Any]:
             "success": True,
             "session_id": session_id,
             "start_time": timestamp,
-            "status": "STARTED",
+            "status": "BUSY",
             "timestamp": timestamp,
         }
     except Exception as e:
@@ -236,7 +237,7 @@ def _find_task_by_phase(session_id: str, phase_name: str) -> Optional[Dict[str, 
 
         table = dynamodb.Table(table_name)
         response = table.query(
-            KeyConditionExpression=("session_id = :sid AND begins_with(record_type, :task)"),
+            KeyConditionExpression=("PK = :sid AND begins_with(SK, :task)"),
             ExpressionAttributeValues={
                 ":sid": session_id,
                 ":task": "TASK#",
@@ -339,8 +340,8 @@ def _complete_session(
                 table = dynamodb.Table(table_name)
                 response = table.get_item(
                     Key={
-                        "session_id": session_id,
-                        "record_type": "SESSION",
+                        "PK": session_id,
+                        "SK": "SESSION",
                     },
                 )
                 item = response.get("Item", {})
@@ -407,7 +408,7 @@ def journal(
         phase_name: Name of the task/phase (required for start_task and
             complete_task)
         status: Status for completion (COMPLETED, FAILED, CANCELLED, SKIPPED
-            for tasks; COMPLETED, FAILED for sessions)
+            for tasks; BUSY, COMPLETED, FAILED for sessions)
         error_message: Optional error message for failed completions
 
     Returns:
