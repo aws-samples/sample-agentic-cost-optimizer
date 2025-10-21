@@ -19,5 +19,5 @@ ENV PYTHONPATH=/app/src
 # Expose port for the agent service
 EXPOSE 8080
 
-# Run the agent application
-CMD ["uv", "run", "python", "-m", "agents.main"]
+# Run the agent application with OpenTelemetry instrumentation
+CMD ["uv", "run", "opentelemetry-instrument", "python", "-m", "agents.main"]
