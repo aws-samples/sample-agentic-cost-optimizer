@@ -2,7 +2,7 @@ import { TypeScriptCode } from '@mrgrain/cdk-esbuild';
 import { CfnOutput, Duration, RemovalPolicy, Stack, type StackProps } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 
-import { AttributeType, Table } from 'aws-cdk-lib/aws-dynamodb';
+import { AttributeType, BillingMode, Table } from 'aws-cdk-lib/aws-dynamodb';
 import { EventField, EventPattern, Rule, RuleTargetInput } from 'aws-cdk-lib/aws-events';
 import { SfnStateMachine } from 'aws-cdk-lib/aws-events-targets';
 import { Effect, PolicyStatement } from 'aws-cdk-lib/aws-iam';
@@ -32,6 +32,7 @@ export class InfraStack extends Stack {
         name: 'SK',
         type: AttributeType.STRING,
       },
+      billingMode: BillingMode.PAY_PER_REQUEST,
       removalPolicy: RemovalPolicy.DESTROY, // For development/POC
     });
 
