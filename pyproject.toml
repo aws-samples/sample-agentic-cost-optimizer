@@ -10,7 +10,8 @@ dependencies = []
 agents = [
   "strands-agents",
   "strands-agents-tools",
-  "bedrock-agentcore"
+  "bedrock-agentcore",
+  "aws-opentelemetry-distro"
 ]
 dev = [
   "ruff",
