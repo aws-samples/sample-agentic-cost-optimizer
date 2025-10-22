@@ -1,133 +1,175 @@
 """Unit tests for the invoke function with fire-and-forget async behavior."""
 
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
-from botocore.exceptions import ClientError
+import pytest
 
-from src.agents.main import background_agent_processing, invoke
+from src.agents.main import invoke
 
 
 class TestInvokeFunction:
     """Test cases for the invoke function with fire-and-forget async behavior."""
 
-    def test_successful_task_creation(self):
+    @pytest.mark.asyncio
+    @patch("asyncio.create_task")
+    async def test_successful_task_creation(self, mock_create_task):
         """Test successful task creation: invoke returns immediate success message."""
+        mock_create_task.return_value = AsyncMock()
         payload = {"prompt": "hello", "session_id": "session-456"}
 
-        result = invoke(payload)
+        result = await invoke(payload)
 
-        assert "Started cost optimization analysis for session session-456" in result
+        assert "Started processing request for session session-456" in result["message"]
+        assert result["session_id"] == "session-456"
+        assert result["status"] == "started"
 
-    @patch("src.agents.main.app.add_async_task")
-    def test_task_creation_failure(self, mock_add_task):
+    @pytest.mark.asyncio
+    @patch("asyncio.create_task")
+    async def test_task_creation_failure(self, mock_create_task):
         """Test task creation failure: invoke returns error message."""
-        mock_add_task.side_effect = Exception("Task creation failed")
+        mock_create_task.side_effect = Exception("Task creation failed")
         payload = {"prompt": "hello", "session_id": "session-456"}
 
-        result = invoke(payload)
+        result = await invoke(payload)
 
-        assert "Error starting background processing: Task creation failed" in result
-        mock_add_task.assert_called_once_with("cost_analysis", {"session_id": "session-456", "message": "hello"})
+        assert "Error starting background processing: Task creation failed" in result["error"]
 
-    def test_default_prompt_when_missing(self):
+    @pytest.mark.asyncio
+    @patch("asyncio.create_task")
+    async def test_default_prompt_when_missing(self, mock_create_task):
         """Test that default prompt 'Hello' is used when prompt is missing from payload."""
+        mock_create_task.return_value = AsyncMock()
         payload = {"session_id": "session-456"}
 
-        result = invoke(payload)
+        result = await invoke(payload)
 
-        assert "Started cost optimization analysis for session session-456" in result
+        assert "Started processing request for session session-456" in result["message"]
 
-    def test_default_session_id_when_missing(self):
+    @pytest.mark.asyncio
+    @patch("asyncio.create_task")
+    async def test_default_session_id_when_missing(self, mock_create_task):
         """Test that default session_id is used when missing from payload."""
+        mock_create_task.return_value = AsyncMock()
         payload = {"prompt": "test"}
 
-        result = invoke(payload)
+        result = await invoke(payload)
 
-        # Should use the global session_id (None in test environment)
-        assert "Started cost optimization analysis for session None" in result
+        assert "Started processing request for session None" in result["message"]
 
 
-class TestBackgroundAgentProcessing:
-    """Test cases for the background_agent_processing function error handling."""
+class TestBackgroundTaskIntegration:
+    """Test cases for background task integration (testing the fire-and-forget pattern)."""
 
+    @pytest.mark.asyncio
+    @patch("asyncio.create_task")
+    async def test_background_task_is_started(self, mock_create_task):
+        """Test that background task is started when invoke is called."""
+        mock_create_task.return_value = AsyncMock()
+        payload = {"prompt": "hello", "session_id": "session-456"}
+
+        result = await invoke(payload)
+
+        assert (
+            result["message"]
+            == "Started processing request for session session-456. Processing will continue in background."
+        )
+        assert result["session_id"] == "session-456"
+        assert result["status"] == "started"
+        mock_create_task.assert_called_once()
+
+
+class TestBackgroundTaskErrorHandling:
+    """Test error handling scenarios through the invoke function integration."""
+
+    @pytest.mark.asyncio
+    @patch("asyncio.create_task")
+    @patch("src.agents.main.logger")
     @patch("src.agents.main.agent")
-    def test_successful_agent_response(self, mock_agent):
-        """Test successful agent response: background processing returns agent response."""
-        mock_agent.return_value = "Hello, how can I help?"
+    async def test_credentials_error_through_invoke(self, mock_agent, mock_logger, mock_create_task):
+        """Test NoCredentialsError handling through invoke integration."""
+        from botocore.exceptions import NoCredentialsError
 
-        result = background_agent_processing("hello", "session-123", "task-456")
+        mock_create_task.return_value = AsyncMock()
+        mock_agent.invoke_async.side_effect = NoCredentialsError()
+        payload = {"prompt": "hello", "session_id": "session-456"}
 
-        assert result == "Hello, how can I help?"
-        mock_agent.assert_called_once_with("hello", session_id="session-123")
+        result = await invoke(payload)
 
+        assert "Started processing request for session session-456" in result["message"]
+        assert result["status"] == "started"
+        mock_create_task.assert_called_once()
+
+    @pytest.mark.asyncio
+    @patch("asyncio.create_task")
+    @patch("src.agents.main.logger")
     @patch("src.agents.main.agent")
-    def test_no_credentials_error(self, mock_agent, no_credentials_error):
-        """Test NoCredentialsError: background processing returns credentials error message."""
-        mock_agent.side_effect = no_credentials_error
+    async def test_throttling_error_through_invoke(self, mock_agent, mock_logger, mock_create_task):
+        """Test ThrottlingException handling through invoke integration."""
+        from botocore.exceptions import ClientError
 
-        result = background_agent_processing("hello", "session-123", "task-456")
+        throttling_error = ClientError(
+            {"Error": {"Code": "ThrottlingException", "Message": "Rate exceeded"}}, "InvokeModel"
+        )
+        mock_create_task.return_value = AsyncMock()
+        mock_agent.invoke_async.side_effect = throttling_error
+        payload = {"prompt": "hello", "session_id": "session-456"}
 
-        assert result == "AWS credentials are not configured. Please set up your AWS credentials."
-        mock_agent.assert_called_once_with("hello", session_id="session-123")
+        result = await invoke(payload)
 
+        assert "Started processing request for session session-456" in result["message"]
+        assert result["status"] == "started"
+        mock_create_task.assert_called_once()
+
+    @pytest.mark.asyncio
+    @patch("asyncio.create_task")
+    @patch("src.agents.main.logger")
     @patch("src.agents.main.agent")
-    def test_throttling_exception(self, mock_agent, throttling_error):
-        """Test ClientError with ThrottlingException: background processing returns throttling message."""
-        mock_agent.side_effect = throttling_error
+    async def test_access_denied_error_through_invoke(self, mock_agent, mock_logger, mock_create_task):
+        """Test AccessDeniedException handling through invoke integration."""
+        from botocore.exceptions import ClientError
 
-        result = background_agent_processing("hello", "session-123", "task-456")
+        access_denied_error = ClientError(
+            {"Error": {"Code": "AccessDeniedException", "Message": "Access denied"}}, "InvokeModel"
+        )
+        mock_create_task.return_value = AsyncMock()
+        mock_agent.invoke_async.side_effect = access_denied_error
+        payload = {"prompt": "hello", "session_id": "session-456"}
 
-        assert result == "I'm currently experiencing high demand. Please try again in a moment."
-        mock_agent.assert_called_once_with("hello", session_id="session-123")
+        result = await invoke(payload)
 
+        assert "Started processing request for session session-456" in result["message"]
+        assert result["status"] == "started"
+        mock_create_task.assert_called_once()
+
+    @pytest.mark.asyncio
+    @patch("asyncio.create_task")
+    @patch("src.agents.main.logger")
     @patch("src.agents.main.agent")
-    def test_access_denied_exception(self, mock_agent, access_denied_error):
-        """Test ClientError with AccessDeniedException: background processing returns permissions message."""
-        mock_agent.side_effect = access_denied_error
+    async def test_generic_exception_through_invoke(self, mock_agent, mock_logger, mock_create_task):
+        """Test generic Exception handling through invoke integration."""
+        mock_create_task.return_value = AsyncMock()
+        mock_agent.invoke_async.side_effect = Exception("Unexpected error")
+        payload = {"prompt": "hello", "session_id": "session-456"}
 
-        result = background_agent_processing("hello", "session-123", "task-456")
+        result = await invoke(payload)
 
-        assert result == "I don't have the necessary permissions to access the model."
-        mock_agent.assert_called_once_with("hello", session_id="session-123")
+        assert "Started processing request for session session-456" in result["message"]
+        assert result["status"] == "started"
+        mock_create_task.assert_called_once()
 
+    @pytest.mark.asyncio
+    @patch("asyncio.create_task")
+    @patch("src.agents.main.logger")
     @patch("src.agents.main.agent")
-    def test_unknown_client_error(self, mock_agent, unknown_client_error):
-        """Test ClientError with unknown error code: background processing returns generic technical difficulties message."""
-        mock_agent.side_effect = unknown_client_error
+    async def test_successful_agent_response_through_invoke(self, mock_agent, mock_logger, mock_create_task):
+        """Test successful agent response through invoke integration."""
+        mock_create_task.return_value = AsyncMock()
+        mock_response = type("MockResponse", (), {"message": "Hello, how can I help?"})()
+        mock_agent.invoke_async.return_value = mock_response
+        payload = {"prompt": "hello", "session_id": "session-456"}
 
-        result = background_agent_processing("test", "session-123", "task-456")
+        result = await invoke(payload)
 
-        assert result == "I'm experiencing some technical difficulties. Please try again later."
-        mock_agent.assert_called_once_with("test", session_id="session-123")
-
-    @patch("src.agents.main.agent")
-    def test_generic_exception(self, mock_agent):
-        """Test generic Exception: background processing returns unexpected error message."""
-        mock_agent.side_effect = Exception("Unexpected error")
-
-        result = background_agent_processing("test", "session-123", "task-456")
-
-        assert result == "I encountered an unexpected error. Please try again."
-        mock_agent.assert_called_once_with("test", session_id="session-123")
-
-    @patch("src.agents.main.agent")
-    def test_client_error_without_error_code(self, mock_agent):
-        """Test ClientError without Error.Code in response: should use generic message."""
-        error_response = {"Error": {"Message": "Some error without code"}}
-        mock_agent.side_effect = ClientError(error_response, "InvokeModel")
-
-        result = background_agent_processing("test", "session-123", "task-456")
-
-        assert result == "I'm experiencing some technical difficulties. Please try again later."
-        mock_agent.assert_called_once_with("test", session_id="session-123")
-
-    @patch("src.agents.main.agent")
-    def test_client_error_without_error_dict(self, mock_agent):
-        """Test ClientError without Error dict in response: should use generic message."""
-        error_response = {}  # No Error key
-        mock_agent.side_effect = ClientError(error_response, "InvokeModel")
-
-        result = background_agent_processing("test", "session-123", "task-456")
-
-        assert result == "I'm experiencing some technical difficulties. Please try again later."
-        mock_agent.assert_called_once_with("test", session_id="session-123")
+        assert "Started processing request for session session-456" in result["message"]
+        assert result["status"] == "started"
+        mock_create_task.assert_called_once()

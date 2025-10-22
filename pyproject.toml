@@ -17,7 +17,8 @@ dev = [
   "ruff",
   "pre-commit",
   "pytest",
-  "pytest-mock"
+  "pytest-mock",
+  "pytest-asyncio"
 ]
 
 [tool.ruff]
