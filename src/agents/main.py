@@ -1,4 +1,4 @@
-import logging
+import asyncio
 import os
 from typing import Optional
 
@@ -10,11 +10,6 @@ from strands.models import BedrockModel
 from strands_tools import use_aws
 
 from src.tools import journal
-
-# Configure logging with reasonable output
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-logger = logging.getLogger(__name__)
-logger.info("Agent module loaded successfully")
 
 # Global env variables
 os.environ["BYPASS_TOOL_CONSENT"] = "true"
@@ -90,90 +85,75 @@ def create_agent(
     return Agent(model=bedrock_model, system_prompt=SYSTEM_PROMPT, tools=[use_aws, journal])
 
 
-# Create an agent
-logger.info("Creating agent with environment variables:")
-logger.info(f"  S3_BUCKET_NAME: {s3_bucket_name}")
-logger.info(f"  JOURNAL_TABLE_NAME: {journal_table_name}")
-logger.info(f"  SESSION_ID: {session_id}")
-logger.info(f"  AWS_REGION: {os.environ.get('AWS_REGION', 'not set')}")
-
+# Create agent
 agent = create_agent()
-logger.info("Agent created successfully")
 
 # Create BedrockAgentCore app
 app = BedrockAgentCoreApp()
-logger.info("BedrockAgentCore app initialized")
+
+# Use the built-in AgentCore logger
+logger = app.logger
+logger.info("Agent and AgentCore app initialized successfully")
 
 
-def background_agent_processing(user_message: str, session_id: str, task_id: str):
-    """Background function to process agent request with progress tracking"""
-    logger.info(f"--> Starting cost optimization analysis - Task: {task_id}, Session: {session_id}")
-    logger.info(f"--> User request: '{user_message}'")
+@app.async_task
+async def background_agent_task(user_message: str, session_id: str):
+    """Background task to process agent request with LLM"""
+    logger.info(f"Background task started - Session: {session_id}")
 
     try:
-        logger.info("--> Initializing agent processing...")
-        response = agent(user_message, session_id=session_id)
-        logger.info(f"--> Cost optimization analysis completed - Task: {task_id}")
-        logger.info(f"--> Final response length: {len(str(response))} characters")
+        # Use Strands native async method - agent will have full LLM interaction
+        response = await agent.invoke_async(user_message, session_id=session_id)
 
-        app.complete_async_task(task_id)
-        return str(response)
+        # Log completion with response summary for observability
+        logger.info(
+            f"Background task completed - Session: {session_id}, Response length: {len(str(response.message)) if hasattr(response, 'message') else 'unknown'}"
+        )
+
+        # Return response for proper async task completion (even though no client receives it)
+        return response
 
     except NoCredentialsError:
-        error_msg = "AWS credentials are not configured. Please set up your AWS credentials."
-        logger.error(f"--> Credentials error - Task: {task_id}: {error_msg}")
-        app.complete_async_task(task_id)
-        return error_msg
+        logger.error(f"Background task failed - Session: {session_id}: AWS credentials not configured")
     except ClientError as e:
         error_code = e.response.get("Error", {}).get("Code", "")
         if error_code == "ThrottlingException":
-            error_msg = "I'm currently experiencing high demand. Please try again in a moment."
+            logger.error(f"Background task failed - Session: {session_id}: LLM throttling")
         elif error_code == "AccessDeniedException":
-            error_msg = "I don't have the necessary permissions to access the model."
+            logger.error(f"Background task failed - Session: {session_id}: LLM access denied")
         else:
-            error_msg = "I'm experiencing some technical difficulties. Please try again later."
-
-        logger.error(f"--> AWS error - Task: {task_id}, Code: {error_code}: {error_msg}")
-        app.complete_async_task(task_id)
-        return error_msg
+            logger.error(f"Background task failed - Session: {session_id}: AWS error {error_code}")
     except Exception as e:
-        error_msg = "I encountered an unexpected error. Please try again."
-        logger.error(f"--> Unexpected error - Task: {task_id}: {str(e)}", exc_info=True)
-        app.complete_async_task(task_id)
-        return error_msg
+        logger.error(f"Background task failed - Session: {session_id}: {str(e)}", exc_info=True)
 
 
 @app.entrypoint
-def invoke(payload):
-    """Process user input and return a response"""
+async def invoke(payload):
+    """Process user input and return a response - Fire and forget for Lambda.
+
+    Fire-and-forget pattern:
+    - Lambda returns immediately (avoiding 15-minute timeout)
+    - AgentCore continues processing in background
+    - Status automatically becomes HEALTHY_BUSY when background_agent_task() runs
+    - Status returns to HEALTHY when background_agent_task() completes
+    """
     user_message = payload.get("prompt", "Hello")
     payload_session_id = payload.get("session_id", session_id)
 
-    logger.info(f"--> AgentCore invocation - Session: {payload_session_id}, Message: '{user_message}'")
+    logger.info(f"Request received - Session: {payload_session_id}")
 
     try:
-        # Start tracking the async task manually (this sets status to HealthyBusy)
-        task_id = app.add_async_task("cost_analysis", {"session_id": payload_session_id, "message": user_message})
-        logger.info(f"--> Created async task: {task_id}")
+        asyncio.create_task(background_agent_task(user_message, payload_session_id))
 
-        # Start background work in a separate thread
-        import threading
-
-        thread = threading.Thread(
-            target=background_agent_processing,
-            args=(user_message, payload_session_id, task_id),
-            daemon=True,
-            name=f"AgentTask-{task_id}",
-        )
-        thread.start()
-
-        logger.info(f"--> Background analysis started - Task: {task_id}")
-
-        # Return immediately to client (AgentCore connection closes here)
-        return f"Started cost optimization analysis for session {payload_session_id}. Processing will continue in background."
+        logger.info(f"Background processing started - Session: {payload_session_id}")
+        return {
+            "message": f"Started processing request for session {payload_session_id}. Processing will continue in background.",
+            "session_id": payload_session_id,
+            "status": "started",
+        }
     except Exception as e:
-        logger.error(f"--> Failed to start background task: {str(e)}", exc_info=True)
-        return f"Error starting background processing: {str(e)}"
+        logger.error(f"Entrypoint error - Session: {payload_session_id}: {str(e)}", exc_info=True)
+        return {"error": f"Error starting background processing: {str(e)}", "session_id": payload_session_id}
 
 
 if __name__ == "__main__":
