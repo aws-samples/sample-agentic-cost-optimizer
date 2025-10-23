@@ -1,5 +1,7 @@
 import asyncio
 import os
+import time
+from datetime import datetime, timezone
 from typing import Optional
 
 from bedrock_agentcore.runtime import BedrockAgentCoreApp
@@ -7,9 +9,9 @@ from botocore.config import Config as BotocoreConfig
 from botocore.exceptions import ClientError, NoCredentialsError
 from strands import Agent
 from strands.models import BedrockModel
-from strands_tools import use_aws
+from strands_tools import calculator, use_aws
 
-from src.tools import journal
+from src.tools import journal, storage
 
 # Global env variables
 os.environ["BYPASS_TOOL_CONSENT"] = "true"
@@ -76,13 +78,25 @@ def create_agent(
         boto_client_config=boto_config,
     )
 
+    # Calculate current time information in Unix format for CloudWatch queries
+    current_timestamp = int(time.time())
+    current_datetime = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+
     SYSTEM_PROMPT = ""
     SYSTEM_PROMPT += open(os.path.join(os.path.dirname(__file__), "prompt.md")).read()
     SYSTEM_PROMPT = SYSTEM_PROMPT.replace("{s3_bucket_name}", s3_bucket_name)
     SYSTEM_PROMPT = SYSTEM_PROMPT.replace("{journal_table_name}", journal_table_name)
+    SYSTEM_PROMPT = SYSTEM_PROMPT.replace("{current_timestamp}", str(current_timestamp))
+    SYSTEM_PROMPT = SYSTEM_PROMPT.replace("{current_datetime}", current_datetime)
 
-    # Create agent with configured model
-    return Agent(model=bedrock_model, system_prompt=SYSTEM_PROMPT, tools=[use_aws, journal])
+    # Create agent with configured model and tools
+    # Note: current_time tool removed - it only returns ISO format which requires parsing
+    # Instead, we inject current_timestamp directly into the prompt in Unix format
+    return Agent(
+        model=bedrock_model,
+        system_prompt=SYSTEM_PROMPT,
+        tools=[use_aws, journal, storage, calculator],
+    )
 
 
 # Create agent
