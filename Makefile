@@ -13,7 +13,7 @@ help:
 	@echo ""
 	@echo "Code Quality:"
 	@echo "  make check        - Run all code quality checks (pre-commit)"
-	@echo "  make test         - Run unit tests with pytest"
+	@echo "  make test         - Run all tests"
 	@echo ""
 	@echo "Development:"
 	@echo "  make run          - Run the sample local agent"
@@ -52,7 +52,11 @@ check:
 	uv run pre-commit run --all-files
 
 test:
+	@echo "Running Python tests..."
 	uv run pytest tests/ -v
+	@echo "Running TypeScript tests..."
+	cd infra && npm test
+	@echo "✓ All tests completed!"
 
 run:
 	PYTHONPATH=src uv run python -m agents.main
