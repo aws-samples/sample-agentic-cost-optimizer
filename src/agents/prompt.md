@@ -53,7 +53,7 @@ Use the journal tool to track your progress through the cost optimization workfl
 **Your Workflow Pattern:**
 
 1. **Before you start any work:**
-   - Begin tracking your session with action "start_session"
+   - Begin tracking your session with action "update_session"
    - If this fails, note the error in "Gaps & Limitations" but continue your work
 
 2. **When starting each major phase:**
@@ -80,11 +80,12 @@ Use the journal tool to track your progress through the cost optimization workfl
 ## DETERMINISTIC WORKFLOW
 
 **WORKFLOW START - Session Management:**
-Before beginning any discovery or analysis, initialize journaling:
+Before beginning any discovery or analysis, update the session status:
 
-1. Start tracking your session: use journal with action "start_session"
-   - This automatically sets the session status to BUSY indicating active processing
-   - If this fails: log "Journaling Error: start_session - [error]" and skip remaining journaling
+1. Update session to BUSY: use journal with action "update_session"
+   - Note: The Step Function workflow already created the session with status "INITIATED"
+   - This action updates the status from "INITIATED" to "BUSY" to indicate agent processing has started
+   - If this fails: log "Journaling Error: update_session - [error]" and skip remaining journaling
 2. Continue with your cost optimization work regardless of journaling results
 
 **CRITICAL: Time Calculation Setup**

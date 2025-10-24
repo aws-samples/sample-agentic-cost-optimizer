@@ -27,17 +27,32 @@ This feature adds a Step Function workflow to orchestrate the agent invocation p
 1. WHEN the Lambda invoker function is called THEN it SHALL accept session_id as input parameter
 2. WHEN the Lambda invoker function runs THEN it SHALL pass session_id, s3_bucket_name, and ddb_table_name as environment variables to the agent
 
-### Requirement 3 (Core - Step Function Workflow)
+### Requirement 3 (Core - Session Initialization)
+
+**User Story:** As a system operator, I want the Step Function to initialize session records in DynamoDB, so that I can track workflow execution from the very beginning.
+
+#### Acceptance Criteria
+
+1. WHEN the Step Function starts THEN it SHALL create a DynamoDB record with PK=session_id from event
+2. WHEN creating the record THEN it SHALL use SK="SESSION" 
+3. WHEN creating the record THEN it SHALL set status field to "INITIATED"
+4. WHEN creating the record THEN it SHALL include start_time timestamp field
+5. WHEN creating the record THEN it SHALL include created_at timestamp field
+6. WHEN the DynamoDB PutItem operation fails THEN the Step Function SHALL catch the error and transition to failure path
+
+### Requirement 4 (Core - Step Function Workflow)
 
 **User Story:** As a system operator, I want to trigger agent workflows through Step Functions, so that I can have reliable orchestration and error handling for agent invocations.
 
 #### Acceptance Criteria
 
-1. WHEN the Step Function is triggered THEN it SHALL invoke the existing agent invoker Lambda function
-2. WHEN the Lambda function fails THEN the Step Function SHALL transition to a failure path
-3. WHEN the Lambda function succeeds THEN the Step Function SHALL proceed to status monitoring
+1. WHEN the Step Function is triggered THEN it SHALL create a session record in DynamoDB with status "INITIATED"
+2. WHEN the DynamoDB record creation fails THEN the Step Function SHALL transition to a failure path
+3. WHEN the DynamoDB record is created successfully THEN the Step Function SHALL invoke the existing agent invoker Lambda function
+4. WHEN the Lambda function fails THEN the Step Function SHALL transition to a failure path
+5. WHEN the Lambda function succeeds THEN the Step Function SHALL proceed to status monitoring
 
-### Requirement 4 (Core - Status Monitoring)
+### Requirement 5 (Core - Status Monitoring)
 
 **User Story:** As a system operator, I want the Step Function to monitor agent session status, so that I can know when the agent has completed its work.
 
@@ -49,7 +64,7 @@ This feature adds a Step Function workflow to orchestrate the agent invocation p
 4. WHEN the STATUS field equals "FAILED" THEN the Step Function SHALL transition to failure path
 5. WHEN the session record does not exist THEN the Step Function SHALL wait and retry the query
 
-### Requirement 5 (Infrastructure - CDK Integration)
+### Requirement 6 (Infrastructure - CDK Integration)
 
 **User Story:** As a developer, I want the Step Function integrated into the existing CDK infrastructure, so that it follows the current deployment patterns.
 
@@ -60,7 +75,7 @@ This feature adds a Step Function workflow to orchestrate the agent invocation p
 3. WHEN deploying THEN the Step Function SHALL reference existing resources (Lambda function, DynamoDB table) by their CDK constructs
 4. WHEN deploying THEN the Step Function SHALL output its ARN for external triggering
 
-### Requirement 6 (Trigger - EventBridge Integration)
+### Requirement 7 (Trigger - EventBridge Integration)
 
 **User Story:** As a system operator, I want EventBridge integration for triggering the workflow, so that I can manually trigger executions from console or CLI.
 
@@ -72,7 +87,7 @@ This feature adds a Step Function workflow to orchestrate the agent invocation p
 4. WHEN EventBridge triggers the workflow THEN the EventBridge event ID SHALL be automatically passed as session_id to the Step Function
 5. WHEN the event flows through THEN the session_id SHALL be passed from EventBridge → Step Function → Lambda invoker → Agent
 
-### Requirement 7 (Developer Experience - CLI Integration)
+### Requirement 8 (Developer Experience - CLI Integration)
 
 **User Story:** As a developer, I want convenient CLI commands for triggering workflows, so that I can easily test the system during development.
 
