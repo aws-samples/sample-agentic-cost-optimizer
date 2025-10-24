@@ -29,12 +29,20 @@
   - Create `infra/lib/workflow.ts` with Step Function state machine
   - Define states: InvokeAgent, CheckStatus, WaitForCompletion, Success, Failure
   - Include DynamoDB polling logic for session status
-  - _Requirements: 3.1, 3.2, 4.1, 4.2, 4.3, 4.4, 4.5_
+  - _Requirements: 4.1, 4.2, 5.1, 5.2, 5.3, 5.4, 5.5_
 
-- [x] 3.2 Add IAM permissions for Step Function
-  - Grant Lambda invocation permissions to Step Function
-  - Grant DynamoDB GetItem permissions for session status polling
-  - _Requirements: 5.2_
+- [x] 3.2 Add session initialization step to workflow
+  - Add InitializeSession state as first step in Step Function workflow
+  - Use DynamoPutItem task to create session record with PK=session_id, SK=SESSION
+  - Set status="INITIATED", start_time and created_at timestamps
+  - Add error handling with catch block to transition to failure state
+  - Chain InitializeSession → InvokeAgent in workflow definition
+  - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5, 3.6_
+
+- [ ] 3.3 Update IAM permissions for Step Function
+  - Add DynamoDB PutItem permissions for session initialization to existing permissions
+  - Ensure existing Lambda invocation and DynamoDB GetItem permissions remain
+  - _Requirements: 6.2_
 
 - [x] 4. Create EventBridge integration
 - [x] 4.1 Add EventBridge rule to infra-stack.ts

@@ -5,7 +5,7 @@ import { Table } from 'aws-cdk-lib/aws-dynamodb';
 import { Effect, PolicyStatement } from 'aws-cdk-lib/aws-iam';
 import { Function as LambdaFunction } from 'aws-cdk-lib/aws-lambda';
 import { Choice, Condition, DefinitionBody, Fail, JsonPath, StateMachine, Succeed, Wait, WaitTime } from 'aws-cdk-lib/aws-stepfunctions';
-import { DynamoAttributeValue, DynamoGetItem, LambdaInvoke } from 'aws-cdk-lib/aws-stepfunctions-tasks';
+import { DynamoAttributeValue, DynamoGetItem, DynamoPutItem, LambdaInvoke } from 'aws-cdk-lib/aws-stepfunctions-tasks';
 
 export interface WorkflowProps {
   /**
@@ -30,6 +30,18 @@ export class Workflow extends Construct {
   }
 
   private createStateMachine(props: WorkflowProps): StateMachine {
+    // Define session initialization task
+    const createSessionRecord = new DynamoPutItem(this, 'CreateSessionRecord', {
+      table: props.journalTable,
+      item: {
+        PK: DynamoAttributeValue.fromString(JsonPath.stringAt('$.session_id')),
+        SK: DynamoAttributeValue.fromString('SESSION'),
+        status: DynamoAttributeValue.fromString('INITIATED'),
+        created_at: DynamoAttributeValue.fromString(JsonPath.stateEnteredTime),
+      },
+      resultPath: '$.initResult',
+    });
+
     // Define the Lambda invocation task
     const invokeAgent = new LambdaInvoke(this, 'InvokeAgent', {
       lambdaFunction: props.agentInvokerFunction,
@@ -67,45 +79,21 @@ export class Workflow extends Construct {
       comment: 'Evaluate agent session status',
     });
 
-    // Add conditions for status evaluation - handle DynamoDB native format
+    // Add conditions for status evaluation - using DynamoDB native format
     evaluateStatus
-      .when(
-        Condition.and(
-          Condition.isPresent('$.statusResult.Item'),
-          Condition.or(
-            Condition.stringEquals('$.statusResult.Item.status.S', 'COMPLETED'),
-            Condition.stringEquals('$.statusResult.Item.status', 'COMPLETED'),
-          ),
-        ),
-        success,
-      )
-      .when(
-        Condition.and(
-          Condition.isPresent('$.statusResult.Item'),
-          Condition.or(
-            Condition.stringEquals('$.statusResult.Item.status.S', 'FAILED'),
-            Condition.stringEquals('$.statusResult.Item.status', 'FAILED'),
-          ),
-        ),
-        failure,
-      )
+      .when(Condition.stringEquals('$.statusResult.Item.status.S', 'COMPLETED'), success)
+      .when(Condition.stringEquals('$.statusResult.Item.status.S', 'FAILED'), failure)
       .when(
         Condition.or(
-          Condition.isNotPresent('$.statusResult.Item'),
-          Condition.and(
-            Condition.isPresent('$.statusResult.Item'),
-            Condition.or(
-              Condition.stringEquals('$.statusResult.Item.status.S', 'BUSY'),
-              Condition.stringEquals('$.statusResult.Item.status', 'BUSY'),
-            ),
-          ),
+          Condition.stringEquals('$.statusResult.Item.status.S', 'INITIATED'),
+          Condition.stringEquals('$.statusResult.Item.status.S', 'BUSY'),
         ),
         waitForCompletion.next(checkStatus),
       )
       .otherwise(failure);
 
-    // Chain the states together
-    const definition = invokeAgent.addCatch(failure).next(checkStatus).next(evaluateStatus);
+    // Chain the states together - start with session initialization
+    const definition = createSessionRecord.addCatch(failure).next(invokeAgent.addCatch(failure).next(checkStatus).next(evaluateStatus));
 
     // Create the state machine
     const stateMachine = new StateMachine(this, 'AgentWorkflowStateMachine', {
@@ -123,11 +111,11 @@ export class Workflow extends Construct {
       }),
     );
 
-    // Grant permissions to read from DynamoDB table
+    // Grant permissions to read from and write to DynamoDB table
     stateMachine.addToRolePolicy(
       new PolicyStatement({
         effect: Effect.ALLOW,
-        actions: ['dynamodb:GetItem'],
+        actions: ['dynamodb:GetItem', 'dynamodb:PutItem'],
         resources: [props.journalTable.tableArn],
       }),
     );
