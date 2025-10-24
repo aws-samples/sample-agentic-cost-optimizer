@@ -21,11 +21,11 @@ s3_bucket_name = os.environ.get("S3_BUCKET_NAME", "default-bucket")
 journal_table_name = os.environ.get("JOURNAL_TABLE_NAME", "default-table")
 session_id = os.environ.get("SESSION_ID")
 
-# Boto3 configuration constants (using boto3 defaults)
-DEFAULT_MAX_ATTEMPTS = 3
-DEFAULT_RETRY_MODE = "standard"
+# Boto3 configuration constants (optimized for agent workflows)
+DEFAULT_MAX_ATTEMPTS = 5
+DEFAULT_RETRY_MODE = "adaptive"
 DEFAULT_CONNECT_TIMEOUT = 60
-DEFAULT_READ_TIMEOUT = 60
+DEFAULT_READ_TIMEOUT = 120
 DEFAULT_MAX_POOL_CONNECTIONS = 10
 
 # Model configuration constants
@@ -127,18 +127,41 @@ async def background_agent_task(user_message: str, session_id: str):
         # Return response for proper async task completion (even though no client receives it)
         return response
 
-    except NoCredentialsError:
-        logger.error(f"Background task failed - Session: {session_id}: AWS credentials not configured")
+    except NoCredentialsError as e:
+        logger.error(f"Background task failed - Session: {session_id}: NoCredentialsError - {str(e)}")
+
+        return {
+            "error": "NoCredentialsError",
+            "error_code": "NoCredentialsError",
+            "error_message": str(e),
+            "session_id": session_id,
+            "status": "failed",
+        }
+
     except ClientError as e:
         error_code = e.response.get("Error", {}).get("Code", "")
-        if error_code == "ThrottlingException":
-            logger.error(f"Background task failed - Session: {session_id}: LLM throttling")
-        elif error_code == "AccessDeniedException":
-            logger.error(f"Background task failed - Session: {session_id}: LLM access denied")
-        else:
-            logger.error(f"Background task failed - Session: {session_id}: AWS error {error_code}")
+        error_message = e.response.get("Error", {}).get("Message", "")
+
+        logger.error(f"Background task failed - Session: {session_id}: {error_code} - {error_message}")
+
+        return {
+            "error": "ClientError",
+            "error_code": error_code,
+            "error_message": error_message,
+            "session_id": session_id,
+            "status": "failed",
+        }
+
     except Exception as e:
-        logger.error(f"Background task failed - Session: {session_id}: {str(e)}", exc_info=True)
+        logger.error(f"Background task failed - Session: {session_id}: {type(e).__name__} - {str(e)}", exc_info=True)
+
+        return {
+            "error": "Exception",
+            "error_type": type(e).__name__,
+            "error_message": str(e),
+            "session_id": session_id,
+            "status": "failed",
+        }
 
 
 @app.entrypoint

@@ -6,7 +6,12 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 # Import the internal journal functions directly - these don't have the @tool decorator
-from src.tools.journal import _complete_session, _complete_task, _start_session, _start_task
+from src.tools.journal import (
+    _complete_session,
+    _complete_task,
+    _start_task,
+    _update_session,
+)
 
 
 @pytest.fixture
@@ -42,23 +47,32 @@ class TestJournalStartSession:
 
     @patch("src.tools.journal.dynamodb")
     def test_start_session_success(self, mock_dynamodb, mock_tool_context, mock_dynamodb_table):
-        """Test successful session start."""
+        """Test successful session update - updates existing session from INITIATED to BUSY."""
         mock_dynamodb.Table.return_value = mock_dynamodb_table
+        mock_dynamodb_table.get_item.return_value = {
+            "Item": {
+                "PK": "test-session-123",
+                "SK": "SESSION",
+                "status": "INITIATED",
+                "start_time": "2025-01-01T00:00:00Z",
+            }
+        }
 
-        result = _start_session(tool_context=mock_tool_context)
+        result = _update_session(tool_context=mock_tool_context)
 
         assert result["success"] is True
         assert result["session_id"] == "test-session-123"
         assert result["status"] == "BUSY"
         assert "timestamp" in result
-        mock_dynamodb_table.put_item.assert_called_once()
+        mock_dynamodb_table.get_item.assert_called_once()
+        mock_dynamodb_table.update_item.assert_called_once()
 
     def test_start_session_missing_session_id(self):
         """Test start_session with missing session_id."""
         context = MagicMock()
         context.invocation_state = {}
 
-        result = _start_session(tool_context=context)
+        result = _update_session(tool_context=context)
 
         assert result["success"] is False
         assert "session_id not found" in result["error"]
@@ -67,7 +81,7 @@ class TestJournalStartSession:
         """Test start_session with missing JOURNAL_TABLE_NAME."""
         del os.environ["JOURNAL_TABLE_NAME"]
 
-        result = _start_session(tool_context=mock_tool_context)
+        result = _update_session(tool_context=mock_tool_context)
 
         assert result["success"] is False
         assert "JOURNAL_TABLE_NAME not set" in result["error"]
