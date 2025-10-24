@@ -135,8 +135,8 @@ def _handle_dynamodb_error(operation: str, error: ClientError, context: Dict[str
     )
 
 
-def _start_session(tool_context: ToolContext) -> Dict[str, Any]:
-    """Start a new journaling session using session_id from invocation state."""
+def _update_session(tool_context: ToolContext) -> Dict[str, Any]:
+    """Update session status from INITIATED to BUSY when agent starts processing."""
     try:
         session_id = tool_context.invocation_state.get("session_id")
         if not session_id:
@@ -146,30 +146,46 @@ def _start_session(tool_context: ToolContext) -> Dict[str, Any]:
         if not table_name:
             return _create_error_response("JOURNAL_TABLE_NAME not set")
 
-        timestamp, ttl = _create_timestamp_and_ttl()
-
-        _session_cache["session_id"] = session_id
-        _session_cache["start_time"] = timestamp
-        _session_cache["tasks"] = {}
+        timestamp, _ = _create_timestamp_and_ttl()
 
         try:
             table = dynamodb.Table(table_name)
-            item = _create_dynamodb_item(
-                session_id,
-                "SESSION",
-                timestamp,
-                ttl,
-                status="BUSY",
-                start_time=timestamp,
+            # Get existing session to retrieve start_time
+            response = table.get_item(
+                Key={
+                    "PK": session_id,
+                    "SK": "SESSION",
+                }
             )
-            table.put_item(Item=item)
+
+            existing_item = response.get("Item", {})
+            start_time = existing_item.get("start_time", timestamp)
+
+            # Update session status to BUSY
+            table.update_item(
+                Key={
+                    "PK": session_id,
+                    "SK": "SESSION",
+                },
+                UpdateExpression="SET #status = :status, agent_start_time = :agent_start_time",
+                ExpressionAttributeNames={"#status": "status"},
+                ExpressionAttributeValues={
+                    ":status": "BUSY",
+                    ":agent_start_time": timestamp,
+                },
+            )
+
+            _session_cache["session_id"] = session_id
+            _session_cache["start_time"] = start_time
+            _session_cache["tasks"] = {}
+
         except ClientError as e:
-            return _handle_dynamodb_error("create session", e, {"session_id": session_id})
+            return _handle_dynamodb_error("update session to BUSY", e, {"session_id": session_id})
 
         return {
             "success": True,
             "session_id": session_id,
-            "start_time": timestamp,
+            "start_time": start_time,
             "status": "BUSY",
             "timestamp": timestamp,
         }
@@ -415,7 +431,7 @@ def journal(
         Dictionary with success status and operation results
     """
     if action == "start_session":
-        return _start_session(tool_context)
+        return _update_session(tool_context)
     elif action == "start_task":
         if not phase_name:
             return _create_error_response("phase_name is required for start_task action")

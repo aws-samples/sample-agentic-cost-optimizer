@@ -8,18 +8,19 @@ This design implements a Step Function workflow that orchestrates agent invocati
 
 ### High-Level Flow
 ```
-EventBridge Event → Step Function → Lambda Invoker → Agent → DynamoDB Session Status
-                        ↓                                        ↑
-                   Status Polling ←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←
+EventBridge Event → Step Function → Initialize Session → Lambda Invoker → Agent → DynamoDB Session Status
+                        ↓               ↓                                           ↑
+                   Status Polling ←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←
 ```
 
 ### Component Interactions
 
 1. **EventBridge** publishes manual trigger events with unique event IDs
-2. **Step Function** receives event ID as session_id and orchestrates the workflow
-3. **Lambda Invoker** receives session context and invokes the agent with environment variables
-4. **Agent** processes requests and updates session status in DynamoDB via journal tool
-5. **Step Function** polls DynamoDB for session status until completion or failure
+2. **Step Function** receives event ID as session_id and creates initial session record with status "INITIATED"
+3. **Step Function** orchestrates the workflow after successful session initialization
+4. **Lambda Invoker** receives session context and invokes the agent with environment variables
+5. **Agent** processes requests and updates session status in DynamoDB via journal tool
+6. **Step Function** polls DynamoDB for session status until completion or failure
 
 ## Components and Interfaces
 
@@ -47,17 +48,33 @@ EventBridge Event → Step Function → Lambda Invoker → Agent → DynamoDB Se
 **Purpose**: Orchestrate agent invocation and monitor completion
 
 **States**:
-1. **InvokeAgent**: Call Lambda invoker function
-2. **CheckStatus**: Query DynamoDB for session status
-3. **WaitForCompletion**: Wait state with retry logic
-4. **Success**: Terminal success state
-5. **Failure**: Terminal failure state
+1. **InitializeSession**: Create DynamoDB record with status "INITIATED"
+2. **InvokeAgent**: Call Lambda invoker function
+3. **CheckStatus**: Query DynamoDB for session status
+4. **WaitForCompletion**: Wait state with retry logic
+5. **Success**: Terminal success state
+6. **Failure**: Terminal failure state
+
+**InitializeSession State Configuration**:
+```typescript
+new DynamoPutItem(this, 'InitializeSession', {
+  table: props.journalTable,
+  item: {
+    PK: DynamoAttributeValue.fromString(JsonPath.stringAt('$.session_id')),
+    SK: DynamoAttributeValue.fromString('SESSION'),
+    status: DynamoAttributeValue.fromString('INITIATED'),
+    start_time: DynamoAttributeValue.fromString(JsonPath.stringAt('$$.State.EnteredTime')),
+    created_at: DynamoAttributeValue.fromString(JsonPath.stringAt('$$.State.EnteredTime'))
+  },
+  resultPath: '$.initResult'
+})
+```
 
 **Interface**:
 ```json
 {
   "session_id": "string",
-  "status": "BUSY|COMPLETED|FAILED",
+  "status": "INITIATED|BUSY|COMPLETED|FAILED",
   "error": "string (optional)"
 }
 ```
@@ -137,8 +154,9 @@ EventBridge Event → Step Function → Lambda Invoker → Agent → DynamoDB Se
 {
   "PK": "event-uuid-12345",
   "SK": "SESSION", 
-  "status": "BUSY|COMPLETED|FAILED",
+  "status": "INITIATED|BUSY|COMPLETED|FAILED",
   "start_time": "2024-10-16T10:30:00Z",
+  "created_at": "2024-10-16T10:30:00Z",
   "end_time": "2024-10-16T10:35:00Z",
   "duration_seconds": 300,
   "error_message": "optional error details"
@@ -150,6 +168,11 @@ EventBridge Event → Step Function → Lambda Invoker → Agent → DynamoDB Se
 ### Lambda Invocation Failures
 - Step Function catches Lambda errors
 - Transitions to Failure state
+- Logs error details for debugging
+
+### Session Initialization Errors
+- Step Function catches DynamoDB PutItem errors
+- Transitions to Failure state if session creation fails
 - Logs error details for debugging
 
 ### DynamoDB Polling Errors
@@ -234,7 +257,7 @@ aws dynamodb get-item \
 - Ensure agent runtime receives session context
 
 ### IAM Permissions
-- Step Function: `lambda:InvokeFunction`, `dynamodb:GetItem`
+- Step Function: `lambda:InvokeFunction`, `dynamodb:GetItem`, `dynamodb:PutItem`
 - EventBridge: `states:StartExecution`
 - Lambda: Existing permissions plus environment variable access
 
