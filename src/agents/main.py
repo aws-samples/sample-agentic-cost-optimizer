@@ -29,7 +29,7 @@ DEFAULT_READ_TIMEOUT = 120
 DEFAULT_MAX_POOL_CONNECTIONS = 10
 
 # Model configuration constants
-DEFAULT_MODEL_ID = "us.anthropic.claude-sonnet-4-20250514-v1:0"
+DEFAULT_MODEL_ID = "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
 DEFAULT_REGION = "us-east-1"
 
 
