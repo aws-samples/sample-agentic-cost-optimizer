@@ -1,145 +1,61 @@
-# Local Development Setup
+# Contributing Guidelines
 
-## Prerequisites
+Thank you for your interest in contributing to our project. Whether it's a bug report, new feature, correction, or additional
+documentation, we greatly value feedback and contributions from our community.
 
-Install these tools on macOS:
+Please read through this document before submitting any issues or pull requests to ensure we have all the necessary
+information to effectively respond to your bug report or contribution.
 
-```bash
-brew install python uv node aws-cli docker
-npm install -g aws-cdk
-```
+> **For local development setup instructions**, see [Local Development Guide](docs/LOCAL_DEVELOPMENT.md).
 
-- **python**: Python 3.12+ runtime
-- **uv**: Python package manager and virtual environment tool
-- **node**: Required for CDK infrastructure
-- **aws-cli**: AWS command line interface
-- **docker**: Container runtime for building images
-- **aws-cdk**: CDK CLI tool for infrastructure deployment
 
-## Setup
+## Reporting Bugs/Feature Requests
 
-1. **Configure AWS credentials**:
-   ```bash
-   aws configure
-   ```
+We welcome you to use the GitHub issue tracker to report bugs or suggest features.
 
-2. **Install dependencies and setup project**:
-   ```bash
-   make setup
-   ```
-   This installs Python deps in `.venv/`, Node deps in `infra/`, and sets up pre-commit hooks.
+When filing an issue, please check existing open, or recently closed, issues to make sure somebody else hasn't already
+reported the issue. Please try to include as much information as you can. Details like these are incredibly useful:
 
-## Development Workflow
+* A reproducible test case or series of steps
+* The version of our code being used
+* Any modifications you've made relevant to the bug
+* Anything unusual about your environment or deployment
 
-- **Run local agent**: `make run`
-- **Format and lint code**: `make check`
-- **Build Docker image**: `make docker-build`
-- **Trigger Step Function workflow**: `make trigger-workflow`
 
-## AWS Deployment
+## Contributing via Pull Requests
+Contributions via pull requests are much appreciated. Before sending us a pull request, please ensure that:
 
-First-time setup (run once per AWS account/region):
-```bash
-make cdk-bootstrap
-```
+1. You are working against the latest source on the *main* branch.
+2. You check existing open, and recently merged, pull requests to make sure someone else hasn't addressed the problem already.
+3. You open an issue to discuss any significant work - we would hate for your time to be wasted.
 
-Deploy to AWS:
-```bash
-make cdk-deploy      # Full deployment
-make cdk-hotswap     # Fast Lambda-only updates
-make cdk-watch       # Auto-deploy on changes
-```
+To send us a pull request, please:
 
-Cleanup:
-```bash
-make cdk-destroy     # Remove AWS resources
-make clean           # Remove local build artifacts
-```
+1. Fork the repository.
+2. Modify the source; please focus on the specific change you are contributing. If you also reformat all the code, it will be hard for us to focus on your change.
+3. Ensure local tests pass.
+4. Commit to your fork using clear commit messages.
+5. Send us a pull request, answering any default questions in the pull request interface.
+6. Pay attention to any automated CI failures reported in the pull request, and stay involved in the conversation.
 
-## Adding Dependencies
+GitHub provides additional document on [forking a repository](https://help.github.com/articles/fork-a-repo/) and
+[creating a pull request](https://help.github.com/articles/creating-a-pull-request/).
 
-**Python dependencies** (add to `pyproject.toml`):
-- Agent dependencies: Add to `[dependency-groups.agents]`
-- Development tools: Add to `[dependency-groups.dev]`
 
-**Node dependencies** (add to `infra/package.json`):
-- Add to `dependencies` or `devDependencies` as appropriate
+## Finding contributions to work on
+Looking at the existing issues is a great way to find something to contribute on. As our projects, by default, use the default GitHub issue labels (enhancement/bug/duplicate/help wanted/invalid/question/wontfix), looking at any 'help wanted' issues is a great place to start.
 
-After adding any dependencies, run:
-```bash
-make init
-```
 
-## Testing
+## Code of Conduct
+This project has adopted the [Amazon Open Source Code of Conduct](https://aws.github.io/code-of-conduct).
+For more information see the [Code of Conduct FAQ](https://aws.github.io/code-of-conduct-faq) or contact
+opensource-codeofconduct@amazon.com with any additional questions or comments.
 
-**Note**: The agent requires AWS credentials. For local execution, your configured AWS profile is used automatically. For Docker, pass credentials as environment variables.
 
-**Test locally**:
-```bash
-# Option 1: Direct execution (uses local AWS profile)
-make run
-curl -X POST http://localhost:8080/invocations \
-  -H "Content-Type: application/json" \
-  -d '{"prompt": "Hello!"}'
+## Security issue notifications
+If you discover a potential security issue in this project we ask that you notify AWS/Amazon Security via our [vulnerability reporting page](http://aws.amazon.com/security/vulnerability-reporting/). Please do **not** create a public github issue.
 
-# Option 2: Docker container (requires AWS credentials)
-make docker-build
-docker run --platform linux/arm64 -p 8080:8080 \
-  -e S3_BUCKET_NAME=your-bucket \
-  -e AWS_ACCESS_KEY_ID="$AWS_ACCESS_KEY_ID" \
-  -e AWS_SECRET_ACCESS_KEY="$AWS_SECRET_ACCESS_KEY" \
-  -e AWS_SESSION_TOKEN="$AWS_SESSION_TOKEN" \
-  -e AWS_REGION="$AWS_REGION" \
-  strands-agent
-curl -X POST http://localhost:8080/invocations -H "Content-Type: application/json" -d '{"prompt": "Hello!"}'
-```
 
-**Test in AWS**:
-```bash
-# Direct BedrockAgentCore invocation
-aws bedrock-agentcore invoke-agent-runtime \
-  --agent-runtime-arn "RUNTIME_ARN_FROM_CDK_OUTPUT" \
-  --payload "$(echo '{"prompt": "Hello!"}' | base64)" \
-  response.json
+## Licensing
 
-# Lambda invocation
-aws lambda invoke \
-  --function-name "LAMBDA_NAME" \
-  --payload "$(echo '{"session_id": "test-session", "prompt": "Hello!"}' | base64)" \
-  response.json
-```
-
-## Step Function Workflow Testing
-
-Test the complete agent orchestration flow including Step Function workflow and status monitoring:
-
-```bash
-# Trigger workflow via EventBridge (simplest method)
-make trigger-workflow
-
-# Or trigger manually with custom details
-aws events put-events --entries '[
-  {
-    "Source": "manual-trigger", 
-    "DetailType": "execute-agent",
-    "Detail": "{\"description\": \"Test workflow execution\"}"
-  }
-]'
-```
-
-**How it works**:
-- EventBridge generates a unique event ID that becomes the `session_id`
-- The Step Function orchestrates agent invocation and status monitoring
-- Monitor execution progress via AWS Console (Step Functions and DynamoDB)
-
-## Project Structure
-
-- `src/agents/` - Python agent code
-- `src/tools/` - Agent tools (journal, etc.)
-- `infra/` - CDK infrastructure (TypeScript)
-- `infra/lambda/` - Lambda function code
-- `tests/` - Python test files
-- `requirements/` - Generated Python requirements files
-- `.venv/` - Python virtual environment (auto-created)
-
-Run `make help` for all available commands.
+See the [LICENSE](LICENSE) file for our project's licensing. We will ask you to confirm the licensing of your contribution.
