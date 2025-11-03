@@ -18,8 +18,9 @@ export class InfraStack extends Stack {
   constructor(scope: Construct, id: string, props?: StackProps) {
     super(scope, id, props);
 
-    // Get environment from context
-    const environment = this.node.tryGetContext('env') || 'dev';
+    // Get environment and version from environment variables or context
+    const environment = process.env.ENVIRONMENT || this.node.tryGetContext('env') || 'dev';
+    const version = process.env.VERSION || this.node.tryGetContext('version') || 'v1';
 
     // Create DynamoDB table for agents
     const agentsTable = new Table(this, 'AgentsTable', {
@@ -36,12 +37,6 @@ export class InfraStack extends Stack {
       removalPolicy: RemovalPolicy.DESTROY, // For development/POC
     });
 
-    // Output the table name
-    new CfnOutput(this, 'AgentsTableName', {
-      value: agentsTable.tableName,
-      description: 'Name of the DynamoDB table for agents',
-    });
-
     // Create S3 bucket for agent data storage
     const agentDataBucket = new Bucket(this, 'AgentDataBucket', {
       bucketName: `agent-data-${environment}-${this.account}-${this.region}`,
@@ -52,15 +47,9 @@ export class InfraStack extends Stack {
       enforceSSL: true,
     });
 
-    // Output the bucket name for use by other resources
-    new CfnOutput(this, 'AgentDataBucketName', {
-      value: agentDataBucket.bucketName,
-      description: 'Name of the S3 bucket for agent data storage',
-    });
-
     // Create agent using the Agent class
     this.agent = new Agent(this, 'AgentCore', {
-      agentRuntimeName: `agentRuntime${environment}`,
+      agentRuntimeName: `agentRuntime_${environment}_${version}`,
       description: `Agent runtime for ${environment} environment`,
       dockerfilePath: 'Dockerfile',
       environmentVariables: {
@@ -71,22 +60,10 @@ export class InfraStack extends Stack {
     });
 
     // Grant S3 bucket access to the agent role
-    agentDataBucket.grantReadWrite(this.agent.role);
+    agentDataBucket.grantReadWrite(this.agent.runtime.role);
 
     // Grant DynamoDB table access to the agent role
-    agentsTable.grantReadWriteData(this.agent.role);
-
-    // Output the image URI with tag
-    new CfnOutput(this, 'AgentImageUri', {
-      value: this.agent.dockerImage.imageUri,
-      description: 'URI of the built agent Docker image in ECR',
-    });
-
-    // Output the runtime ARN for Lambda function reference
-    new CfnOutput(this, 'AgentCoreRuntimeArn', {
-      value: this.agent.runtimeArn,
-      description: 'ARN of the Agent Core runtime',
-    });
+    agentsTable.grantReadWriteData(this.agent.runtime.role);
 
     // Create Lambda function for agent invocation
     const agentInvokerFunction = new LambdaFunction(this, 'AgentInvokerFunction', {
@@ -120,12 +97,6 @@ export class InfraStack extends Stack {
       }),
     );
 
-    // Output the Lambda function ARN
-    new CfnOutput(this, 'AgentInvokerFunctionArn', {
-      value: agentInvokerFunction.functionArn,
-      description: 'ARN of the Lambda function for agent invocation',
-    });
-
     // Create Step Function workflow
     const workflow = new Workflow(this, 'AgentWorkflow', {
       agentInvokerFunction,
@@ -150,13 +121,32 @@ export class InfraStack extends Stack {
       }),
     );
 
-    // Output the Step Function ARN
+    // CloudFormation Outputs
+    new CfnOutput(this, 'AgentsTableName', {
+      value: agentsTable.tableName,
+      description: 'Name of the DynamoDB table for agents',
+    });
+
+    new CfnOutput(this, 'AgentDataBucketName', {
+      value: agentDataBucket.bucketName,
+      description: 'Name of the S3 bucket for agent data storage',
+    });
+
+    new CfnOutput(this, 'AgentCoreRuntimeArn', {
+      value: this.agent.runtimeArn,
+      description: 'ARN of the Agent Core runtime',
+    });
+
+    new CfnOutput(this, 'AgentInvokerFunctionArn', {
+      value: agentInvokerFunction.functionArn,
+      description: 'ARN of the Lambda function for agent invocation',
+    });
+
     new CfnOutput(this, 'WorkflowStateMachineArn', {
       value: workflow.stateMachine.stateMachineArn,
       description: 'ARN of the Step Function state machine for agent workflow',
     });
 
-    // Output the EventBridge rule ARN
     new CfnOutput(this, 'ManualTriggerRuleArn', {
       value: manualTriggerRule.ruleArn,
       description: 'ARN of the EventBridge rule for manual workflow triggers',
