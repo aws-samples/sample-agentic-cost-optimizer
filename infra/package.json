@@ -7,14 +7,15 @@
     "clean": "rm -rf cdk.out",
     "synth": "cdk synth",
     "cdk": "cdk",
-    "deploy:dev": "cdk deploy --require-approval never -c env=dev",
-    "destroy:dev": "cdk destroy -c env=dev",
+    "deploy": "cdk deploy --require-approval never",
+    "destroy": "cdk destroy",
     "prettier": "prettier . --write",
     "test": "vitest --run",
     "test:watch": "vitest",
     "test:ui": "vitest --ui"
   },
   "dependencies": {
+    "@aws-cdk/aws-bedrock-agentcore-alpha": "^2.221.0-alpha.0",
     "@aws-lambda-powertools/commons": "^2.27.0",
     "@aws-lambda-powertools/logger": "^2.27.0",
     "@aws-sdk/client-bedrock-agentcore": "^3.901.0",

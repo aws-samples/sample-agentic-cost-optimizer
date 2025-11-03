@@ -73,21 +73,24 @@ cdk-bootstrap:
 
 cdk-deploy: 
 	@echo "Deploying CDK stack..."
-	cd infra && npm run build && npm run deploy:dev
+	@echo "Environment: $(or $(ENVIRONMENT),dev), Version: $(or $(VERSION),v1)"
+	cd infra && npm run build && npm run deploy
 	@echo "✓ CDK deployment completed"
 
 cdk-hotswap: 
 	@echo "Fast deploying Lambda changes..."
-	cd infra && npm run build && npx cdk deploy --hotswap --context env=dev
+	@echo "Environment: $(or $(ENVIRONMENT),dev), Version: $(or $(VERSION),v1)"
+	cd infra && npm run build && npx cdk deploy --hotswap
 	@echo "✓ CDK hotswap deployment completed"
 
 cdk-watch: 
 	@echo "Starting CDK watch mode..."
-	cd infra && npm run build && npx cdk watch --context env=dev
+	@echo "Environment: $(or $(ENVIRONMENT),dev), Version: $(or $(VERSION),v1)"
+	cd infra && npm run build && npx cdk watch
 
 cdk-destroy: 
 	@echo "Destroying CDK stack..."
-	cd infra && npm run destroy:dev
+	cd infra && npm run destroy
 	@echo "✓ CDK stack destroyed"
 
 trigger-workflow:
