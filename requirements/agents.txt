@@ -559,9 +559,9 @@ opentelemetry-api==1.33.1 \
     #   opentelemetry-sdk
     #   opentelemetry-semantic-conventions
     #   strands-agents
-opentelemetry-distro==0.54b1 \
-    --hash=sha256:009486513b32b703e275bb2f9ccaf5791676bbf5e2dcfdd90201ddc8f56f122b \
-    --hash=sha256:61d6b97bb7a245fddbb829345bb4ad18be39eb52f770fab89a127107fca3149f
+opentelemetry-distro==0.59b0 \
+    --hash=sha256:a72703a514e1773d35d1ec01489a5fd1f1e7ce92e93cf459ba60f85b880d0099 \
+    --hash=sha256:bbe568d84d801d7e1ead320c4521fc37a4c24b3b2cd49a64f6d8a3c10676cea4
     # via aws-opentelemetry-distro
 opentelemetry-exporter-otlp-proto-common==1.33.1 \
     --hash=sha256:b81c1de1ad349785e601d02715b2d29d6818aed2c809c20219f3d1f20b038c36 \
