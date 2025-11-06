@@ -690,9 +690,9 @@ opentelemetry-instrumentation-dbapi==0.54b1 \
     #   opentelemetry-instrumentation-psycopg2
     #   opentelemetry-instrumentation-pymysql
     #   opentelemetry-instrumentation-sqlite3
-opentelemetry-instrumentation-django==0.54b1 \
-    --hash=sha256:38414f989f60e9dba82928e13f6a20a26baf5cc700f1d891f27e0703ca577802 \
-    --hash=sha256:462fbd577991021f56152df21ca1fdcd7c4abdc10dd44254a44d515b8e3d61ca
+opentelemetry-instrumentation-django==0.59b0 \
+    --hash=sha256:469c2d973619355645ec696bbc4afab836ce22cbc83236a0382c3090588f7772 \
+    --hash=sha256:a0a9eb74afc3870e72eaaa776054fbfd4d83ae306d0c5995f14414bcef2d830e
     # via aws-opentelemetry-distro
 opentelemetry-instrumentation-elasticsearch==0.54b1 \
     --hash=sha256:9f5c968954d72f15e133d06760294f13886d98c4da626374168094035f6dec50 \
