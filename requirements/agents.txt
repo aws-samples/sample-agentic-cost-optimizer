@@ -102,8 +102,8 @@ attrs==25.4.0 \
     #   aiohttp
     #   jsonschema
     #   referencing
-aws-opentelemetry-distro==0.12.1 \
-    --hash=sha256:529e7879c25546fb2d8015f73a1e41b48ddd98eb5dfc49caefde4a809f7c0ad0
+aws-opentelemetry-distro==0.12.2 \
+    --hash=sha256:2acbdbc6f4eb04375e18febd01e7363f56600bc2a2f6009e7e40beefc1f57112
 aws-requests-auth==0.4.3 \
     --hash=sha256:33593372018b960a31dbbe236f89421678b885c35f0b6a7abfae35bb77e069b2 \
     --hash=sha256:646bc37d62140ea1c709d20148f5d43197e6bd2d63909eb36fa4bb2345759977
@@ -112,18 +112,18 @@ beautifulsoup4==4.14.2 \
     --hash=sha256:2a98ab9f944a11acee9cc848508ec28d9228abfd522ef0fad6a02a72e0ded69e \
     --hash=sha256:5ef6fa3a8cbece8488d66985560f97ed091e22bbc4e9c2338508a9d5de6d4515
     # via markdownify
-bedrock-agentcore==0.1.7 \
-    --hash=sha256:441dde64fea596e9571e47ae37ee3b033e58d8d255018f13bdcde8ae8bef2075 \
-    --hash=sha256:e518e8f5e6fb5a5a80182db95757a20e32b0ac2b33d0a1909dfafcba950c6356
-boto3==1.40.51 \
-    --hash=sha256:6aa81b9acb4eff87b5505ae26c948883a2015cc3308ce5168a9df6e00ab815d2 \
-    --hash=sha256:ed1b7750df07b2f2ece0141ff2ed0489db2ec2b5311a956d00a496b05fd4fadb
+bedrock-agentcore==1.0.5 \
+    --hash=sha256:63020ff7219d2220f5c1afb2e61a6823e64bd6b531900efc2e5241863f5fd609 \
+    --hash=sha256:aca7f9d0ab51a952642909d578344874d2bfbdb0e3b409f76df7522515412293
+boto3==1.40.67 \
+    --hash=sha256:3d06e9b3c7abedb8253c7d75b9ab27005480ca1e6e448d1f3c3cc3e209673ca0 \
+    --hash=sha256:3e4317139ace6d44658b8e1f2b5b6612f05b45720721841c90cdee45b02aa514
     # via
     #   bedrock-agentcore
     #   strands-agents
-botocore==1.40.51 \
-    --hash=sha256:a06de20408c3009e59e8f161a1146f1801d279d0923ab950349154900951bb20 \
-    --hash=sha256:d5811a834bbdec6dac540565eab9f5ad954ed439b535686fbc3219e1cbfbfc49
+botocore==1.40.67 \
+    --hash=sha256:cc086f39c877aee0ea8dc88ef69062c9f395b9d30d49bfcfac7b8b7e61864b3a \
+    --hash=sha256:e49e61f6718e8bc8b34e9bb8a97f16c8dc560485faef4981b55d76f825c9d78a
     # via
     #   bedrock-agentcore
     #   boto3
@@ -1330,13 +1330,13 @@ starlette==0.48.0 \
     # via
     #   bedrock-agentcore
     #   mcp
-strands-agents==1.12.0 \
-    --hash=sha256:8f17e775971505ab7841a3139cde9879632a26cdd9cd55be74de83f0e7f804c0 \
-    --hash=sha256:af0f9c8a175666009863d0fb4438e71000ea3a2f0cbda3dc308c35dd4f9a1eb0
+strands-agents==1.15.0 \
+    --hash=sha256:0c24b568dbecf1c68952ca6f44730ab95a82f5d00cd17bf4569450eae1325711 \
+    --hash=sha256:bc02d80d2ccd4964a41b26ca40eb9af35893623d2db2266eb578112374ca287a
     # via strands-agents-tools
-strands-agents-tools==0.2.11 \
-    --hash=sha256:5ef192b68eddeccb96c47227ca841ccce3aedff5db0953a0af7b7212a09428df \
-    --hash=sha256:ebff41ba782e1ce59530e11321780eae0ffdb5b61e7aee7408c46c1a8f29f18d
+strands-agents-tools==0.2.14 \
+    --hash=sha256:233193b8cb48b4d6f83f7ee827d33b6e5e7e75c28e84e86ecf016823092a860a \
+    --hash=sha256:7b44fa62c0e81b0353b52c23f01c5d0d487034ae6caadbd8d9138d35008147e8
 sympy==1.14.0 \
     --hash=sha256:d3d3fe8df1e5a0b42f0e7bdf50541697dbe7d23746e894990c030e2b05e72517 \
     --hash=sha256:e091cc3e99d2141a0ba2847328f5479b05d94a6635cb96148ccb3f34671bd8f5
