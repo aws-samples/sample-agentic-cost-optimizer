@@ -1,0 +1,82 @@
+version: 2
+updates:
+  # GitHub Actions dependencies
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "UTC"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "github-actions"
+
+  # Python dependencies (pip)
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "UTC"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "python"
+    groups:
+      aws-dependencies:
+        patterns:
+          - "boto*"
+          - "aws-*"
+          - "strands-agents*"
+          - "bedrock-agentcore"
+      dev-dependencies:
+        patterns:
+          - "pytest*"
+          - "ruff"
+          - "mypy"
+
+  # TypeScript/npm dependencies (CDK infrastructure)
+  - package-ecosystem: "npm"
+    directory: "/infra"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "UTC"
+    versioning-strategy: increase
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "typescript"
+    groups:
+      typescript-tooling:
+        patterns:
+          - "@types/*"
+          - "typescript"
+          - "ts-node"
+      aws-cdk:
+        patterns:
+          - "aws-cdk*"
+          - "@aws-cdk/*"
+      aws-sdk:
+        patterns:
+          - "@aws-sdk/*"
+          - "@smithy/*"
+      testing:
+        patterns:
+          - "vitest"
+          - "@vitest/*"
+          - "aws-sdk-client-mock*"
+      prettier:
+        patterns:
+          - "prettier"
+          - "@trivago/prettier-plugin-sort-imports"
