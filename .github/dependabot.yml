@@ -28,7 +28,6 @@ updates:
       include: "scope"
     labels:
       - "dependencies"
-      - "python"
     groups:
       aws-dependencies:
         patterns:
@@ -56,7 +55,6 @@ updates:
       include: "scope"
     labels:
       - "dependencies"
-      - "typescript"
     groups:
       typescript-tooling:
         patterns:
