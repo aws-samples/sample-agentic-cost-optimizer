@@ -1,4 +1,3 @@
-import { TypeScriptCode } from '@mrgrain/cdk-esbuild';
 import { CfnOutput, Duration, RemovalPolicy, Stack, type StackProps } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 
@@ -6,9 +5,10 @@ import { AttributeType, BillingMode, Table } from 'aws-cdk-lib/aws-dynamodb';
 import { EventField, EventPattern, Rule, RuleTargetInput } from 'aws-cdk-lib/aws-events';
 import { SfnStateMachine } from 'aws-cdk-lib/aws-events-targets';
 import { Effect, PolicyStatement } from 'aws-cdk-lib/aws-iam';
-import { Function as LambdaFunction, Runtime } from 'aws-cdk-lib/aws-lambda';
+import { Code, Function, LayerVersion, Runtime, Tracing } from 'aws-cdk-lib/aws-lambda';
 import { Bucket, BucketEncryption } from 'aws-cdk-lib/aws-s3';
 
+import { InfraConfig } from '../constants/infra-config';
 import { Agent } from './agent';
 import { Workflow } from './workflow';
 
@@ -35,6 +35,7 @@ export class InfraStack extends Stack {
       },
       billingMode: BillingMode.PAY_PER_REQUEST,
       removalPolicy: RemovalPolicy.DESTROY, // For development/POC
+      timeToLiveAttribute: 'ttlSeconds',
     });
 
     // Create S3 bucket for agent data storage
@@ -48,14 +49,21 @@ export class InfraStack extends Stack {
     });
 
     // Create agent using the Agent class
+    const modelId = InfraConfig.inferenceProfileRegion
+      ? `${InfraConfig.inferenceProfileRegion}.${InfraConfig.modelId}`
+      : InfraConfig.modelId;
+
     this.agent = new Agent(this, 'AgentCore', {
       agentRuntimeName: `agentRuntime_${environment}_${version}`,
       description: `Agent runtime for ${environment} environment`,
       dockerfilePath: 'Dockerfile',
       environmentVariables: {
+        BYPASS_TOOL_CONSENT: 'true',
         S3_BUCKET_NAME: agentDataBucket.bucketName,
         JOURNAL_TABLE_NAME: agentsTable.tableName,
         AWS_REGION: this.region,
+        MODEL_ID: modelId,
+        TTL_DAYS: InfraConfig.ttlDays.toString(),
       },
     });
 
@@ -66,15 +74,60 @@ export class InfraStack extends Stack {
     agentsTable.grantReadWriteData(this.agent.runtime.role);
 
     // Create Lambda function for agent invocation
-    const agentInvokerFunction = new LambdaFunction(this, 'AgentInvokerFunction', {
-      runtime: Runtime.NODEJS_22_X,
-      handler: 'agent-invoker.handler',
-      code: new TypeScriptCode('lambda/agent-invoker.ts'),
+    const agentInvokerFunction = new Function(this, 'AgentInvoker', {
+      runtime: Runtime.PYTHON_3_12,
+      handler: 'agent_invoker.handler',
+      code: Code.fromAsset('..', {
+        // Custom bundling: combines handler from infra/lambda with shared code from src/
+        bundling: {
+          image: Runtime.PYTHON_3_12.bundlingImage,
+          command: [
+            'bash',
+            '-c',
+            'cp infra/lambda/agent_invoker.py /asset-output/ && ' +
+              'mkdir -p /asset-output/src && ' +
+              'rsync -av --exclude="__pycache__" --exclude="*.pyc" src/shared src/__init__.py /asset-output/src/',
+          ],
+        },
+        // Exclude list speeds up CDK asset hash calculation by skipping large/irrelevant directories
+        exclude: [
+          'node_modules/**',
+          '.venv/**',
+          '.git/**',
+          'infra/cdk.out/**',
+          'infra/dist/**',
+          'infra/node_modules/**',
+          'infra/package-lock.json',
+          '.pytest_cache/**',
+          '.ruff_cache/**',
+          '**/__pycache__/**',
+          '**/*.pyc',
+          'tests/**',
+          '.kiro/**',
+          '*.md',
+          '.gitlab-ci.yml',
+          'Makefile',
+          'uv.lock',
+        ],
+      }),
+      layers: [
+        // AWS Lambda Powertools Layer - version 18 for Python 3.12 x86_64
+        LayerVersion.fromLayerVersionArn(
+          this,
+          'PowertoolsLayer',
+          `arn:aws:lambda:${this.region}:017000801446:layer:AWSLambdaPowertoolsPythonV3-python312-x86_64:18`,
+        ),
+      ],
       timeout: Duration.minutes(5),
       memorySize: 512,
+      tracing: Tracing.ACTIVE,
       environment: {
         AGENT_CORE_RUNTIME_ARN: this.agent.runtimeArn,
+        JOURNAL_TABLE_NAME: agentsTable.tableName,
+        TTL_DAYS: InfraConfig.ttlDays.toString(),
         ENVIRONMENT: environment,
+        POWERTOOLS_SERVICE_NAME: InfraConfig.serviceName,
+        LOG_LEVEL: InfraConfig.logLevel,
       },
       description: 'Lambda function to invoke Agent Core runtime',
     });
@@ -97,10 +150,16 @@ export class InfraStack extends Stack {
       }),
     );
 
+    // Grant Lambda permission to write events to DynamoDB
+    agentsTable.grantWriteData(agentInvokerFunction);
+
     // Create Step Function workflow
     const workflow = new Workflow(this, 'AgentWorkflow', {
       agentInvokerFunction,
       journalTable: agentsTable,
+      environment,
+      ttlDays: InfraConfig.ttlDays,
+      logLevel: InfraConfig.logLevel,
     });
 
     // Create EventBridge rule for manual triggers
@@ -135,6 +194,11 @@ export class InfraStack extends Stack {
     new CfnOutput(this, 'AgentCoreRuntimeArn', {
       value: this.agent.runtimeArn,
       description: 'ARN of the Agent Core runtime',
+    });
+
+    new CfnOutput(this, 'SessionInitializerFunctionArn', {
+      value: workflow.sessionInitializerFunction.functionArn,
+      description: 'ARN of the Lambda function for session initialization',
     });
 
     new CfnOutput(this, 'AgentInvokerFunctionArn', {
