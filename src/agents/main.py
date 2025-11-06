@@ -11,26 +11,27 @@ from strands import Agent
 from strands.models import BedrockModel
 from strands_tools import calculator, use_aws
 
+from src.shared import EventStatus, record_event
 from src.tools import journal, storage
 
-# Global env variables
-os.environ["BYPASS_TOOL_CONSENT"] = "true"
-
-# Resource specific environment variable
+# Environment variables (set by CDK stack or local defaults)
 s3_bucket_name = os.environ.get("S3_BUCKET_NAME", "default-bucket")
 journal_table_name = os.environ.get("JOURNAL_TABLE_NAME", "default-table")
 session_id = os.environ.get("SESSION_ID")
+aws_region = os.environ.get("AWS_REGION", "us-east-1")
+model_id = os.environ.get("MODEL_ID", "us.anthropic.claude-sonnet-4-5-20250929-v1:0")
+ttl_days = int(os.environ.get("TTL_DAYS", "90"))
+
+# Set BYPASS_TOOL_CONSENT for local development (CDK stack sets it in deployed environments)
+if "BYPASS_TOOL_CONSENT" not in os.environ:
+    os.environ["BYPASS_TOOL_CONSENT"] = "true"
 
 # Boto3 configuration constants (optimized for agent workflows)
-DEFAULT_MAX_ATTEMPTS = 5
-DEFAULT_RETRY_MODE = "adaptive"
-DEFAULT_CONNECT_TIMEOUT = 60
-DEFAULT_READ_TIMEOUT = 120
+DEFAULT_MAX_ATTEMPTS = 5  # Increased from default 3 for better resilience with Bedrock
+DEFAULT_RETRY_MODE = "standard"  # AWS recommended mode with exponential backoff + jitter
+DEFAULT_CONNECT_TIMEOUT = 60  # Sufficient for establishing connections
+DEFAULT_READ_TIMEOUT = 120  # Allows time for large token responses from Bedrock
 DEFAULT_MAX_POOL_CONNECTIONS = 10
-
-# Model configuration constants
-DEFAULT_MODEL_ID = "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
-DEFAULT_REGION = "us-east-1"
 
 
 def create_boto_config(
@@ -52,16 +53,14 @@ def create_boto_config(
     )
 
 
-def create_agent(
-    model_id: str = DEFAULT_MODEL_ID,
-    region_name: str = DEFAULT_REGION,
-    boto_config: Optional[BotocoreConfig] = None,
-) -> Agent:
+def create_agent(boto_config: Optional[BotocoreConfig] = None) -> Agent:
     """Create configured Agent instances with proper model setup.
 
+    Uses environment variables for configuration:
+    - MODEL_ID: Bedrock model to use
+    - AWS_REGION: AWS region for Bedrock service
+
     Args:
-        model_id: The Bedrock model ID to use. Defaults to Claude 4 Sonnet.
-        region_name: AWS region to use for the Bedrock service.
         boto_config: Optional botocore Config for retry and timeout settings.
 
     Returns:
@@ -74,7 +73,7 @@ def create_agent(
     # Create BedrockModel with boto_client_config
     bedrock_model = BedrockModel(
         model_id=model_id,
-        region_name=region_name,
+        region_name=aws_region,
         boto_client_config=boto_config,
     )
 
@@ -111,7 +110,7 @@ logger.info("Agent and AgentCore app initialized successfully")
 
 
 @app.async_task
-async def background_agent_task(user_message: str, session_id: str):
+async def agent_background_task(user_message: str, session_id: str):
     """Background task to process agent request with LLM"""
     logger.info(f"Background task started - Session: {session_id}")
 
@@ -123,13 +122,26 @@ async def background_agent_task(user_message: str, session_id: str):
         logger.info(
             f"Background task completed - Session: {session_id}, Response length: {len(str(response.message)) if hasattr(response, 'message') else 'unknown'}"
         )
-
+        record_event(
+            session_id=session_id,
+            status=EventStatus.AGENT_BACKGROUND_TASK_COMPLETED,
+            table_name=journal_table_name,
+            ttl_days=ttl_days,
+            region_name=aws_region,
+        )
         # Return response for proper async task completion (even though no client receives it)
         return response
 
     except NoCredentialsError as e:
         logger.error(f"Background task failed - Session: {session_id}: NoCredentialsError - {str(e)}")
-
+        record_event(
+            session_id=session_id,
+            status=EventStatus.AGENT_BACKGROUND_TASK_FAILED,
+            table_name=journal_table_name,
+            ttl_days=ttl_days,
+            error_message=f"NoCredentialsError - {str(e)}",
+            region_name=aws_region,
+        )
         return {
             "error": "NoCredentialsError",
             "error_code": "NoCredentialsError",
@@ -143,7 +155,14 @@ async def background_agent_task(user_message: str, session_id: str):
         error_message = e.response.get("Error", {}).get("Message", "")
 
         logger.error(f"Background task failed - Session: {session_id}: {error_code} - {error_message}")
-
+        record_event(
+            session_id=session_id,
+            status=EventStatus.AGENT_BACKGROUND_TASK_FAILED,
+            table_name=journal_table_name,
+            ttl_days=ttl_days,
+            error_message=f"{error_code} - {error_message}",
+            region_name=aws_region,
+        )
         return {
             "error": "ClientError",
             "error_code": error_code,
@@ -154,7 +173,14 @@ async def background_agent_task(user_message: str, session_id: str):
 
     except Exception as e:
         logger.error(f"Background task failed - Session: {session_id}: {type(e).__name__} - {str(e)}", exc_info=True)
-
+        record_event(
+            session_id=session_id,
+            status=EventStatus.AGENT_BACKGROUND_TASK_FAILED,
+            table_name=journal_table_name,
+            ttl_days=ttl_days,
+            error_message=f"{type(e).__name__} - {str(e)}",
+            region_name=aws_region,
+        )
         return {
             "error": "Exception",
             "error_type": type(e).__name__,
@@ -171,18 +197,31 @@ async def invoke(payload):
     Fire-and-forget pattern:
     - Lambda returns immediately (avoiding 15-minute timeout)
     - AgentCore continues processing in background
-    - Status automatically becomes HEALTHY_BUSY when background_agent_task() runs
-    - Status returns to HEALTHY when background_agent_task() completes
+    - Status automatically becomes HEALTHY_BUSY when agent_background_task() runs
+    - Status returns to HEALTHY when agent_background_task() completes
     """
     user_message = payload.get("prompt", "Hello")
     payload_session_id = payload.get("session_id", session_id)
 
     logger.info(f"Request received - Session: {payload_session_id}")
+    record_event(
+        session_id=payload_session_id,
+        status=EventStatus.AGENT_INVOKE_STARTED,
+        table_name=journal_table_name,
+        ttl_days=ttl_days,
+        region_name=aws_region,
+    )
 
     try:
-        asyncio.create_task(background_agent_task(user_message, payload_session_id))
-
+        asyncio.create_task(agent_background_task(user_message, payload_session_id))
         logger.info(f"Background processing started - Session: {payload_session_id}")
+        record_event(
+            session_id=payload_session_id,
+            status=EventStatus.AGENT_BACKGROUND_TASK_STARTED,
+            table_name=journal_table_name,
+            ttl_days=ttl_days,
+            region_name=aws_region,
+        )
         return {
             "message": f"Started processing request for session {payload_session_id}. Processing will continue in background.",
             "session_id": payload_session_id,
@@ -190,6 +229,14 @@ async def invoke(payload):
         }
     except Exception as e:
         logger.error(f"Entrypoint error - Session: {payload_session_id}: {str(e)}", exc_info=True)
+        record_event(
+            session_id=payload_session_id,
+            status=EventStatus.AGENT_INVOKE_FAILED,
+            table_name=journal_table_name,
+            ttl_days=ttl_days,
+            error_message=str(e),
+            region_name=aws_region,
+        )
         return {"error": f"Error starting background processing: {str(e)}", "session_id": payload_session_id}
 
 

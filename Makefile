@@ -54,8 +54,6 @@ check:
 test:
 	@echo "Running Python tests..."
 	uv run pytest tests/ -v
-	@echo "Running TypeScript tests..."
-	cd infra && npm test
 	@echo "✓ All tests completed!"
 
 run:

@@ -5,6 +5,8 @@ import { Construct } from 'constructs';
 import { Platform } from 'aws-cdk-lib/aws-ecr-assets';
 import { Effect, ManagedPolicy, Policy, PolicyDocument, PolicyStatement } from 'aws-cdk-lib/aws-iam';
 
+import { InfraConfig } from '../constants/infra-config';
+
 export interface AgentProps {
   agentRuntimeName: string;
   description?: string;
@@ -52,7 +54,6 @@ export class Agent extends Construct {
       agentRuntimeArtifact,
       description,
       environmentVariables: {
-        BYPASS_TOOL_CONSENT: 'true',
         ENVIRONMENT: environment,
         ...environmentVariables,
       },
@@ -62,17 +63,21 @@ export class Agent extends Construct {
     this.runtime.role.addManagedPolicy(ManagedPolicy.fromAwsManagedPolicyName('SecurityAudit'));
 
     // Create custome-managed policy for Bedrock model invocation
+    const modelId = InfraConfig.inferenceProfileRegion
+      ? `${InfraConfig.inferenceProfileRegion}.${InfraConfig.modelId}`
+      : InfraConfig.modelId;
+
     const bedrockPolicy = new Policy(this, 'BedrockModelInvocationPolicy', {
       policyName: 'BedrockModelInvocation',
       document: new PolicyDocument({
         statements: [
           new PolicyStatement({
-            sid: 'InvokeClaudeSonnet45',
+            sid: 'InvokeBedrockModel',
             effect: Effect.ALLOW,
             actions: ['bedrock:InvokeModel', 'bedrock:InvokeModelWithResponseStream'],
             resources: [
-              `arn:${stack.partition}:bedrock:${stack.region}:${stack.account}:inference-profile/us.anthropic.claude-sonnet-4-5-20250929-v1:0`,
-              `arn:${stack.partition}:bedrock:*::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0`,
+              `arn:${stack.partition}:bedrock:${stack.region}:${stack.account}:inference-profile/${modelId}`,
+              `arn:${stack.partition}:bedrock:*::foundation-model/${InfraConfig.modelId}`,
             ],
           }),
         ],
