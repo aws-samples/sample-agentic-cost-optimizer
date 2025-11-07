@@ -1,5 +1,4 @@
 export UV_PROJECT_ENVIRONMENT := .venv
-REQ_DIR := requirements
 DOCKER_IMAGE_NAME := strands-agent
 DOCKER_TAG := latest
 
@@ -34,14 +33,9 @@ setup: init pre-commit-install
 	@echo "✓ Project setup complete!"
 
 init:
-	@mkdir -p $(REQ_DIR)
 	uv sync --group agents --group dev
-	uv export --format requirements-txt --no-dev \
-	  --group agents \
-	  -o $(REQ_DIR)/agents.txt
 	cd infra && npm install
 	@echo "✓ Python deps installed in .venv/"
-	@echo "✓ Exported $(REQ_DIR)/agents.txt"
 	@echo "✓ Node deps installed in infra/"
 
 pre-commit-install:
@@ -97,6 +91,6 @@ trigger-workflow:
 	@echo "✓ Workflow triggered successfully"
 
 clean:
-	rm -rf .venv .pytest_cache __pycache__ */__pycache__ *.pyc .ruff_cache requirements .build dist
+	rm -rf .venv .pytest_cache __pycache__ */__pycache__ *.pyc .ruff_cache .build dist
 	rm -rf infra/node_modules infra/cdk.out infra/dist
 	@echo "Cleaned."
