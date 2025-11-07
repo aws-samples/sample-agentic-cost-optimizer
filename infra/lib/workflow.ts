@@ -43,10 +43,7 @@ export class Workflow extends Construct {
   constructor(scope: Construct, id: string, props: WorkflowProps) {
     super(scope, id);
 
-    // Create session initializer Lambda function
     this.sessionInitializerFunction = this.createSessionInitializerFunction(props);
-
-    // Create the Step Function state machine
     this.stateMachine = this.createStateMachine(props);
   }
 
@@ -55,8 +52,8 @@ export class Workflow extends Construct {
       runtime: Runtime.PYTHON_3_12,
       handler: 'session_initializer.handler',
       code: Code.fromAsset('..', {
-        // Custom bundling: combines handler from infra/lambda with shared code from src/
         bundling: {
+          // Custom bundling: combines handler from infra/lambda with shared code from src/
           image: Runtime.PYTHON_3_12.bundlingImage,
           command: [
             'bash',
@@ -66,7 +63,6 @@ export class Workflow extends Construct {
               'rsync -av --exclude="__pycache__" --exclude="*.pyc" src/shared src/__init__.py /asset-output/src/',
           ],
         },
-        // Exclude list speeds up CDK asset hash calculation by skipping large/irrelevant directories
         exclude: [
           'node_modules/**',
           '.venv/**',
@@ -88,7 +84,6 @@ export class Workflow extends Construct {
         ],
       }),
       layers: [
-        // AWS Lambda Powertools Layer - version 18 for Python 3.12 x86_64
         LayerVersion.fromLayerVersionArn(
           this,
           'SessionInitializerPowertoolsLayer',
@@ -106,26 +101,22 @@ export class Workflow extends Construct {
       description: 'Lambda function to initialize session by recording SESSION_INITIATED event',
     });
 
-    // Grant Lambda permission to write events to DynamoDB
     props.journalTable.grantWriteData(sessionInitializerFunction);
 
     return sessionInitializerFunction;
   }
 
   private createStateMachine(props: WorkflowProps): StateMachine {
-    // Define session initialization task - invoke Lambda to record SESSION_INITIATED event
     const initializeSession = new LambdaInvoke(this, 'InitializeSession', {
       lambdaFunction: this.sessionInitializerFunction,
       resultPath: '$.initResult',
     });
 
-    // Define the Lambda invocation task
     const invokeAgent = new LambdaInvoke(this, 'InvokeAgent', {
       lambdaFunction: props.agentInvokerFunction,
       resultPath: '$.agentResult',
     });
 
-    // Define DynamoDB query task to check for completion events
     const checkStatus = new CallAwsService(this, 'CheckStatus', {
       service: 'dynamodb',
       action: 'query',
@@ -141,24 +132,21 @@ export class Workflow extends Construct {
           ':completed': { S: EventStatus.AGENT_BACKGROUND_TASK_COMPLETED },
           ':failed': { S: EventStatus.AGENT_BACKGROUND_TASK_FAILED },
         },
-        ScanIndexForward: false, // Get most recent events first
-        Limit: 1, // We only need to know if one exists
+        ScanIndexForward: false, // Most recent events first for faster completion detection
+        Limit: 1, // Only need to know if completion event exists
       },
       iamResources: [props.journalTable.tableArn],
       resultPath: '$.queryResult',
     });
 
-    // Define wait state for polling
     const waitForCompletion = new Wait(this, 'WaitForCompletion', {
       time: WaitTime.duration(Duration.seconds(5)),
     });
 
-    // Define success state
     const success = new Succeed(this, 'Success', {
       comment: 'Agent workflow completed successfully',
     });
 
-    // Define specific failure states for better error tracking
     const sessionInitFailure = new Fail(this, 'SessionInitializationFailed', {
       comment: 'Failed to initialize session',
       cause: 'Session initializer Lambda function failed',
@@ -183,16 +171,12 @@ export class Workflow extends Construct {
       error: 'AgentProcessingError',
     });
 
-    // Define choice logic for status evaluation
     const evaluateStatus = new Choice(this, 'EvaluateStatus', {
       comment: 'Evaluate agent completion events',
     });
 
-    // Add error handling to checkStatus once
     checkStatus.addCatch(statusCheckFailure);
 
-    // Check if query returned any completion events
-    // If Count > 0, we have a completion event - check which one
     evaluateStatus
       .when(
         Condition.and(
@@ -210,19 +194,16 @@ export class Workflow extends Construct {
       )
       .otherwise(waitForCompletion.next(checkStatus));
 
-    // Chain the states together - start with session initialization
     const definition = initializeSession
       .addCatch(sessionInitFailure)
       .next(invokeAgent.addCatch(agentInvocationFailure).next(checkStatus).next(evaluateStatus));
 
-    // Create the state machine
     const stateMachine = new StateMachine(this, 'AgentWorkflowStateMachine', {
       definitionBody: DefinitionBody.fromChainable(definition),
       timeout: Duration.minutes(15),
       comment: 'Step Function workflow for agent invocation and status monitoring',
     });
 
-    // Grant permissions to invoke Lambda functions
     stateMachine.addToRolePolicy(
       new PolicyStatement({
         effect: Effect.ALLOW,
@@ -231,7 +212,6 @@ export class Workflow extends Construct {
       }),
     );
 
-    // Grant permissions to query DynamoDB table (PutItem now handled by Lambda)
     stateMachine.addToRolePolicy(
       new PolicyStatement({
         effect: Effect.ALLOW,

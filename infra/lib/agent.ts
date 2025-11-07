@@ -32,13 +32,9 @@ export class Agent extends Construct {
       platform = Platform.LINUX_ARM64,
     } = props;
 
-    // Get environment from context (same as main stack)
     const environment = this.node.tryGetContext('env') || 'dev';
-
-    // Get stack reference for pseudo parameters
     const stack = Stack.of(this);
 
-    // Build Docker image from local asset
     const agentRuntimeArtifact = AgentRuntimeArtifact.fromAsset('../', {
       file: dockerfilePath,
       buildArgs: {
@@ -48,7 +44,6 @@ export class Agent extends Construct {
       platform,
     });
 
-    // Create Agent Core runtime
     this.runtime = new Runtime(this, 'Runtime', {
       runtimeName: agentRuntimeName,
       agentRuntimeArtifact,
@@ -59,10 +54,8 @@ export class Agent extends Construct {
       },
     });
 
-    // Attach AWS SecurityAudit managed policy for read-only access
     this.runtime.role.addManagedPolicy(ManagedPolicy.fromAwsManagedPolicyName('SecurityAudit'));
 
-    // Create custome-managed policy for Bedrock model invocation
     const modelId = InfraConfig.inferenceProfileRegion
       ? `${InfraConfig.inferenceProfileRegion}.${InfraConfig.modelId}`
       : InfraConfig.modelId;
@@ -85,7 +78,6 @@ export class Agent extends Construct {
     });
     bedrockPolicy.attachToRole(this.runtime.role);
 
-    // Create custome-managed policy for monitoring
     const monitoringPolicy = new Policy(this, 'MonitoringPolicy', {
       policyName: 'MonitoringPolicy',
       document: new PolicyDocument({

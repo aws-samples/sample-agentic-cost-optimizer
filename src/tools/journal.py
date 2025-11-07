@@ -150,7 +150,6 @@ def _update_session(tool_context: ToolContext) -> Dict[str, Any]:
 
         try:
             table = dynamodb.Table(table_name)
-            # Get existing session to retrieve start_time
             response = table.get_item(
                 Key={
                     "PK": session_id,
@@ -161,7 +160,6 @@ def _update_session(tool_context: ToolContext) -> Dict[str, Any]:
             existing_item = response.get("Item", {})
             start_time = existing_item.get("start_time", timestamp)
 
-            # Update session status to BUSY
             table.update_item(
                 Key={
                     "PK": session_id,

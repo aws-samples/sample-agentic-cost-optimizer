@@ -18,10 +18,8 @@ import boto3
 from botocore.exceptions import ClientError
 from strands import ToolContext, tool
 
-# Initialize S3 resource at module level
 s3 = boto3.resource("s3", region_name=os.environ.get("AWS_REGION", "us-east-1"))
 
-# Configure logger
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
@@ -40,7 +38,6 @@ def _write_to_s3(filename: str, content: str, tool_context: ToolContext) -> Dict
     """
     timestamp = datetime.now(timezone.utc).isoformat()
 
-    # Validate required parameters
     if not filename:
         error_msg = "Missing required parameter: filename"
         logger.error(f"--> Storage validation failed - {error_msg}")
@@ -51,14 +48,12 @@ def _write_to_s3(filename: str, content: str, tool_context: ToolContext) -> Dict
         logger.error(f"--> Storage validation failed - {error_msg}")
         return {"success": False, "error": error_msg, "timestamp": timestamp}
 
-    # Retrieve session_id from invocation state
     session_id = tool_context.invocation_state.get("session_id")
     if not session_id:
         error_msg = "Session ID not found in invocation state"
         logger.error(f"--> Storage configuration error - {error_msg}")
         return {"success": False, "error": error_msg, "timestamp": timestamp}
 
-    # Retrieve bucket name from environment variable
     bucket_name = os.environ.get("S3_BUCKET_NAME")
     if not bucket_name:
         error_msg = "S3_BUCKET_NAME environment variable not set"
@@ -67,22 +62,15 @@ def _write_to_s3(filename: str, content: str, tool_context: ToolContext) -> Dict
 
     logger.info(f"--> Storage tool invoked - Session: {session_id}, File: {filename}")
 
-    # Construct S3 key using pattern: {session_id}/{filename}
     key = f"{session_id}/{filename}"
     logger.debug(f"--> Constructed S3 key: {key}")
 
-    # Encode content as UTF-8 bytes
     content_bytes = content.encode("utf-8")
     size_bytes = len(content_bytes)
 
     try:
-        # Get S3 bucket object
         bucket = s3.Bucket(bucket_name)
-
-        # Write to S3 with put_object
         bucket.put_object(Key=key, Body=content_bytes, ContentType="text/plain")
-
-        # Construct S3 URI
         s3_uri = f"s3://{bucket_name}/{key}"
 
         logger.info(f"--> Successfully wrote {size_bytes} bytes to {s3_uri}")

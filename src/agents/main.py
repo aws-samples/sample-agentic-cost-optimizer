@@ -14,7 +14,6 @@ from strands_tools import calculator, use_aws
 from src.shared import EventStatus, record_event
 from src.tools import journal, storage
 
-# Environment variables (set by CDK stack or local defaults)
 s3_bucket_name = os.environ.get("S3_BUCKET_NAME", "default-bucket")
 journal_table_name = os.environ.get("JOURNAL_TABLE_NAME", "default-table")
 session_id = os.environ.get("SESSION_ID")
@@ -22,15 +21,14 @@ aws_region = os.environ.get("AWS_REGION", "us-east-1")
 model_id = os.environ.get("MODEL_ID", "us.anthropic.claude-sonnet-4-5-20250929-v1:0")
 ttl_days = int(os.environ.get("TTL_DAYS", "90"))
 
-# Set BYPASS_TOOL_CONSENT for local development (CDK stack sets it in deployed environments)
+# Required for local development - CDK sets this in deployed environments
 if "BYPASS_TOOL_CONSENT" not in os.environ:
     os.environ["BYPASS_TOOL_CONSENT"] = "true"
 
-# Boto3 configuration constants (optimized for agent workflows)
 DEFAULT_MAX_ATTEMPTS = 5  # Increased from default 3 for better resilience with Bedrock
 DEFAULT_RETRY_MODE = "standard"  # AWS recommended mode with exponential backoff + jitter
-DEFAULT_CONNECT_TIMEOUT = 60  # Sufficient for establishing connections
-DEFAULT_READ_TIMEOUT = 120  # Allows time for large token responses from Bedrock
+DEFAULT_CONNECT_TIMEOUT = 60  # Bedrock connection establishment typically completes within 10s
+DEFAULT_READ_TIMEOUT = 120  # Bedrock streaming responses can take 60-90s for complex queries
 DEFAULT_MAX_POOL_CONNECTIONS = 10
 
 
@@ -66,18 +64,15 @@ def create_agent(boto_config: Optional[BotocoreConfig] = None) -> Agent:
     Returns:
         Configured Agent instance with BedrockModel using the provided configuration.
     """
-    # Use provided boto_config or create default one
     if boto_config is None:
         boto_config = create_boto_config()
 
-    # Create BedrockModel with boto_client_config
     bedrock_model = BedrockModel(
         model_id=model_id,
         region_name=aws_region,
         boto_client_config=boto_config,
     )
 
-    # Calculate current time information in Unix format for CloudWatch queries
     current_timestamp = int(time.time())
     current_datetime = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
 
@@ -88,7 +83,6 @@ def create_agent(boto_config: Optional[BotocoreConfig] = None) -> Agent:
     SYSTEM_PROMPT = SYSTEM_PROMPT.replace("{current_timestamp}", str(current_timestamp))
     SYSTEM_PROMPT = SYSTEM_PROMPT.replace("{current_datetime}", current_datetime)
 
-    # Create agent with configured model and tools
     # Note: current_time tool removed - it only returns ISO format which requires parsing
     # Instead, we inject current_timestamp directly into the prompt in Unix format
     return Agent(
@@ -98,27 +92,22 @@ def create_agent(boto_config: Optional[BotocoreConfig] = None) -> Agent:
     )
 
 
-# Create agent
+# Initialize at module level for Lambda container reuse across invocations
 agent = create_agent()
-
-# Create BedrockAgentCore app
 app = BedrockAgentCoreApp()
-
-# Use the built-in AgentCore logger
 logger = app.logger
 logger.info("Agent and AgentCore app initialized successfully")
 
 
+# Decorator automatically manages AgentCore status: HEALTHY_BUSY while running, HEALTHY when complete
 @app.async_task
 async def agent_background_task(user_message: str, session_id: str):
     """Background task to process agent request with LLM"""
     logger.info(f"Background task started - Session: {session_id}")
 
     try:
-        # Use Strands native async method - agent will have full LLM interaction
         response = await agent.invoke_async(user_message, session_id=session_id)
 
-        # Log completion with response summary for observability
         logger.info(
             f"Background task completed - Session: {session_id}, Response length: {len(str(response.message)) if hasattr(response, 'message') else 'unknown'}"
         )
@@ -129,9 +118,9 @@ async def agent_background_task(user_message: str, session_id: str):
             ttl_days=ttl_days,
             region_name=aws_region,
         )
-        # Return response for proper async task completion (even though no client receives it)
         return response
 
+    # Return error dicts for structured logging - decorator handles status management
     except NoCredentialsError as e:
         logger.error(f"Background task failed - Session: {session_id}: NoCredentialsError - {str(e)}")
         record_event(
