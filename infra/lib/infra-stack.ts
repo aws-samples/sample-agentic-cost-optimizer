@@ -18,11 +18,9 @@ export class InfraStack extends Stack {
   constructor(scope: Construct, id: string, props?: StackProps) {
     super(scope, id, props);
 
-    // Get environment and version from environment variables or context
     const environment = process.env.ENVIRONMENT || this.node.tryGetContext('env') || 'dev';
     const version = process.env.VERSION || this.node.tryGetContext('version') || 'v1';
 
-    // Create DynamoDB table for agents
     const agentsTable = new Table(this, 'AgentsTable', {
       tableName: `agents-table-${environment}`,
       partitionKey: {
@@ -34,21 +32,19 @@ export class InfraStack extends Stack {
         type: AttributeType.STRING,
       },
       billingMode: BillingMode.PAY_PER_REQUEST,
-      removalPolicy: RemovalPolicy.DESTROY, // For development/POC
+      removalPolicy: RemovalPolicy.DESTROY, // For development/POC - change to RETAIN for production
       timeToLiveAttribute: 'ttlSeconds',
     });
 
-    // Create S3 bucket for agent data storage
     const agentDataBucket = new Bucket(this, 'AgentDataBucket', {
       bucketName: `agent-data-${environment}-${this.account}-${this.region}`,
       removalPolicy: RemovalPolicy.DESTROY,
-      autoDeleteObjects: true, // Automatically empty bucket on stack deletion
+      autoDeleteObjects: true, // For development/POC - remove for production to prevent data loss
       versioned: true,
       encryption: BucketEncryption.S3_MANAGED,
       enforceSSL: true,
     });
 
-    // Create agent using the Agent class
     const modelId = InfraConfig.inferenceProfileRegion
       ? `${InfraConfig.inferenceProfileRegion}.${InfraConfig.modelId}`
       : InfraConfig.modelId;
@@ -67,19 +63,15 @@ export class InfraStack extends Stack {
       },
     });
 
-    // Grant S3 bucket access to the agent role
     agentDataBucket.grantReadWrite(this.agent.runtime.role);
-
-    // Grant DynamoDB table access to the agent role
     agentsTable.grantReadWriteData(this.agent.runtime.role);
 
-    // Create Lambda function for agent invocation
     const agentInvokerFunction = new Function(this, 'AgentInvoker', {
       runtime: Runtime.PYTHON_3_12,
       handler: 'agent_invoker.handler',
       code: Code.fromAsset('..', {
-        // Custom bundling: combines handler from infra/lambda with shared code from src/
         bundling: {
+          // Custom bundling: combines handler from infra/lambda with shared code from src/
           image: Runtime.PYTHON_3_12.bundlingImage,
           command: [
             'bash',
@@ -89,7 +81,6 @@ export class InfraStack extends Stack {
               'rsync -av --exclude="__pycache__" --exclude="*.pyc" src/shared src/__init__.py /asset-output/src/',
           ],
         },
-        // Exclude list speeds up CDK asset hash calculation by skipping large/irrelevant directories
         exclude: [
           'node_modules/**',
           '.venv/**',
@@ -111,7 +102,6 @@ export class InfraStack extends Stack {
         ],
       }),
       layers: [
-        // AWS Lambda Powertools Layer - version 18 for Python 3.12 x86_64
         LayerVersion.fromLayerVersionArn(
           this,
           'PowertoolsLayer',
@@ -132,7 +122,6 @@ export class InfraStack extends Stack {
       description: 'Lambda function to invoke Agent Core runtime',
     });
 
-    // Grant Lambda permission to invoke Agent Core runtime
     agentInvokerFunction.addToRolePolicy(
       new PolicyStatement({
         effect: Effect.ALLOW,
@@ -141,7 +130,6 @@ export class InfraStack extends Stack {
       }),
     );
 
-    // Grant Lambda permission to write logs
     agentInvokerFunction.addToRolePolicy(
       new PolicyStatement({
         effect: Effect.ALLOW,
@@ -150,10 +138,8 @@ export class InfraStack extends Stack {
       }),
     );
 
-    // Grant Lambda permission to write events to DynamoDB
     agentsTable.grantWriteData(agentInvokerFunction);
 
-    // Create Step Function workflow
     const workflow = new Workflow(this, 'AgentWorkflow', {
       agentInvokerFunction,
       journalTable: agentsTable,
@@ -162,7 +148,6 @@ export class InfraStack extends Stack {
       logLevel: InfraConfig.logLevel,
     });
 
-    // Create EventBridge rule for manual triggers
     const manualTriggerRule = new Rule(this, 'ManualTriggerRule', {
       eventPattern: {
         source: ['manual-trigger'],
@@ -171,7 +156,6 @@ export class InfraStack extends Stack {
       description: 'Rule to trigger agent workflow via manual EventBridge events',
     });
 
-    // Add Step Function as target
     manualTriggerRule.addTarget(
       new SfnStateMachine(workflow.stateMachine, {
         input: RuleTargetInput.fromObject({
@@ -180,7 +164,6 @@ export class InfraStack extends Stack {
       }),
     );
 
-    // CloudFormation Outputs
     new CfnOutput(this, 'AgentsTableName', {
       value: agentsTable.tableName,
       description: 'Name of the DynamoDB table for agents',

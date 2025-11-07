@@ -6,11 +6,7 @@ This package contains Strands tools for various operations:
 - storage: S3 file writing tool for saving reports and evidence
 """
 
-# Import unified journaling tool
 from .journal import journal
-
-# Import storage tool
 from .storage import storage
 
-# List of all available tools for easy import
 __all__ = ["journal", "storage"]

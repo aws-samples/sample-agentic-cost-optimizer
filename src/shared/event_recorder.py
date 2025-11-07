@@ -30,20 +30,16 @@ def record_event(
         Events are automatically deleted via DynamoDB TTL.
     """
     try:
-        # Get region from parameter or environment variable with fallback
         region = region_name or os.environ.get("AWS_REGION", "us-east-1")
 
-        # Initialize DynamoDB resource
         dynamodb = boto3.resource("dynamodb", region_name=region)
         table = dynamodb.Table(table_name)
 
-        # Generate event metadata
         now = datetime.now(timezone.utc)
         timestamp = now.isoformat(timespec="milliseconds").replace("+00:00", "Z")
         event_id = str(uuid.uuid4())
         ttl_seconds = int(now.timestamp()) + (ttl_days * 24 * 60 * 60)
 
-        # Build DynamoDB item
         item = {
             "PK": f"SESSION#{session_id}",
             "SK": f"EVENT#{timestamp}#{event_id}",
@@ -55,7 +51,7 @@ def record_event(
         if error_message:
             item["errorMessage"] = error_message
 
-        # Write to DynamoDB with conditional check to prevent duplicates
+        # Prevent duplicate events from race conditions or retries
         table.put_item(
             Item=item,
             ConditionExpression="attribute_not_exists(PK) AND attribute_not_exists(SK)",
@@ -63,5 +59,4 @@ def record_event(
 
     except Exception as e:
         # Log the error but don't crash the caller
-        # In Lambda/Agent context, the logger will be available
         print(f"Failed to record event - Session: {session_id}, Status: {status}, Error: {str(e)}")

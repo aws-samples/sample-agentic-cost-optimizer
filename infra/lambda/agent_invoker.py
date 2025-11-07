@@ -49,7 +49,7 @@ def handler(event, context):
             "payload": json.dumps({"prompt": prompt, "session_id": session_id}),
         }
 
-        # Pass trace ID to link Lambda with AgentCore in GenAI Observability
+        # Links Lambda X-Ray traces with AgentCore for end-to-end observability in GenAI console
         if trace_id:
             invoke_params["traceId"] = trace_id
 
