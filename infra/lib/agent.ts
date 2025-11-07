@@ -54,8 +54,6 @@ export class Agent extends Construct {
       },
     });
 
-    this.runtime.role.addManagedPolicy(ManagedPolicy.fromAwsManagedPolicyName('SecurityAudit'));
-
     const modelId = InfraConfig.inferenceProfileRegion
       ? `${InfraConfig.inferenceProfileRegion}.${InfraConfig.modelId}`
       : InfraConfig.modelId;
