@@ -35,7 +35,9 @@ export class InfraStack extends Stack {
       billingMode: BillingMode.PAY_PER_REQUEST,
       removalPolicy: RemovalPolicy.DESTROY, // For development/POC - change to RETAIN for production
       timeToLiveAttribute: 'ttlSeconds',
-      pointInTimeRecovery: true,
+      pointInTimeRecoverySpecification: {
+        pointInTimeRecoveryEnabled: true,
+      },
     });
 
     const accessLogsBucket = new Bucket(this, 'AccessLogsBucket', {
