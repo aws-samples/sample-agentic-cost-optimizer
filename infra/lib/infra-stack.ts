@@ -1,4 +1,5 @@
 import { CfnOutput, Duration, RemovalPolicy, Stack, type StackProps } from 'aws-cdk-lib';
+import { NagSuppressions } from 'cdk-nag';
 import { Construct } from 'constructs';
 
 import { AttributeType, BillingMode, Table } from 'aws-cdk-lib/aws-dynamodb';
@@ -34,6 +35,15 @@ export class InfraStack extends Stack {
       billingMode: BillingMode.PAY_PER_REQUEST,
       removalPolicy: RemovalPolicy.DESTROY, // For development/POC - change to RETAIN for production
       timeToLiveAttribute: 'ttlSeconds',
+      pointInTimeRecovery: true,
+    });
+
+    const accessLogsBucket = new Bucket(this, 'AccessLogsBucket', {
+      bucketName: `access-logs-${environment}-${this.account}-${this.region}`,
+      removalPolicy: RemovalPolicy.DESTROY,
+      autoDeleteObjects: true,
+      encryption: BucketEncryption.S3_MANAGED,
+      enforceSSL: true,
     });
 
     const agentDataBucket = new Bucket(this, 'AgentDataBucket', {
@@ -43,6 +53,8 @@ export class InfraStack extends Stack {
       versioned: true,
       encryption: BucketEncryption.S3_MANAGED,
       enforceSSL: true,
+      serverAccessLogsBucket: accessLogsBucket,
+      serverAccessLogsPrefix: 'agent-data-logs/',
     });
 
     const modelId = InfraConfig.inferenceProfileRegion
@@ -117,7 +129,7 @@ export class InfraStack extends Stack {
         TTL_DAYS: InfraConfig.ttlDays.toString(),
         ENVIRONMENT: environment,
         POWERTOOLS_SERVICE_NAME: InfraConfig.serviceName,
-        LOG_LEVEL: InfraConfig.logLevel,
+        LOG_LEVEL: InfraConfig.lambdaLogLevel,
       },
       description: 'Lambda function to invoke Agent Core runtime',
     });
@@ -130,14 +142,6 @@ export class InfraStack extends Stack {
       }),
     );
 
-    agentInvokerFunction.addToRolePolicy(
-      new PolicyStatement({
-        effect: Effect.ALLOW,
-        actions: ['logs:CreateLogGroup', 'logs:CreateLogStream', 'logs:PutLogEvents'],
-        resources: ['*'],
-      }),
-    );
-
     agentsTable.grantWriteData(agentInvokerFunction);
 
     const workflow = new Workflow(this, 'AgentWorkflow', {
@@ -145,7 +149,7 @@ export class InfraStack extends Stack {
       journalTable: agentsTable,
       environment,
       ttlDays: InfraConfig.ttlDays,
-      logLevel: InfraConfig.logLevel,
+      lambdaLogLevel: InfraConfig.lambdaLogLevel,
     });
 
     const manualTriggerRule = new Rule(this, 'ManualTriggerRule', {
@@ -198,5 +202,30 @@ export class InfraStack extends Stack {
       value: manualTriggerRule.ruleArn,
       description: 'ARN of the EventBridge rule for manual workflow triggers',
     });
+
+    this.applyNagSuppressions(agentInvokerFunction, workflow);
+  }
+
+  private applyNagSuppressions(agentInvokerFunction: Function, workflow: Workflow): void {
+    NagSuppressions.addResourceSuppressions(
+      agentInvokerFunction,
+      [
+        {
+          id: 'AwsSolutions-IAM4',
+          reason:
+            'AWSLambdaBasicExecutionRole is a well-scoped AWS managed policy for Lambda CloudWatch Logs access. Standard practice for Lambda functions.',
+        },
+        {
+          id: 'AwsSolutions-IAM5',
+          reason:
+            'Wildcard permissions required for CloudWatch Logs (dynamic log group creation) and AgentCore runtime invocations (session-level access under specific runtime ARN).',
+        },
+        {
+          id: 'AwsSolutions-L1',
+          reason: 'Python 3.12 is fully supported by AWS Lambda until October 2028.',
+        },
+      ],
+      true,
+    );
   }
 }
