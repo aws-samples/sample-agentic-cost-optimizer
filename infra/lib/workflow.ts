@@ -204,7 +204,6 @@ export class Workflow extends Construct {
       .next(invokeAgent.addCatch(agentInvocationFailure).next(checkStatus).next(evaluateStatus));
 
     const logGroup = new LogGroup(this, 'StateMachineLogGroup', {
-      logGroupName: `/aws/vendedlogs/states/agent-workflow-${props.environment}`,
       retention: RetentionDays.ONE_MONTH,
     });
 
