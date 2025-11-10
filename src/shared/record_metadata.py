@@ -19,11 +19,21 @@ def record_metadata(
         ttl_days: Number of days before metadata expires (default: 90)
         region_name: AWS region for DynamoDB (default: from AWS_REGION env var or us-east-1)
 
+    Raises:
+        ValueError: If required fields are empty
+
     Note:
         Errors during metadata recording are logged but do not raise exceptions
         to prevent metadata recording failures from crashing the caller.
         Metadata is automatically deleted via DynamoDB TTL.
     """
+    # Validate required fields
+    if not session_id or not isinstance(session_id, str):
+        raise ValueError("session_id must be a non-empty string")
+
+    if not table_name or not isinstance(table_name, str):
+        raise ValueError("table_name must be a non-empty string")
+
     try:
         region = region_name or os.environ.get("AWS_REGION", "us-east-1")
 

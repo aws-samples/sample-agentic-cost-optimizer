@@ -121,3 +121,47 @@ class TestRecordMetadata:
         # Verify timestamp format in SK (should be ISO format)
         assert "T" in call_args["Item"]["SK"]
         assert "Z" in call_args["Item"]["SK"]
+
+
+class TestRecordMetadataValidation:
+    """Test cases for input validation in record_metadata function."""
+
+    def test_empty_session_id_raises_error(self):
+        """Test that empty session_id raises ValueError."""
+        import pytest
+
+        with pytest.raises(ValueError, match="session_id must be a non-empty string"):
+            record_metadata(
+                session_id="",
+                table_name="test-table",
+            )
+
+    def test_none_session_id_raises_error(self):
+        """Test that None session_id raises ValueError."""
+        import pytest
+
+        with pytest.raises(ValueError, match="session_id must be a non-empty string"):
+            record_metadata(
+                session_id=None,
+                table_name="test-table",
+            )
+
+    def test_empty_table_name_raises_error(self):
+        """Test that empty table_name raises ValueError."""
+        import pytest
+
+        with pytest.raises(ValueError, match="table_name must be a non-empty string"):
+            record_metadata(
+                session_id="session-123",
+                table_name="",
+            )
+
+    def test_none_table_name_raises_error(self):
+        """Test that None table_name raises ValueError."""
+        import pytest
+
+        with pytest.raises(ValueError, match="table_name must be a non-empty string"):
+            record_metadata(
+                session_id="session-123",
+                table_name=None,
+            )

@@ -166,3 +166,73 @@ class TestRecordEvent:
         call_args = mock_table.put_item.call_args[1]
         expected_ttl = int(time.time()) + (30 * 24 * 60 * 60)
         assert abs(call_args["Item"]["ttlSeconds"] - expected_ttl) <= 1
+
+
+class TestRecordEventValidation:
+    """Test cases for input validation in record_event function."""
+
+    def test_empty_session_id_raises_error(self):
+        """Test that empty session_id raises ValueError."""
+        import pytest
+
+        with pytest.raises(ValueError, match="session_id must be a non-empty string"):
+            record_event(
+                session_id="",
+                status=EventStatus.SESSION_INITIATED,
+                table_name="test-table",
+            )
+
+    def test_none_session_id_raises_error(self):
+        """Test that None session_id raises ValueError."""
+        import pytest
+
+        with pytest.raises(ValueError, match="session_id must be a non-empty string"):
+            record_event(
+                session_id=None,
+                status=EventStatus.SESSION_INITIATED,
+                table_name="test-table",
+            )
+
+    def test_empty_table_name_raises_error(self):
+        """Test that empty table_name raises ValueError."""
+        import pytest
+
+        with pytest.raises(ValueError, match="table_name must be a non-empty string"):
+            record_event(
+                session_id="session-123",
+                status=EventStatus.SESSION_INITIATED,
+                table_name="",
+            )
+
+    def test_none_table_name_raises_error(self):
+        """Test that None table_name raises ValueError."""
+        import pytest
+
+        with pytest.raises(ValueError, match="table_name must be a non-empty string"):
+            record_event(
+                session_id="session-123",
+                status=EventStatus.SESSION_INITIATED,
+                table_name=None,
+            )
+
+    def test_invalid_status_raises_error(self):
+        """Test that invalid status raises ValueError."""
+        import pytest
+
+        with pytest.raises(ValueError, match="Invalid status 'INVALID_STATUS'"):
+            record_event(
+                session_id="session-123",
+                status="INVALID_STATUS",
+                table_name="test-table",
+            )
+
+    def test_arbitrary_status_string_raises_error(self):
+        """Test that arbitrary status string raises ValueError."""
+        import pytest
+
+        with pytest.raises(ValueError, match="Invalid status"):
+            record_event(
+                session_id="session-123",
+                status="malicious_injection",
+                table_name="test-table",
+            )

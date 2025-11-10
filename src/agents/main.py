@@ -16,7 +16,7 @@ from src.tools import journal, storage
 
 s3_bucket_name = os.environ.get("S3_BUCKET_NAME", "default-bucket")
 journal_table_name = os.environ.get("JOURNAL_TABLE_NAME", "default-table")
-session_id = os.environ.get("SESSION_ID")
+session_id = os.environ.get("SESSION_ID", "default-session")
 aws_region = os.environ.get("AWS_REGION", "us-east-1")
 model_id = os.environ.get("MODEL_ID", "us.anthropic.claude-sonnet-4-5-20250929-v1:0")
 ttl_days = int(os.environ.get("TTL_DAYS", "90"))

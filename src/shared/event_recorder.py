@@ -5,7 +5,7 @@ from typing import Optional
 
 import boto3
 
-# TODO: basic validation for inputs
+from .event_statuses import EventStatus
 
 
 def record_event(
@@ -26,11 +26,37 @@ def record_event(
         error_message: Optional error message for failure events
         region_name: AWS region for DynamoDB (default: from AWS_REGION env var or us-east-1)
 
+    Raises:
+        ValueError: If required fields are empty or status is invalid
+
     Note:
         Errors during event recording are logged but do not raise exceptions
         to prevent event recording failures from crashing the caller.
         Events are automatically deleted via DynamoDB TTL.
     """
+    # Validate required fields
+    if not session_id or not isinstance(session_id, str):
+        raise ValueError("session_id must be a non-empty string")
+
+    if not table_name or not isinstance(table_name, str):
+        raise ValueError("table_name must be a non-empty string")
+
+    # Validate status against allowed values
+    valid_statuses = {
+        EventStatus.SESSION_INITIATED,
+        EventStatus.AGENT_INVOCATION_STARTED,
+        EventStatus.AGENT_INVOCATION_SUCCEEDED,
+        EventStatus.AGENT_INVOCATION_FAILED,
+        EventStatus.AGENT_RUNTIME_INVOKE_STARTED,
+        EventStatus.AGENT_RUNTIME_INVOKE_FAILED,
+        EventStatus.AGENT_BACKGROUND_TASK_STARTED,
+        EventStatus.AGENT_BACKGROUND_TASK_COMPLETED,
+        EventStatus.AGENT_BACKGROUND_TASK_FAILED,
+    }
+
+    if status not in valid_statuses:
+        raise ValueError(f"Invalid status '{status}'. Must be one of: {', '.join(sorted(valid_statuses))}")
+
     try:
         region = region_name or os.environ.get("AWS_REGION", "us-east-1")
 
