@@ -2,7 +2,6 @@ import { LogLevel } from 'aws-cdk-lib/aws-stepfunctions';
 
 /**
  * Infrastructure configuration constants
- * Only business logic values that may change based on requirements
  */
 
 /**
@@ -39,14 +38,12 @@ export const InfraConfig = {
   /**
    * Log level for Lambda functions (AWS Powertools)
    * Options: 'DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'
-   * Use 'DEBUG' for development, 'INFO' for production
    */
   lambdaLogLevel: 'DEBUG',
 
   /**
    * Step Functions log level
    * Options: LogLevel.ALL (verbose), LogLevel.ERROR (failures only), LogLevel.FATAL (execution failures), LogLevel.OFF (no logging)
-   * Use LogLevel.ERROR for production, LogLevel.ALL for development/debugging
    */
   stepFunctionsLogLevel: LogLevel.ERROR,
 
