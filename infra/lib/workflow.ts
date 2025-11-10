@@ -1,13 +1,16 @@
 import { Duration, Stack } from 'aws-cdk-lib';
+import { NagSuppressions } from 'cdk-nag';
 import { Construct } from 'constructs';
 
 import { Table } from 'aws-cdk-lib/aws-dynamodb';
 import { Effect, PolicyStatement } from 'aws-cdk-lib/aws-iam';
 import { Code, Function, LayerVersion, Runtime } from 'aws-cdk-lib/aws-lambda';
+import { LogGroup, RetentionDays } from 'aws-cdk-lib/aws-logs';
 import { Choice, Condition, DefinitionBody, Fail, JsonPath, StateMachine, Succeed, Wait, WaitTime } from 'aws-cdk-lib/aws-stepfunctions';
 import { CallAwsService, LambdaInvoke } from 'aws-cdk-lib/aws-stepfunctions-tasks';
 
 import { EventStatus } from '../constants/event-statuses';
+import { InfraConfig } from '../constants/infra-config';
 
 export interface WorkflowProps {
   /**
@@ -31,9 +34,9 @@ export interface WorkflowProps {
   ttlDays: number;
 
   /**
-   * Log level for Lambda functions
+   * Log level for Lambda functions (AWS Powertools)
    */
-  logLevel: string;
+  lambdaLogLevel: string;
 }
 
 export class Workflow extends Construct {
@@ -45,6 +48,8 @@ export class Workflow extends Construct {
 
     this.sessionInitializerFunction = this.createSessionInitializerFunction(props);
     this.stateMachine = this.createStateMachine(props);
+
+    this.applyNagSuppressions();
   }
 
   private createSessionInitializerFunction(props: WorkflowProps): Function {
@@ -96,7 +101,7 @@ export class Workflow extends Construct {
         JOURNAL_TABLE_NAME: props.journalTable.tableName,
         TTL_DAYS: props.ttlDays.toString(),
         POWERTOOLS_SERVICE_NAME: 'session-initializer',
-        LOG_LEVEL: props.logLevel,
+        LOG_LEVEL: props.lambdaLogLevel,
       },
       description: 'Lambda function to initialize session by recording SESSION_INITIATED event',
     });
@@ -198,28 +203,61 @@ export class Workflow extends Construct {
       .addCatch(sessionInitFailure)
       .next(invokeAgent.addCatch(agentInvocationFailure).next(checkStatus).next(evaluateStatus));
 
+    const logGroup = new LogGroup(this, 'StateMachineLogGroup', {
+      retention: RetentionDays.ONE_MONTH,
+    });
+
     const stateMachine = new StateMachine(this, 'AgentWorkflowStateMachine', {
       definitionBody: DefinitionBody.fromChainable(definition),
       timeout: Duration.minutes(15),
       comment: 'Step Function workflow for agent invocation and status monitoring',
+      logs: {
+        destination: logGroup,
+        level: InfraConfig.stepFunctionsLogLevel,
+        includeExecutionData: true,
+      },
+      tracingEnabled: true,
     });
 
-    stateMachine.addToRolePolicy(
-      new PolicyStatement({
-        effect: Effect.ALLOW,
-        actions: ['lambda:InvokeFunction'],
-        resources: [this.sessionInitializerFunction.functionArn, props.agentInvokerFunction.functionArn],
-      }),
-    );
-
-    stateMachine.addToRolePolicy(
-      new PolicyStatement({
-        effect: Effect.ALLOW,
-        actions: ['dynamodb:Query'],
-        resources: [props.journalTable.tableArn],
-      }),
-    );
+    this.sessionInitializerFunction.grantInvoke(stateMachine);
+    props.agentInvokerFunction.grantInvoke(stateMachine);
+    props.journalTable.grantReadData(stateMachine);
 
     return stateMachine;
+  }
+
+  private applyNagSuppressions(): void {
+    NagSuppressions.addResourceSuppressions(
+      this.sessionInitializerFunction,
+      [
+        {
+          id: 'AwsSolutions-IAM4',
+          reason:
+            'AWSLambdaBasicExecutionRole is a well-scoped AWS managed policy for Lambda CloudWatch Logs access. Standard practice for Lambda functions.',
+        },
+        {
+          id: 'AwsSolutions-L1',
+          reason: 'Python 3.12 is fully supported by AWS Lambda until October 2028.',
+        },
+      ],
+      true,
+    );
+
+    NagSuppressions.addResourceSuppressions(
+      this.stateMachine,
+      [
+        {
+          id: 'AwsSolutions-IAM5',
+          reason:
+            'Lambda function ARN wildcards (`:*`) are added by grantInvoke() to support version and alias invocations. Scoped to specific function ARNs.',
+        },
+        {
+          id: 'AwsSolutions-SF1',
+          reason:
+            'ERROR level logging is sufficient for production. ALL level logs every state transition and can expose sensitive data in inputs/outputs, increasing costs significantly.',
+        },
+      ],
+      true,
+    );
   }
 }
