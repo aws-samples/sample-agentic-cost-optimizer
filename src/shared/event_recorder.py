@@ -5,6 +5,8 @@ from typing import Optional
 
 import boto3
 
+# TODO: basic validation for inputs
+
 
 def record_event(
     session_id: str,
@@ -43,6 +45,8 @@ def record_event(
         item = {
             "PK": f"SESSION#{session_id}",
             "SK": f"EVENT#{timestamp}#{event_id}",
+            "sessionId": session_id,
+            "eventId": event_id,
             "createdAt": timestamp,
             "status": status,
             "ttlSeconds": ttl_seconds,
