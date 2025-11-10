@@ -127,18 +127,19 @@ export class Workflow extends Construct {
       action: 'query',
       parameters: {
         TableName: props.journalTable.tableName,
-        KeyConditionExpression: 'PK = :pk',
+        KeyConditionExpression: 'PK = :pk AND begins_with(SK, :eventPrefix)',
         FilterExpression: '#status IN (:completed, :failed)',
         ExpressionAttributeNames: {
           '#status': 'status',
         },
         ExpressionAttributeValues: {
           ':pk': { S: JsonPath.format('SESSION#{}', JsonPath.stringAt('$.session_id')) },
+          ':eventPrefix': { S: 'EVENT#' },
           ':completed': { S: EventStatus.AGENT_BACKGROUND_TASK_COMPLETED },
           ':failed': { S: EventStatus.AGENT_BACKGROUND_TASK_FAILED },
         },
         ScanIndexForward: false, // Most recent events first for faster completion detection
-        Limit: 1, // Only need to know if completion event exists
+        Limit: 20, // Scan multiple events to handle any out-of-order writes
       },
       iamResources: [props.journalTable.tableArn],
       resultPath: '$.queryResult',
