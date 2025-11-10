@@ -32,3 +32,24 @@ jobs:
 
       - name: Run tests
         run: uv run pytest tests/ -v --junitxml=test-results.xml
+
+  cdk-nag-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: infra/package-lock.json
+
+      - name: Install CDK dependencies
+        run: npm ci
+        working-directory: infra
+
+      - name: Run CDK Nag checks
+        run: npm run synth > /dev/null
+        working-directory: infra
