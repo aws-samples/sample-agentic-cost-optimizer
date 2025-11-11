@@ -14,9 +14,18 @@ from strands_tools import calculator, use_aws
 from src.shared import EventStatus, record_event
 from src.tools import journal, storage
 
-s3_bucket_name = os.environ.get("S3_BUCKET_NAME", "default-bucket")
-journal_table_name = os.environ.get("JOURNAL_TABLE_NAME", "default-table")
-session_id = os.environ.get("SESSION_ID", "default-session")
+s3_bucket_name = os.environ.get("S3_BUCKET_NAME")
+if not s3_bucket_name:
+    raise ValueError("S3_BUCKET_NAME environment variable is required")
+
+journal_table_name = os.environ.get("JOURNAL_TABLE_NAME")
+if not journal_table_name:
+    raise ValueError("JOURNAL_TABLE_NAME environment variable is required")
+
+session_id = os.environ.get("SESSION_ID")
+if not session_id:
+    raise ValueError("SESSION_ID environment variable is required")
+
 aws_region = os.environ.get("AWS_REGION", "us-east-1")
 model_id = os.environ.get("MODEL_ID", "us.anthropic.claude-sonnet-4-5-20250929-v1:0")
 ttl_days = int(os.environ.get("TTL_DAYS", "90"))

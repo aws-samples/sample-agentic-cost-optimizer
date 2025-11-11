@@ -1,3 +1,4 @@
+import logging
 import os
 import uuid
 from datetime import datetime, timezone
@@ -6,6 +7,8 @@ from typing import Optional
 import boto3
 
 from .event_statuses import EventStatus
+
+logger = logging.getLogger(__name__)
 
 
 def record_event(
@@ -28,11 +31,11 @@ def record_event(
 
     Raises:
         ValueError: If required fields are empty or status is invalid
+        Exception: If DynamoDB operation fails (table not found, permission denied, etc.)
 
     Note:
-        Errors during event recording are logged but do not raise exceptions
-        to prevent event recording failures from crashing the caller.
         Events are automatically deleted via DynamoDB TTL.
+        Journaling is required infrastructure - errors will propagate to caller.
     """
     # Validate required fields
     if not session_id or not isinstance(session_id, str):
@@ -88,5 +91,5 @@ def record_event(
         )
 
     except Exception as e:
-        # Log the error but don't crash the caller
-        print(f"Failed to record event - Session: {session_id}, Status: {status}, Error: {str(e)}")
+        logger.error(f"Failed to record event - Session: {session_id}, Status: {status}, Error: {str(e)}")
+        raise

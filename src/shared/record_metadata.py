@@ -1,8 +1,11 @@
+import logging
 import os
 from datetime import datetime, timezone
 from typing import Optional
 
 import boto3
+
+logger = logging.getLogger(__name__)
 
 
 def record_metadata(
@@ -21,11 +24,11 @@ def record_metadata(
 
     Raises:
         ValueError: If required fields are empty
+        Exception: If DynamoDB operation fails (table not found, permission denied, etc.)
 
     Note:
-        Errors during metadata recording are logged but do not raise exceptions
-        to prevent metadata recording failures from crashing the caller.
         Metadata is automatically deleted via DynamoDB TTL.
+        Journaling is required infrastructure - errors will propagate to caller.
     """
     # Validate required fields
     if not session_id or not isinstance(session_id, str):
@@ -56,5 +59,5 @@ def record_metadata(
         table.put_item(Item=item)
 
     except Exception as e:
-        # Log the error but don't crash the caller
-        print(f"Failed to record metadata - Session: {session_id}, Error: {str(e)}")
+        logger.error(f"Failed to record metadata - Session: {session_id}, Error: {str(e)}")
+        raise

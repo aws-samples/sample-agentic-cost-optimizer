@@ -4,6 +4,8 @@ import os
 from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from src.shared import record_metadata
 
 
@@ -66,23 +68,18 @@ class TestRecordMetadata:
         mock_boto3.resource.assert_called_once_with("dynamodb", region_name="us-east-1")
 
     @patch("src.shared.record_metadata.boto3")
-    @patch("builtins.print")
-    def test_metadata_recording_handles_dynamodb_error(self, mock_print, mock_boto3):
-        """Test that DynamoDB errors are caught and logged."""
+    def test_metadata_recording_handles_dynamodb_error(self, mock_boto3):
+        """Test that DynamoDB errors are raised (journaling is required infrastructure)."""
         mock_table = MagicMock()
         mock_table.put_item.side_effect = Exception("DynamoDB error")
         mock_boto3.resource.return_value.Table.return_value = mock_table
 
-        # Should not raise exception
-        record_metadata(
-            session_id="session-123",
-            table_name="test-table",
-        )
-
-        # Verify error was logged
-        mock_print.assert_called_once()
-        assert "Failed to record metadata" in mock_print.call_args[0][0]
-        assert "session-123" in mock_print.call_args[0][0]
+        # Should raise exception since journaling is required
+        with pytest.raises(Exception, match="DynamoDB error"):
+            record_metadata(
+                session_id="session-123",
+                table_name="test-table",
+            )
 
     @patch("src.shared.record_metadata.boto3")
     def test_custom_ttl_days(self, mock_boto3):

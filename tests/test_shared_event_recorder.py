@@ -3,6 +3,7 @@
 import time
 from unittest.mock import MagicMock, patch
 
+import pytest
 from botocore.exceptions import ClientError
 
 from src.shared import EventStatus, record_event
@@ -97,7 +98,7 @@ class TestRecordEvent:
 
     @patch("src.shared.event_recorder.boto3")
     def test_event_recording_handles_dynamodb_error(self, mock_boto3):
-        """Test that DynamoDB errors are caught and logged without crashing."""
+        """Test that DynamoDB errors are raised (journaling is required infrastructure)."""
         mock_dynamodb = MagicMock()
         mock_table = MagicMock()
         mock_boto3.resource.return_value = mock_dynamodb
@@ -107,32 +108,33 @@ class TestRecordEvent:
             "PutItem",
         )
 
-        # Should not raise exception
-        record_event(
-            session_id="session-123",
-            status=EventStatus.AGENT_INVOCATION_STARTED,
-            table_name="test-table",
-        )
+        # Should raise exception since journaling is required
+        with pytest.raises(ClientError):
+            record_event(
+                session_id="session-123",
+                status=EventStatus.AGENT_INVOCATION_STARTED,
+                table_name="test-table",
+            )
 
     @patch("src.shared.event_recorder.boto3")
     def test_event_recording_handles_generic_exception(self, mock_boto3):
-        """Test that generic exceptions are caught and logged without crashing."""
+        """Test that generic exceptions are raised (journaling is required infrastructure)."""
         mock_dynamodb = MagicMock()
         mock_table = MagicMock()
         mock_boto3.resource.return_value = mock_dynamodb
         mock_dynamodb.Table.return_value = mock_table
         mock_table.put_item.side_effect = Exception("Unexpected error")
 
-        # Should not raise exception
-        record_event(
-            session_id="session-123",
-            status=EventStatus.AGENT_INVOCATION_STARTED,
-            table_name="test-table",
-        )
+        with pytest.raises(Exception, match="Unexpected error"):
+            record_event(
+                session_id="session-123",
+                status=EventStatus.AGENT_INVOCATION_STARTED,
+                table_name="test-table",
+            )
 
     @patch("src.shared.event_recorder.boto3")
     def test_event_recording_handles_table_not_found(self, mock_boto3):
-        """Test that ResourceNotFoundException is caught and logged."""
+        """Test that ResourceNotFoundException is raised (journaling is required infrastructure)."""
         mock_dynamodb = MagicMock()
         mock_table = MagicMock()
         mock_boto3.resource.return_value = mock_dynamodb
@@ -141,12 +143,12 @@ class TestRecordEvent:
             {"Error": {"Code": "ResourceNotFoundException", "Message": "Table not found"}}, "PutItem"
         )
 
-        # Should not raise exception
-        record_event(
-            session_id="session-123",
-            status=EventStatus.AGENT_INVOCATION_STARTED,
-            table_name="test-table",
-        )
+        with pytest.raises(ClientError):
+            record_event(
+                session_id="session-123",
+                status=EventStatus.AGENT_INVOCATION_STARTED,
+                table_name="test-table",
+            )
 
     @patch("src.shared.event_recorder.boto3")
     def test_custom_ttl_days(self, mock_boto3):
