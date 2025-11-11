@@ -37,24 +37,16 @@ def record_event(
         Events are automatically deleted via DynamoDB TTL.
         Journaling is required infrastructure - errors will propagate to caller.
     """
-    # Validate required fields
     if not session_id or not isinstance(session_id, str):
         raise ValueError("session_id must be a non-empty string")
 
     if not table_name or not isinstance(table_name, str):
         raise ValueError("table_name must be a non-empty string")
 
-    # Validate status against allowed values
     valid_statuses = {
-        EventStatus.SESSION_INITIATED,
-        EventStatus.AGENT_INVOCATION_STARTED,
-        EventStatus.AGENT_INVOCATION_SUCCEEDED,
-        EventStatus.AGENT_INVOCATION_FAILED,
-        EventStatus.AGENT_RUNTIME_INVOKE_STARTED,
-        EventStatus.AGENT_RUNTIME_INVOKE_FAILED,
-        EventStatus.AGENT_BACKGROUND_TASK_STARTED,
-        EventStatus.AGENT_BACKGROUND_TASK_COMPLETED,
-        EventStatus.AGENT_BACKGROUND_TASK_FAILED,
+        getattr(EventStatus, attr)
+        for attr in dir(EventStatus)
+        if not attr.startswith("_") and isinstance(getattr(EventStatus, attr), str)
     }
 
     if status not in valid_statuses:
