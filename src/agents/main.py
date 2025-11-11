@@ -22,9 +22,7 @@ journal_table_name = os.environ.get("JOURNAL_TABLE_NAME")
 if not journal_table_name:
     raise ValueError("JOURNAL_TABLE_NAME environment variable is required")
 
-session_id = os.environ.get("SESSION_ID")
-if not session_id:
-    raise ValueError("SESSION_ID environment variable is required")
+session_id = os.environ.get("SESSION_ID", "local-dev-session")
 
 aws_region = os.environ.get("AWS_REGION", "us-east-1")
 model_id = os.environ.get("MODEL_ID", "us.anthropic.claude-sonnet-4-5-20250929-v1:0")

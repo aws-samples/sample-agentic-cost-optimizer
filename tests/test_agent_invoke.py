@@ -58,7 +58,7 @@ class TestInvokeFunction:
 
         result = await invoke(payload)
 
-        assert "Started processing request for session test-session-id" in result["message"]
+        assert "Started processing request for session local-dev-session" in result["message"]
 
 
 class TestBackgroundTaskIntegration:
