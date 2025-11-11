@@ -2,7 +2,22 @@
 
 import os
 import sys
+from functools import wraps
 from unittest.mock import MagicMock
+
+
+def mock_tool_decorator(*args, **kwargs):
+    """Mock @tool decorator by doing nothing."""
+
+    def decorator(f):
+        @wraps(f)
+        def decorated_function(*args, **kwargs):
+            return f(*args, **kwargs)
+
+        return decorated_function
+
+    return decorator
+
 
 # Set required environment variables before any imports
 os.environ["S3_BUCKET_NAME"] = "test-bucket"
@@ -14,8 +29,12 @@ os.environ["AWS_REGION"] = "us-east-1"
 mock_app = MagicMock()
 mock_app.entrypoint = lambda func: func  # Make decorator a no-op
 
+# Create strands mock with tool decorator
+mock_strands = MagicMock()
+mock_strands.tool = mock_tool_decorator
+
 mocks_to_apply = {
-    "strands": MagicMock(),
+    "strands": mock_strands,
     "strands.models": MagicMock(),
     "strands_tools": MagicMock(),
     "bedrock_agentcore.runtime": MagicMock(BedrockAgentCoreApp=lambda: mock_app),

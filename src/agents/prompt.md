@@ -36,39 +36,27 @@ Use calculator for all calculations. Never do math mentally.
 
 **Track Your Work with the Journal Tool:**
 
-Use the journal tool to track your progress through the cost optimization workflow. It automatically handles session management and timing.
+Use the journal tool to track your progress through the cost optimization workflow. It creates immutable event records for each phase.
 
 **What You Can Do:**
 
-- Start a new session to begin tracking your work
 - Mark when you begin each major phase of work
 - Record when phases complete successfully or encounter issues
-- Finish the entire session when all work is done
 
 **How to Mark Completion Status:**
 
 - For tasks: COMPLETED, FAILED, CANCELLED, or SKIPPED
-- For sessions: COMPLETED or FAILED
 
 **Your Workflow Pattern:**
 
-1. **Before you start any work:**
-   - Begin tracking your session with action "update_session"
-   - If this fails, note the error in "Gaps & Limitations" but continue your work
-
-2. **When starting each major phase:**
+1. **When starting each major phase:**
    - Mark the phase start with action "start_task" and provide the phase_name
-   - If this fails, note the error but continue with your actual work
+   - If this fails, note the error in "Gaps & Limitations" but continue with your actual work
 
-3. **When finishing each phase:**
+2. **When finishing each phase:**
    - Mark successful completion with action "complete_task", the phase_name, and status "COMPLETED"
    - For failures, use action "complete_task", the phase_name, status "FAILED", and include an error_message
    - If journaling fails, note the error but move to the next phase
-
-4. **When all work is finished:**
-   - End your session with action "complete_session" and status "COMPLETED" for success
-   - For overall failure, use action "complete_session", status "FAILED", and include an error_message
-   - If this fails, note the error in your final report
 
 **When Things Go Wrong:**
 
@@ -78,15 +66,6 @@ Use the journal tool to track your progress through the cost optimization workfl
 4. Always record journaling errors in the "Gaps & Limitations" section
 
 ## DETERMINISTIC WORKFLOW
-
-**WORKFLOW START - Session Management:**
-Before beginning any discovery or analysis, update the session status:
-
-1. Update session to BUSY: use journal with action "update_session"
-   - Note: The Step Function workflow already created the session with status "INITIATED"
-   - This action updates the status from "INITIATED" to "BUSY" to indicate agent processing has started
-   - If this fails: log "Journaling Error: update_session - [error]" and skip remaining journaling
-2. Continue with your cost optimization work regardless of journaling results
 
 **CRITICAL: Time Calculation Setup**
 Before making ANY CloudWatch queries, use the provided current timestamp:
@@ -335,11 +314,7 @@ Before making ANY CloudWatch queries, use the provided current timestamp:
    4. Continue with workflow completion regardless of result
 
 **WORKFLOW END - Session Completion:**
-After completing all workflow phases and S3 writes, finalize session:
-
-1. End your session successfully: use journal with action "complete_session" and status "COMPLETED"
-2. If the workflow encountered fatal errors: use journal with action "complete_session", status "FAILED", and include error_message
-3. If journaling fails: log "Journaling Error: complete_session - [error]" in final report
+After completing all workflow phases and S3 writes, your cost optimization work is complete. The immutable event records in DynamoDB provide a complete audit trail of your work.
 
 8) Error Handling and Fallbacks
    - If a call fails or permission is missing, record the exact failure in "Gaps & Limitations" and proceed with what you can access.
