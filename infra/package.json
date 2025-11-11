@@ -19,7 +19,7 @@
     "esbuild": "^0.25.10"
   },
   "devDependencies": {
-    "@trivago/prettier-plugin-sort-imports": "^4.3.0",
+    "@trivago/prettier-plugin-sort-imports": "^6.0.0",
     "@types/node": "^22.7.9",
     "aws-cdk": "^2.1031.2",
     "cdk-nag": "^2.28.195",
