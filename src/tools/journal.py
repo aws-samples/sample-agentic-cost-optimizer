@@ -20,6 +20,18 @@ aws_region = os.environ.get("AWS_REGION", "us-east-1")
 ttl_days = int(os.environ.get("TTL_DAYS", "90"))
 
 
+class TaskCompletionStatus:
+    """Valid completion status values for journal tool"""
+
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+
+    @classmethod
+    def all(cls):
+        """Return all valid statuses"""
+        return [cls.COMPLETED, cls.FAILED]
+
+
 def _create_error_response(
     error_message: str,
     additional_context: Optional[Dict[str, Any]] = None,
@@ -61,7 +73,7 @@ def _start_task(phase_name: str, tool_context: ToolContext) -> Dict[str, Any]:
         if not table_name:
             return _create_error_response("JOURNAL_TABLE_NAME not set")
 
-        # Create immutable event with format TASK_<PHASE>_STARTED
+        # Build event status dynamically with format TASK_<PHASE>_STARTED
         phase_normalized = phase_name.upper().replace(" ", "_")
         event_status = f"TASK_{phase_normalized}_STARTED"
 
@@ -87,7 +99,7 @@ def _start_task(phase_name: str, tool_context: ToolContext) -> Dict[str, Any]:
 def _complete_task(
     phase_name: str,
     tool_context: ToolContext,
-    status: str = "COMPLETED",
+    status: str = TaskCompletionStatus.COMPLETED,
     error_message: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Complete a task/phase and update its status."""
@@ -106,21 +118,13 @@ def _complete_task(
         if not table_name:
             return _create_error_response("JOURNAL_TABLE_NAME not set")
 
-        # Map string status to status suffix
-        status_suffix_map = {
-            "COMPLETED": "COMPLETED",
-            "FAILED": "FAILED",
-        }
-
-        status_suffix = status_suffix_map.get(status, "COMPLETED")
-
-        # Create final event status with format TASK_<PHASE>_<STATUS>
+        # Build event status dynamically with format TASK_<PHASE>_<STATUS>
         phase_normalized = phase_name.upper().replace(" ", "_")
-        final_event_status = f"TASK_{phase_normalized}_{status_suffix}"
+        event_status = f"TASK_{phase_normalized}_{status}"
 
         record_event(
             session_id=session_id,
-            status=final_event_status,
+            status=event_status,
             table_name=table_name,
             ttl_days=ttl_days,
             error_message=error_message,
@@ -175,10 +179,11 @@ def journal(
             return _create_error_response("phase_name is required for complete_task action")
 
         # Validate status parameter
-        valid_statuses = ["COMPLETED", "FAILED"]
-        if status and status not in valid_statuses:
-            return _create_error_response(f"Invalid status '{status}'. Must be one of: {', '.join(valid_statuses)}")
+        if status and status not in TaskCompletionStatus.all():
+            return _create_error_response(
+                f"Invalid status '{status}'. Must be one of: {', '.join(TaskCompletionStatus.all())}"
+            )
 
-        return _complete_task(phase_name, tool_context, status or "COMPLETED", error_message)
+        return _complete_task(phase_name, tool_context, status or TaskCompletionStatus.COMPLETED, error_message)
     else:
         return _create_error_response(f"Unknown action: {action}")

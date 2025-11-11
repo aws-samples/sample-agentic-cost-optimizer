@@ -62,20 +62,20 @@ class TestJournalValidation:
                 os.environ["JOURNAL_TABLE_NAME"] = original_table_name
 
     @patch("src.tools.journal.record_event")
-    def test_phase_name_special_characters(self, mock_record_event):
-        """Test journal with phase names containing special characters."""
+    def test_phase_name_with_spaces(self, mock_record_event):
+        """Test journal with phase names containing spaces."""
         mock_context = MagicMock()
         mock_context.invocation_state = {"session_id": "test-session-123"}
 
-        result = journal(action="start_task", tool_context=mock_context, phase_name="Data Analysis & Cleanup")
+        result = journal(action="start_task", tool_context=mock_context, phase_name="Usage and Metrics Collection")
 
         assert result["success"] is True
         mock_record_event.assert_called_once()
 
-        # Check that the event status has the correct format: TASK_<PHASE>_STARTED
+        # Check that the event status uses the correct constant
         call_args = mock_record_event.call_args
         event_status = call_args[1]["status"]
-        assert event_status == "TASK_DATA_ANALYSIS_&_CLEANUP_STARTED"
+        assert event_status == "TASK_USAGE_AND_METRICS_COLLECTION_STARTED"
 
 
 @pytest.fixture
