@@ -86,6 +86,7 @@ export class Agent extends Construct {
             effect: Effect.ALLOW,
             actions: [
               'lambda:GetFunction',
+              'lambda:GetFunctionConfiguration',
               'lambda:GetFunctionConcurrency',
               'lambda:GetProvisionedConcurrencyConfig',
               'lambda:ListFunctions',

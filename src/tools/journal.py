@@ -14,7 +14,7 @@ from typing import Any, Dict, Optional
 
 from strands import ToolContext, tool
 
-from src.shared import EventStatus, record_event
+from src.shared import record_event
 
 aws_region = os.environ.get("AWS_REGION", "us-east-1")
 ttl_days = int(os.environ.get("TTL_DAYS", "90"))
@@ -61,8 +61,9 @@ def _start_task(phase_name: str, tool_context: ToolContext) -> Dict[str, Any]:
         if not table_name:
             return _create_error_response("JOURNAL_TABLE_NAME not set")
 
-        # Create immutable event with phase name appended to status
-        event_status = f"{EventStatus.TASK_STARTED}_{phase_name.upper().replace(' ', '_')}"
+        # Create immutable event with format TASK_<PHASE>_STARTED
+        phase_normalized = phase_name.upper().replace(" ", "_")
+        event_status = f"TASK_{phase_normalized}_STARTED"
 
         record_event(
             session_id=session_id,
@@ -86,7 +87,7 @@ def _start_task(phase_name: str, tool_context: ToolContext) -> Dict[str, Any]:
 def _complete_task(
     phase_name: str,
     tool_context: ToolContext,
-    status: str = EventStatus.TASK_COMPLETED,
+    status: str = "COMPLETED",
     error_message: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Complete a task/phase and update its status."""
@@ -105,18 +106,17 @@ def _complete_task(
         if not table_name:
             return _create_error_response("JOURNAL_TABLE_NAME not set")
 
-        # Map string status to EventStatus constants
-        status_map = {
-            "COMPLETED": EventStatus.TASK_COMPLETED,
-            "FAILED": EventStatus.TASK_FAILED,
-            "CANCELLED": EventStatus.TASK_CANCELLED,
-            "SKIPPED": EventStatus.TASK_SKIPPED,
+        # Map string status to status suffix
+        status_suffix_map = {
+            "COMPLETED": "COMPLETED",
+            "FAILED": "FAILED",
         }
 
-        event_status_base = status_map.get(status, EventStatus.TASK_COMPLETED)
+        status_suffix = status_suffix_map.get(status, "COMPLETED")
 
-        # Append phase name to create final event status
-        final_event_status = f"{event_status_base}_{phase_name.upper().replace(' ', '_')}"
+        # Create final event status with format TASK_<PHASE>_<STATUS>
+        phase_normalized = phase_name.upper().replace(" ", "_")
+        final_event_status = f"TASK_{phase_normalized}_{status_suffix}"
 
         record_event(
             session_id=session_id,
@@ -154,7 +154,7 @@ def journal(
                complete_task)
            phase_name: Name of the task/phase (required for start_task and
                complete_task)
-           status: Status for completion (COMPLETED", "FAILED", "CANCELLED", "SKIPPED)
+           status: Status for completion ("COMPLETED" or "FAILED")
            error_message: Optional error message for failed completions
 
        Returns:
@@ -175,7 +175,7 @@ def journal(
             return _create_error_response("phase_name is required for complete_task action")
 
         # Validate status parameter
-        valid_statuses = ["COMPLETED", "FAILED", "CANCELLED", "SKIPPED"]
+        valid_statuses = ["COMPLETED", "FAILED"]
         if status and status not in valid_statuses:
             return _create_error_response(f"Invalid status '{status}'. Must be one of: {', '.join(valid_statuses)}")
 
