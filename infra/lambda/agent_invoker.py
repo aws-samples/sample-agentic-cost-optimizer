@@ -15,8 +15,14 @@ tracer = Tracer()
 bedrock_agentcore = boto3.client("bedrock-agentcore")
 
 # Environment variables
-agent_runtime_arn = os.environ.get("AGENT_CORE_RUNTIME_ARN", "")
-journal_table_name = os.environ.get("JOURNAL_TABLE_NAME", "")
+agent_runtime_arn = os.environ.get("AGENT_CORE_RUNTIME_ARN")
+if not agent_runtime_arn:
+    raise ValueError("AGENT_CORE_RUNTIME_ARN environment variable is required")
+
+journal_table_name = os.environ.get("JOURNAL_TABLE_NAME")
+if not journal_table_name:
+    raise ValueError("JOURNAL_TABLE_NAME environment variable is required")
+
 ttl_days = int(os.environ.get("TTL_DAYS", "90"))
 aws_region = os.environ.get("AWS_REGION", "us-east-1")
 

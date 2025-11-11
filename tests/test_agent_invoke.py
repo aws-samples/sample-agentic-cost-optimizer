@@ -11,7 +11,7 @@ class TestInvokeFunction:
     """Test cases for the invoke function with fire-and-forget async behavior."""
 
     @pytest.mark.asyncio
-    @patch("src.shared.record_event")
+    @patch("src.agents.main.record_event")
     @patch("asyncio.create_task")
     async def test_successful_task_creation(self, mock_create_task, mock_record_event):
         """Test successful task creation: invoke returns immediate success message."""
@@ -25,7 +25,7 @@ class TestInvokeFunction:
         assert result["status"] == "started"
 
     @pytest.mark.asyncio
-    @patch("src.shared.record_event")
+    @patch("src.agents.main.record_event")
     @patch("asyncio.create_task")
     async def test_task_creation_failure(self, mock_create_task, mock_record_event):
         """Test task creation failure: invoke returns error message."""
@@ -37,7 +37,7 @@ class TestInvokeFunction:
         assert "Error starting background processing: Task creation failed" in result["error"]
 
     @pytest.mark.asyncio
-    @patch("src.shared.record_event")
+    @patch("src.agents.main.record_event")
     @patch("asyncio.create_task")
     async def test_default_prompt_when_missing(self, mock_create_task, mock_record_event):
         """Test that default prompt 'Hello' is used when prompt is missing from payload."""
@@ -49,23 +49,23 @@ class TestInvokeFunction:
         assert "Started processing request for session session-456" in result["message"]
 
     @pytest.mark.asyncio
-    @patch("src.shared.record_event")
+    @patch("src.agents.main.record_event")
     @patch("asyncio.create_task")
     async def test_default_session_id_when_missing(self, mock_create_task, mock_record_event):
-        """Test that default session_id is used when missing from payload."""
+        """Test that default session_id from environment is used when missing from payload."""
         mock_create_task.return_value = AsyncMock()
         payload = {"prompt": "test"}
 
         result = await invoke(payload)
 
-        assert "Started processing request for session None" in result["message"]
+        assert "Started processing request for session local-dev-session" in result["message"]
 
 
 class TestBackgroundTaskIntegration:
     """Test cases for background task integration (testing the fire-and-forget pattern)."""
 
     @pytest.mark.asyncio
-    @patch("src.shared.record_event")
+    @patch("src.agents.main.record_event")
     @patch("asyncio.create_task")
     async def test_background_task_is_started(self, mock_create_task, mock_record_event):
         """Test that background task is started when invoke is called."""
@@ -87,7 +87,7 @@ class TestBackgroundTaskErrorHandling:
     """Test error handling scenarios through the invoke function integration."""
 
     @pytest.mark.asyncio
-    @patch("src.shared.record_event")
+    @patch("src.agents.main.record_event")
     @patch("asyncio.create_task")
     @patch("src.agents.main.logger")
     @patch("src.agents.main.agent")
@@ -106,7 +106,7 @@ class TestBackgroundTaskErrorHandling:
         mock_create_task.assert_called_once()
 
     @pytest.mark.asyncio
-    @patch("src.shared.record_event")
+    @patch("src.agents.main.record_event")
     @patch("asyncio.create_task")
     @patch("src.agents.main.logger")
     @patch("src.agents.main.agent")
@@ -128,7 +128,7 @@ class TestBackgroundTaskErrorHandling:
         mock_create_task.assert_called_once()
 
     @pytest.mark.asyncio
-    @patch("src.shared.record_event")
+    @patch("src.agents.main.record_event")
     @patch("asyncio.create_task")
     @patch("src.agents.main.logger")
     @patch("src.agents.main.agent")
@@ -152,7 +152,7 @@ class TestBackgroundTaskErrorHandling:
         mock_create_task.assert_called_once()
 
     @pytest.mark.asyncio
-    @patch("src.shared.record_event")
+    @patch("src.agents.main.record_event")
     @patch("asyncio.create_task")
     @patch("src.agents.main.logger")
     @patch("src.agents.main.agent")
@@ -169,7 +169,7 @@ class TestBackgroundTaskErrorHandling:
         mock_create_task.assert_called_once()
 
     @pytest.mark.asyncio
-    @patch("src.shared.record_event")
+    @patch("src.agents.main.record_event")
     @patch("asyncio.create_task")
     @patch("src.agents.main.logger")
     @patch("src.agents.main.agent")

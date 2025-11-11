@@ -1,36 +1,21 @@
 /**
- * Event status constants for Lambda and Step Functions
- * Used for tracking agent workflow lifecycle events
+ * Event status constants used by Step Functions workflow
+ *
+ * The Step Function polls DynamoDB for these statuses to determine when
+ * the agent background task has completed or failed.
+ *
+ * Note: Other event statuses (SESSION_INITIATED, AGENT_INVOCATION_STARTED, etc.)
+ * are defined in Python at src/shared/event_statuses.py and used by Lambda functions.
  */
 
 export const EventStatus = {
   /**
-   * Session has been initiated by Step Functions
-   */
-  SESSION_INITIATED: 'SESSION_INITIATED',
-
-  /**
-   * Lambda has started invoking the agent
-   */
-  AGENT_INVOCATION_STARTED: 'AGENT_INVOCATION_STARTED',
-
-  /**
-   * Lambda successfully invoked the agent
-   */
-  AGENT_INVOCATION_SUCCEEDED: 'AGENT_INVOCATION_SUCCEEDED',
-
-  /**
-   * Lambda failed to invoke the agent
-   */
-  AGENT_INVOCATION_FAILED: 'AGENT_INVOCATION_FAILED',
-
-  /**
-   * Agent background task completed (used by Step Functions for polling)
+   * Agent background task completed successfully (Step Function polls for this)
    */
   AGENT_BACKGROUND_TASK_COMPLETED: 'AGENT_BACKGROUND_TASK_COMPLETED',
 
   /**
-   * Agent background task failed (used by Step Functions for polling)
+   * Agent background task failed (Step Function polls for this)
    */
   AGENT_BACKGROUND_TASK_FAILED: 'AGENT_BACKGROUND_TASK_FAILED',
 } as const;

@@ -2,6 +2,7 @@ name: CI
 
 permissions:
   contents: read
+  actions: write 
 
 on:
   pull_request:
@@ -23,12 +24,13 @@ jobs:
         with:
           python-version: "3.12"
           enable-cache: true
+          prune-cache: false
           cache-dependency-glob: |
             uv.lock
             pyproject.toml
 
       - name: Install dependencies
-        run: uv sync --group agents --group dev
+        run: uv sync --frozen --group agents --group dev
 
       - name: Run tests
         run: uv run pytest tests/ -v --junitxml=test-results.xml
@@ -40,7 +42,7 @@ jobs:
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
 
       - name: Setup Node.js
-        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '22'
           cache: 'npm'

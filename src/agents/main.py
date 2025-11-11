@@ -14,9 +14,16 @@ from strands_tools import calculator, use_aws
 from src.shared import EventStatus, record_event
 from src.tools import journal, storage
 
-s3_bucket_name = os.environ.get("S3_BUCKET_NAME", "default-bucket")
-journal_table_name = os.environ.get("JOURNAL_TABLE_NAME", "default-table")
-session_id = os.environ.get("SESSION_ID")
+s3_bucket_name = os.environ.get("S3_BUCKET_NAME")
+if not s3_bucket_name:
+    raise ValueError("S3_BUCKET_NAME environment variable is required")
+
+journal_table_name = os.environ.get("JOURNAL_TABLE_NAME")
+if not journal_table_name:
+    raise ValueError("JOURNAL_TABLE_NAME environment variable is required")
+
+session_id = os.environ.get("SESSION_ID", "local-dev-session")
+
 aws_region = os.environ.get("AWS_REGION", "us-east-1")
 model_id = os.environ.get("MODEL_ID", "us.anthropic.claude-sonnet-4-5-20250929-v1:0")
 ttl_days = int(os.environ.get("TTL_DAYS", "90"))
@@ -101,7 +108,7 @@ logger.info("Agent and AgentCore app initialized successfully")
 
 # Decorator automatically manages AgentCore status: HEALTHY_BUSY while running, HEALTHY when complete
 @app.async_task
-async def agent_background_task(user_message: str, session_id: str):
+async def background_task(user_message: str, session_id: str):
     """Background task to process agent request with LLM"""
     logger.info(f"Background task started - Session: {session_id}")
 
@@ -186,8 +193,8 @@ async def invoke(payload):
     Fire-and-forget pattern:
     - Lambda returns immediately (avoiding 15-minute timeout)
     - AgentCore continues processing in background
-    - Status automatically becomes HEALTHY_BUSY when agent_background_task() runs
-    - Status returns to HEALTHY when agent_background_task() completes
+    - Status automatically becomes HEALTHY_BUSY when background_task() runs
+    - Status returns to HEALTHY when background_task() completes
     """
     user_message = payload.get("prompt", "Hello")
     payload_session_id = payload.get("session_id", session_id)
@@ -195,14 +202,14 @@ async def invoke(payload):
     logger.info(f"Request received - Session: {payload_session_id}")
     record_event(
         session_id=payload_session_id,
-        status=EventStatus.AGENT_INVOKE_STARTED,
+        status=EventStatus.AGENT_RUNTIME_INVOKE_STARTED,
         table_name=journal_table_name,
         ttl_days=ttl_days,
         region_name=aws_region,
     )
 
     try:
-        asyncio.create_task(agent_background_task(user_message, payload_session_id))
+        asyncio.create_task(background_task(user_message, payload_session_id))
         logger.info(f"Background processing started - Session: {payload_session_id}")
         record_event(
             session_id=payload_session_id,
@@ -220,7 +227,7 @@ async def invoke(payload):
         logger.error(f"Entrypoint error - Session: {payload_session_id}: {str(e)}", exc_info=True)
         record_event(
             session_id=payload_session_id,
-            status=EventStatus.AGENT_INVOKE_FAILED,
+            status=EventStatus.AGENT_RUNTIME_INVOKE_FAILED,
             table_name=journal_table_name,
             ttl_days=ttl_days,
             error_message=str(e),

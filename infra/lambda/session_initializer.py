@@ -1,10 +1,10 @@
-"""Lambda function to initialize session by recording SESSION_INITIATED event."""
+"""Lambda function to initialize session by recording metadata and SESSION_INITIATED event."""
 
 import os
 
 from aws_lambda_powertools import Logger
 
-from src.shared import EventStatus, record_event
+from src.shared import EventStatus, record_event, record_metadata
 
 logger = Logger(service=os.environ.get("POWERTOOLS_SERVICE_NAME", "session-initializer"))
 
@@ -35,6 +35,8 @@ def handler(event, context):
         ttl_days = int(os.environ.get("TTL_DAYS", "90"))
 
         logger.info(f"Recording SESSION_INITIATED event for session: {session_id}")
+
+        record_metadata(session_id=session_id, table_name=table_name, ttl_days=ttl_days)
 
         # Record the SESSION_INITIATED event
         record_event(

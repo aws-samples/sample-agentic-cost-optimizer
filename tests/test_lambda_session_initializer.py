@@ -37,12 +37,16 @@ def test_handler_success(mock_env, lambda_context):
 
     event = {"session_id": "test-session-123"}
 
-    with patch("session_initializer.record_event") as mock_record:
+    with (
+        patch("session_initializer.record_metadata") as mock_metadata,
+        patch("session_initializer.record_event") as mock_event,
+    ):
         result = handler(event, lambda_context)
 
         assert result["statusCode"] == 200
         assert result["session_id"] == "test-session-123"
-        mock_record.assert_called_once()
+        mock_metadata.assert_called_once_with(session_id="test-session-123", table_name="test-table", ttl_days=90)
+        mock_event.assert_called_once()
 
 
 def test_handler_missing_session_id(mock_env, lambda_context):
@@ -51,7 +55,7 @@ def test_handler_missing_session_id(mock_env, lambda_context):
 
     event = {}
 
-    with patch("session_initializer.record_event"):
+    with patch("session_initializer.record_metadata"), patch("session_initializer.record_event"):
         with pytest.raises(ValueError, match="session_id is required"):
             handler(event, lambda_context)
 
@@ -65,7 +69,7 @@ def test_handler_missing_table_name(lambda_context, monkeypatch):
 
     event = {"session_id": "test-session-123"}
 
-    with patch("session_initializer.record_event"):
+    with patch("session_initializer.record_metadata"), patch("session_initializer.record_event"):
         with pytest.raises(ValueError, match="JOURNAL_TABLE_NAME environment variable is required"):
             handler(event, lambda_context)
 
@@ -76,6 +80,23 @@ def test_handler_record_event_failure(mock_env, lambda_context):
 
     event = {"session_id": "test-session-123"}
 
-    with patch("session_initializer.record_event", side_effect=Exception("DynamoDB error")):
+    with (
+        patch("session_initializer.record_metadata"),
+        patch("session_initializer.record_event", side_effect=Exception("DynamoDB error")),
+    ):
         with pytest.raises(Exception, match="DynamoDB error"):
+            handler(event, lambda_context)
+
+
+def test_handler_record_metadata_failure(mock_env, lambda_context):
+    """Test handler propagates exceptions from record_metadata."""
+    from session_initializer import handler
+
+    event = {"session_id": "test-session-123"}
+
+    with (
+        patch("session_initializer.record_metadata", side_effect=Exception("Metadata error")),
+        patch("session_initializer.record_event"),
+    ):
+        with pytest.raises(Exception, match="Metadata error"):
             handler(event, lambda_context)
