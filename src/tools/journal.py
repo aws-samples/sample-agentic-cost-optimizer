@@ -16,6 +16,9 @@ from strands import ToolContext, tool
 
 from src.shared import EventStatus, record_event
 
+aws_region = os.environ.get("AWS_REGION", "us-east-1")
+ttl_days = int(os.environ.get("TTL_DAYS", "90"))
+
 
 def _create_error_response(
     error_message: str,
@@ -41,14 +44,6 @@ def _get_table_name() -> Optional[str]:
     return os.environ.get("JOURNAL_TABLE_NAME", "")
 
 
-def _create_timestamp_and_ttl() -> tuple[str, int]:
-    """Create timestamp and TTL for DynamoDB items."""
-    current_time = datetime.now(timezone.utc)
-    timestamp = current_time.isoformat()
-    ttl = int(current_time.timestamp()) + (30 * 24 * 60 * 60)
-    return timestamp, ttl
-
-
 def _start_task(phase_name: str, tool_context: ToolContext) -> Dict[str, Any]:
     """Start tracking a new task/phase."""
     try:
@@ -66,8 +61,6 @@ def _start_task(phase_name: str, tool_context: ToolContext) -> Dict[str, Any]:
         if not table_name:
             return _create_error_response("JOURNAL_TABLE_NAME not set")
 
-        timestamp, ttl = _create_timestamp_and_ttl()
-
         # Create immutable event with phase name appended to status
         event_status = f"{EventStatus.TASK_STARTED}_{phase_name.upper().replace(' ', '_')}"
 
@@ -75,8 +68,8 @@ def _start_task(phase_name: str, tool_context: ToolContext) -> Dict[str, Any]:
             session_id=session_id,
             status=event_status,
             table_name=table_name,
-            ttl_days=ttl // (24 * 60 * 60),
-            region_name=os.environ.get("AWS_REGION", "us-east-1"),
+            ttl_days=ttl_days,
+            region_name=aws_region,
         )
 
         return {
@@ -84,7 +77,7 @@ def _start_task(phase_name: str, tool_context: ToolContext) -> Dict[str, Any]:
             "session_id": session_id,
             "phase_name": phase_name,
             "status": "IN_PROGRESS",
-            "timestamp": timestamp,
+            "timestamp": ttl_days,
         }
     except Exception as e:
         return _create_error_response(f"Unexpected error: {str(e)}")
@@ -112,8 +105,6 @@ def _complete_task(
         if not table_name:
             return _create_error_response("JOURNAL_TABLE_NAME not set")
 
-        timestamp, ttl = _create_timestamp_and_ttl()
-
         # Map string status to EventStatus constants
         status_map = {
             "COMPLETED": EventStatus.TASK_COMPLETED,
@@ -131,9 +122,9 @@ def _complete_task(
             session_id=session_id,
             status=final_event_status,
             table_name=table_name,
-            ttl_days=ttl // (24 * 60 * 60),
+            ttl_days=ttl_days,
             error_message=error_message,
-            region_name=os.environ.get("AWS_REGION", "us-east-1"),
+            region_name=aws_region,
         )
 
         return {
@@ -141,7 +132,7 @@ def _complete_task(
             "session_id": session_id,
             "phase_name": phase_name,
             "status": status,
-            "timestamp": timestamp,
+            "timestamp": ttl_days,
         }
     except Exception as e:
         return _create_error_response(f"Unexpected error: {str(e)}")
@@ -163,7 +154,7 @@ def journal(
                complete_task)
            phase_name: Name of the task/phase (required for start_task and
                complete_task)
-           status: Status for completion (BUSY, COMPLETED, FAILED)
+           status: Status for completion (COMPLETED", "FAILED", "CANCELLED", "SKIPPED)
            error_message: Optional error message for failed completions
 
        Returns:
