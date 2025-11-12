@@ -22,11 +22,6 @@ def record_event(
 ) -> None:
     """Record an event in DynamoDB for workflow tracking.
 
-    This function validates event statuses against both predefined constants from the
-    EventStatus class and dynamically generated statuses following the pattern
-    TASK_{phase}_{STARTED|COMPLETED|FAILED}, where phase is a user-provided identifier
-    containing only alphanumeric characters, underscores, and dashes (max 50 characters).
-
     Args:
         session_id: The session ID for the workflow
         status: The event status type (use EventStatus constants or dynamic TASK_{phase}_{suffix} pattern)
@@ -38,12 +33,6 @@ def record_event(
     Raises:
         ValueError: If required fields are empty, status is invalid, or contains unsafe characters
         Exception: If DynamoDB operation fails (table not found, permission denied, etc.)
-
-    Note:
-        Events are automatically deleted via DynamoDB TTL.
-        Journaling is required infrastructure - errors will propagate to caller.
-        Dynamic status validation prevents injection attacks by restricting phase names
-        to safe characters: A-Z, a-z, 0-9, underscore, and dash.
     """
     if not session_id or not isinstance(session_id, str):
         raise ValueError("session_id must be a non-empty string")

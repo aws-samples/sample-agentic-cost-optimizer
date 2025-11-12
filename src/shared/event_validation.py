@@ -1,14 +1,8 @@
-"""Event status validation module for secure handling of dynamic event statuses.
-
-This module provides validation logic to ensure event status strings are safe from
-injection attacks while supporting both predefined statuses and dynamically generated
-statuses with user-provided phase names.
-"""
+"""Event status validation module for secure handling of dynamic event statuses."""
 
 import re
 from typing import Set
 
-# Validation constants
 PHASE_NAME_PATTERN = re.compile(r"^[A-Za-z0-9_-]+$")
 MAX_PHASE_NAME_LENGTH = 50
 DYNAMIC_STATUS_PATTERN = re.compile(r"^TASK_([A-Za-z0-9_-]+)_(STARTED|COMPLETED|FAILED)$")
@@ -24,10 +18,6 @@ def validate_event_status(status: str, valid_predefined_statuses: Set[str]) -> N
     The validation follows a two-tier approach:
     1. Fast path: Check if status is in the predefined set (EventStatus class constants)
     2. Secure path: Validate dynamic pattern TASK_{phase}_{STARTED|COMPLETED|FAILED}
-
-    For dynamic statuses, the phase name component is validated to ensure:
-    - Only alphanumeric characters, underscores, and dashes are allowed
-    - Maximum length of 50 characters is enforced
 
     Args:
         status: The event status string to validate
