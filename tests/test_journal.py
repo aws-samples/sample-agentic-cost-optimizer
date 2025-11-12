@@ -18,7 +18,6 @@ class TestJournalValidation:
 
     def test_invalid_action(self):
         """Test journal with invalid action parameter."""
-        # Create a simple mock context
         mock_context = MagicMock()
         mock_context.invocation_state = {"session_id": "test-session-123"}
 
@@ -39,7 +38,7 @@ class TestJournalValidation:
 
         assert result["success"] is False
         assert "Invalid status 'INVALID_STATUS'" in result["error"]
-        assert "COMPLETED, FAILED" in result["error"]
+        assert "TASK_COMPLETED, TASK_FAILED" in result["error"]
 
     def test_missing_table_name(self):
         """Test journal with missing JOURNAL_TABLE_NAME environment variable."""
@@ -57,25 +56,23 @@ class TestJournalValidation:
             assert result["success"] is False
             assert "JOURNAL_TABLE_NAME not set" in result["error"]
         finally:
-            # Restore the env var
             if original_table_name:
                 os.environ["JOURNAL_TABLE_NAME"] = original_table_name
 
     @patch("src.tools.journal.record_event")
-    def test_phase_name_with_spaces(self, mock_record_event):
-        """Test journal with phase names containing spaces."""
+    def test_phase_name_special_characters(self, mock_record_event):
+        """Test journal with phase names containing special characters."""
         mock_context = MagicMock()
         mock_context.invocation_state = {"session_id": "test-session-123"}
 
-        result = journal(action="start_task", tool_context=mock_context, phase_name="Usage and Metrics Collection")
+        result = journal(action="start_task", tool_context=mock_context, phase_name="Data Analysis & Cleanup")
 
         assert result["success"] is True
         mock_record_event.assert_called_once()
 
-        # Check that the event status uses the correct constant
         call_args = mock_record_event.call_args
         event_status = call_args[1]["status"]
-        assert event_status == "TASK_USAGE_AND_METRICS_COLLECTION_STARTED"
+        assert "TASK_DATA_ANALYSIS_&_CLEANUP_STARTED" in event_status
 
 
 @pytest.fixture
@@ -144,13 +141,13 @@ class TestJournalCompleteTask:
         result = _complete_task(
             phase_name="Discovery",
             tool_context=mock_tool_context,
-            status="COMPLETED",
+            status="TASK_COMPLETED",
         )
 
         assert result["success"] is True
         assert result["session_id"] == "test-session-123"
         assert result["phase_name"] == "Discovery"
-        assert result["status"] == "COMPLETED"
+        assert result["status"] == "TASK_COMPLETED"
         mock_record_event.assert_called_once()
 
     def test_complete_task_missing_phase_name(self, mock_tool_context):

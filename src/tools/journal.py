@@ -14,22 +14,10 @@ from typing import Any, Dict, Optional
 
 from strands import ToolContext, tool
 
-from src.shared import record_event
+from src.shared import EventStatus, record_event
 
 aws_region = os.environ.get("AWS_REGION", "us-east-1")
 ttl_days = int(os.environ.get("TTL_DAYS", "90"))
-
-
-class TaskCompletionStatus:
-    """Valid completion status values for journal tool"""
-
-    COMPLETED = "COMPLETED"
-    FAILED = "FAILED"
-
-    @classmethod
-    def all(cls):
-        """Return all valid statuses"""
-        return [cls.COMPLETED, cls.FAILED]
 
 
 def _create_error_response(
@@ -99,7 +87,7 @@ def _start_task(phase_name: str, tool_context: ToolContext) -> Dict[str, Any]:
 def _complete_task(
     phase_name: str,
     tool_context: ToolContext,
-    status: str = TaskCompletionStatus.COMPLETED,
+    status: str = EventStatus.TASK_COMPLETED,
     error_message: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Complete a task/phase and update its status."""
@@ -158,7 +146,7 @@ def journal(
                complete_task)
            phase_name: Name of the task/phase (required for start_task and
                complete_task)
-           status: Status for completion ("COMPLETED" or "FAILED")
+           status: Status for completion ("TASK_COMPLETED" or "TASK_FAILED")
            error_message: Optional error message for failed completions
 
        Returns:
@@ -179,11 +167,10 @@ def journal(
             return _create_error_response("phase_name is required for complete_task action")
 
         # Validate status parameter
-        if status and status not in TaskCompletionStatus.all():
-            return _create_error_response(
-                f"Invalid status '{status}'. Must be one of: {', '.join(TaskCompletionStatus.all())}"
-            )
+        valid_statuses = [EventStatus.TASK_COMPLETED, EventStatus.TASK_FAILED]
+        if status and status not in valid_statuses:
+            return _create_error_response(f"Invalid status '{status}'. Must be one of: {', '.join(valid_statuses)}")
 
-        return _complete_task(phase_name, tool_context, status or TaskCompletionStatus.COMPLETED, error_message)
+        return _complete_task(phase_name, tool_context, status or EventStatus.TASK_COMPLETED, error_message)
     else:
         return _create_error_response(f"Unknown action: {action}")
