@@ -7,6 +7,7 @@ from typing import Optional
 import boto3
 
 from .event_statuses import EventStatus
+from .event_validation import validate_event_status
 
 logger = logging.getLogger(__name__)
 
@@ -23,19 +24,15 @@ def record_event(
 
     Args:
         session_id: The session ID for the workflow
-        status: The event status type (use EventStatus constants)
+        status: The event status type (use EventStatus constants or dynamic TASK_{phase}_{suffix} pattern)
         table_name: DynamoDB table name for journaling
         ttl_days: Number of days before event expires (default: 90)
         error_message: Optional error message for failure events
         region_name: AWS region for DynamoDB (default: from AWS_REGION env var or us-east-1)
 
     Raises:
-        ValueError: If required fields are empty or status is invalid
+        ValueError: If required fields are empty, status is invalid, or contains unsafe characters
         Exception: If DynamoDB operation fails (table not found, permission denied, etc.)
-
-    Note:
-        Events are automatically deleted via DynamoDB TTL.
-        Journaling is required infrastructure - errors will propagate to caller.
     """
     if not session_id or not isinstance(session_id, str):
         raise ValueError("session_id must be a non-empty string")
@@ -49,8 +46,11 @@ def record_event(
         if not attr.startswith("_") and isinstance(getattr(EventStatus, attr), str)
     }
 
-    if status not in valid_statuses:
-        raise ValueError(f"Invalid status '{status}'. Must be one of: {', '.join(sorted(valid_statuses))}")
+    try:
+        validate_event_status(status, valid_statuses)
+    except ValueError as e:
+        logger.error(f"Event status validation failed - Session: {session_id}, Status: {status}, Error: {str(e)}")
+        raise
 
     try:
         region = region_name or os.environ.get("AWS_REGION", "us-east-1")

@@ -3,9 +3,6 @@ DynamoDB Journaling Tool for Cost Optimization Agent
 
 Provides stateful session and task tracking with automatic ID management
 through a single tool interface.
-
-Environment Variables:
-- JOURNAL_TABLE_NAME: DynamoDB table name for journaling Tasks and session.
 """
 
 import os
@@ -61,8 +58,9 @@ def _start_task(phase_name: str, tool_context: ToolContext) -> Dict[str, Any]:
         if not table_name:
             return _create_error_response("JOURNAL_TABLE_NAME not set")
 
-        # Create immutable event with phase name appended to status
-        event_status = f"{EventStatus.TASK_STARTED}_{phase_name.upper().replace(' ', '_')}"
+        # Build event status dynamically with format TASK_<PHASE>_STARTED
+        phase_normalized = phase_name.upper().replace(" ", "_")
+        event_status = f"TASK_{phase_normalized}_{EventStatus.TASK_STARTED}"
 
         record_event(
             session_id=session_id,
@@ -105,22 +103,13 @@ def _complete_task(
         if not table_name:
             return _create_error_response("JOURNAL_TABLE_NAME not set")
 
-        # Map string status to EventStatus constants
-        status_map = {
-            "COMPLETED": EventStatus.TASK_COMPLETED,
-            "FAILED": EventStatus.TASK_FAILED,
-            "CANCELLED": EventStatus.TASK_CANCELLED,
-            "SKIPPED": EventStatus.TASK_SKIPPED,
-        }
-
-        event_status_base = status_map.get(status, EventStatus.TASK_COMPLETED)
-
-        # Append phase name to create final event status
-        final_event_status = f"{event_status_base}_{phase_name.upper().replace(' ', '_')}"
+        # Build event status dynamically with format TASK_<PHASE>_<STATUS>
+        phase_normalized = phase_name.upper().replace(" ", "_")
+        event_status = f"TASK_{phase_normalized}_{status}"
 
         record_event(
             session_id=session_id,
-            status=final_event_status,
+            status=event_status,
             table_name=table_name,
             ttl_days=ttl_days,
             error_message=error_message,
@@ -154,7 +143,7 @@ def journal(
                complete_task)
            phase_name: Name of the task/phase (required for start_task and
                complete_task)
-           status: Status for completion (COMPLETED", "FAILED", "CANCELLED", "SKIPPED)
+           status: Status for completion ("TASK_COMPLETED" or "TASK_FAILED")
            error_message: Optional error message for failed completions
 
        Returns:
@@ -175,10 +164,10 @@ def journal(
             return _create_error_response("phase_name is required for complete_task action")
 
         # Validate status parameter
-        valid_statuses = ["COMPLETED", "FAILED", "CANCELLED", "SKIPPED"]
+        valid_statuses = [EventStatus.TASK_COMPLETED, EventStatus.TASK_FAILED]
         if status and status not in valid_statuses:
             return _create_error_response(f"Invalid status '{status}'. Must be one of: {', '.join(valid_statuses)}")
 
-        return _complete_task(phase_name, tool_context, status or "COMPLETED", error_message)
+        return _complete_task(phase_name, tool_context, status or EventStatus.TASK_COMPLETED, error_message)
     else:
         return _create_error_response(f"Unknown action: {action}")

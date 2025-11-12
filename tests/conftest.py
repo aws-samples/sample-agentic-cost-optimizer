@@ -22,7 +22,6 @@ def mock_tool_decorator(*args, **kwargs):
 # Set required environment variables before any imports
 os.environ["S3_BUCKET_NAME"] = "test-bucket"
 os.environ["JOURNAL_TABLE_NAME"] = "test-journal-table"
-# SESSION_ID is optional - only used as fallback for local dev
 os.environ["AWS_REGION"] = "us-east-1"
 
 # Mock all dependencies before any imports of src.agents.main

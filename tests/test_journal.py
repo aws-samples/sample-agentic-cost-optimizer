@@ -18,7 +18,6 @@ class TestJournalValidation:
 
     def test_invalid_action(self):
         """Test journal with invalid action parameter."""
-        # Create a simple mock context
         mock_context = MagicMock()
         mock_context.invocation_state = {"session_id": "test-session-123"}
 
@@ -39,7 +38,7 @@ class TestJournalValidation:
 
         assert result["success"] is False
         assert "Invalid status 'INVALID_STATUS'" in result["error"]
-        assert "COMPLETED, FAILED, CANCELLED, SKIPPED" in result["error"]
+        assert "COMPLETED, FAILED" in result["error"]
 
     def test_missing_table_name(self):
         """Test journal with missing JOURNAL_TABLE_NAME environment variable."""
@@ -57,7 +56,6 @@ class TestJournalValidation:
             assert result["success"] is False
             assert "JOURNAL_TABLE_NAME not set" in result["error"]
         finally:
-            # Restore the env var
             if original_table_name:
                 os.environ["JOURNAL_TABLE_NAME"] = original_table_name
 
@@ -72,10 +70,9 @@ class TestJournalValidation:
         assert result["success"] is True
         mock_record_event.assert_called_once()
 
-        # Check that the event status has special characters replaced
         call_args = mock_record_event.call_args
         event_status = call_args[1]["status"]
-        assert "TASK_STARTED_DATA_ANALYSIS_&_CLEANUP" in event_status
+        assert "TASK_DATA_ANALYSIS_&_CLEANUP_STARTED" in event_status
 
 
 @pytest.fixture

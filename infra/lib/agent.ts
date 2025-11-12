@@ -84,7 +84,13 @@ export class Agent extends Construct {
           new PolicyStatement({
             sid: 'LambdaMonitoring',
             effect: Effect.ALLOW,
-            actions: ['lambda:GetFunction', 'lambda:GetFunctionConcurrency', 'lambda:GetProvisionedConcurrencyConfig'],
+            actions: [
+              'lambda:GetFunction',
+              'lambda:GetFunctionConfiguration',
+              'lambda:GetFunctionConcurrency',
+              'lambda:GetProvisionedConcurrencyConfig',
+              'lambda:ListFunctions',
+            ],
             resources: ['*'],
           }),
           new PolicyStatement({
@@ -92,6 +98,7 @@ export class Agent extends Construct {
             effect: Effect.ALLOW,
             actions: [
               'cloudwatch:GetMetricStatistics',
+              'cloudwatch:ListMetrics',
               'logs:StartQuery',
               'logs:StopQuery',
               'logs:GetQueryResults',

@@ -45,7 +45,7 @@ Use the journal tool to track your progress through the cost optimization workfl
 
 **How to Mark Completion Status:**
 
-- For tasks: COMPLETED, FAILED, CANCELLED, or SKIPPED
+- For tasks: COMPLETED or FAILED
 
 **Your Workflow Pattern:**
 
