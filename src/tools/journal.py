@@ -3,9 +3,6 @@ DynamoDB Journaling Tool for Cost Optimization Agent
 
 Provides stateful session and task tracking with automatic ID management
 through a single tool interface.
-
-Environment Variables:
-- JOURNAL_TABLE_NAME: DynamoDB table name for journaling Tasks and session.
 """
 
 import os
@@ -63,7 +60,7 @@ def _start_task(phase_name: str, tool_context: ToolContext) -> Dict[str, Any]:
 
         # Build event status dynamically with format TASK_<PHASE>_STARTED
         phase_normalized = phase_name.upper().replace(" ", "_")
-        event_status = f"TASK_{phase_normalized}_STARTED"
+        event_status = f"TASK_{phase_normalized}_{EventStatus.TASK_STARTED}"
 
         record_event(
             session_id=session_id,

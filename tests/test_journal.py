@@ -38,7 +38,7 @@ class TestJournalValidation:
 
         assert result["success"] is False
         assert "Invalid status 'INVALID_STATUS'" in result["error"]
-        assert "TASK_COMPLETED, TASK_FAILED" in result["error"]
+        assert "COMPLETED, FAILED" in result["error"]
 
     def test_missing_table_name(self):
         """Test journal with missing JOURNAL_TABLE_NAME environment variable."""
@@ -141,13 +141,13 @@ class TestJournalCompleteTask:
         result = _complete_task(
             phase_name="Discovery",
             tool_context=mock_tool_context,
-            status="TASK_COMPLETED",
+            status="COMPLETED",
         )
 
         assert result["success"] is True
         assert result["session_id"] == "test-session-123"
         assert result["phase_name"] == "Discovery"
-        assert result["status"] == "TASK_COMPLETED"
+        assert result["status"] == "COMPLETED"
         mock_record_event.assert_called_once()
 
     def test_complete_task_missing_phase_name(self, mock_tool_context):
