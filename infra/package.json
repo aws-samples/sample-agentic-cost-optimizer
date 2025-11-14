@@ -9,7 +9,9 @@
     "cdk": "cdk",
     "deploy": "cdk deploy --require-approval never",
     "destroy": "cdk destroy",
-    "prettier": "prettier . --write"
+    "prettier": "prettier . --write",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@aws-cdk/aws-bedrock-agentcore-alpha": "^2.221.0-alpha.0",
@@ -24,6 +26,7 @@
     "aws-cdk": "^2.1031.2",
     "cdk-nag": "^2.28.195",
     "prettier": "^3.3.3",
-    "typescript": "^5.6.3"
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.8"
   }
 }
