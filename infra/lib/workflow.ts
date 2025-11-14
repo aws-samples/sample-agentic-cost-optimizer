@@ -3,7 +3,6 @@ import { NagSuppressions } from 'cdk-nag';
 import { Construct } from 'constructs';
 
 import { Table } from 'aws-cdk-lib/aws-dynamodb';
-import { Effect, PolicyStatement } from 'aws-cdk-lib/aws-iam';
 import { Code, Function, LayerVersion, Runtime } from 'aws-cdk-lib/aws-lambda';
 import { LogGroup, RetentionDays } from 'aws-cdk-lib/aws-logs';
 import { Choice, Condition, DefinitionBody, Fail, JsonPath, StateMachine, Succeed, Wait, WaitTime } from 'aws-cdk-lib/aws-stepfunctions';
@@ -146,7 +145,7 @@ export class Workflow extends Construct {
     });
 
     const waitForCompletion = new Wait(this, 'WaitForCompletion', {
-      time: WaitTime.duration(Duration.seconds(5)),
+      time: WaitTime.duration(Duration.seconds(10)),
     });
 
     const success = new Succeed(this, 'Success', {
@@ -210,7 +209,7 @@ export class Workflow extends Construct {
 
     const stateMachine = new StateMachine(this, 'AgentWorkflowStateMachine', {
       definitionBody: DefinitionBody.fromChainable(definition),
-      timeout: Duration.minutes(15),
+      timeout: Duration.minutes(60),
       comment: 'Step Function workflow for agent invocation and status monitoring',
       logs: {
         destination: logGroup,
