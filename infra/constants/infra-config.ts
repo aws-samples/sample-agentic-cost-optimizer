@@ -52,4 +52,9 @@ export const InfraConfig = {
    * Used for structured logging and tracing
    */
   serviceName: 'agentic-cost-optimizer',
+
+  /**
+   * Stack description for CloudFormation
+   */
+  stackDescription: 'Agent Core infrastructure stack (uksb-d7u5xm7tro).',
 } as const;
