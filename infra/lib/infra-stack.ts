@@ -3,7 +3,7 @@ import { NagSuppressions } from 'cdk-nag';
 import { Construct } from 'constructs';
 
 import { AttributeType, BillingMode, Table } from 'aws-cdk-lib/aws-dynamodb';
-import { EventField, EventPattern, Rule, RuleTargetInput } from 'aws-cdk-lib/aws-events';
+import { EventField, EventPattern, Rule, RuleTargetInput, Schedule } from 'aws-cdk-lib/aws-events';
 import { SfnStateMachine } from 'aws-cdk-lib/aws-events-targets';
 import { Effect, PolicyStatement } from 'aws-cdk-lib/aws-iam';
 import { Code, Function, LayerVersion, Runtime, Tracing } from 'aws-cdk-lib/aws-lambda';
@@ -154,6 +154,19 @@ export class InfraStack extends Stack {
       lambdaLogLevel: InfraConfig.lambdaLogLevel,
     });
 
+    const scheduledTriggerRule = new Rule(this, 'ScheduledTriggerRule', {
+      schedule: Schedule.cron({ hour: '6', minute: '0' }),
+      description: 'Rule to trigger agent workflow daily at 6am UTC',
+    });
+
+    scheduledTriggerRule.addTarget(
+      new SfnStateMachine(workflow.stateMachine, {
+        input: RuleTargetInput.fromObject({
+          session_id: EventField.time,
+        }),
+      }),
+    );
+
     const manualTriggerRule = new Rule(this, 'ManualTriggerRule', {
       eventPattern: {
         source: ['manual-trigger'],
@@ -203,6 +216,11 @@ export class InfraStack extends Stack {
     new CfnOutput(this, 'ManualTriggerRuleArn', {
       value: manualTriggerRule.ruleArn,
       description: 'ARN of the EventBridge rule for manual workflow triggers',
+    });
+
+    new CfnOutput(this, 'ScheduledTriggerRuleArn', {
+      value: scheduledTriggerRule.ruleArn,
+      description: 'ARN of the EventBridge rule for scheduled workflow triggers (daily at 6am UTC)',
     });
 
     this.applyNagSuppressions(agentInvokerFunction, workflow);
