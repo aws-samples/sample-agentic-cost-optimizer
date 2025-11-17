@@ -40,24 +40,6 @@ export class InfraStack extends Stack {
       },
     });
 
-    const dataStoreTable = new Table(this, 'DataStoreTable', {
-      tableName: `data-store-table-${environment}`,
-      partitionKey: {
-        name: 'PK',
-        type: AttributeType.STRING,
-      },
-      sortKey: {
-        name: 'SK',
-        type: AttributeType.STRING,
-      },
-      billingMode: BillingMode.PAY_PER_REQUEST,
-      removalPolicy: RemovalPolicy.DESTROY, // For development/POC - change to RETAIN for production
-      timeToLiveAttribute: 'ttl',
-      pointInTimeRecoverySpecification: {
-        pointInTimeRecoveryEnabled: true,
-      },
-    });
-
     const accessLogsBucket = new Bucket(this, 'AccessLogsBucket', {
       bucketName: `access-logs-${environment}-${this.account}-${this.region}`,
       removalPolicy: RemovalPolicy.DESTROY,
@@ -89,7 +71,6 @@ export class InfraStack extends Stack {
         BYPASS_TOOL_CONSENT: 'true',
         S3_BUCKET_NAME: agentDataBucket.bucketName,
         JOURNAL_TABLE_NAME: agentsTable.tableName,
-        DATA_STORE_TABLE_NAME: dataStoreTable.tableName,
         AWS_REGION: this.region,
         MODEL_ID: modelId,
         TTL_DAYS: InfraConfig.ttlDays.toString(),
@@ -98,7 +79,6 @@ export class InfraStack extends Stack {
 
     agentDataBucket.grantReadWrite(this.agent.runtime.role);
     agentsTable.grantReadWriteData(this.agent.runtime.role);
-    dataStoreTable.grantReadWriteData(this.agent.runtime.role);
 
     const agentInvokerFunction = new Function(this, 'AgentInvoker', {
       runtime: Runtime.PYTHON_3_12,
@@ -208,11 +188,6 @@ export class InfraStack extends Stack {
     new CfnOutput(this, 'AgentsTableName', {
       value: agentsTable.tableName,
       description: 'Name of the DynamoDB table for agents',
-    });
-
-    new CfnOutput(this, 'DataStoreTableName', {
-      value: dataStoreTable.tableName,
-      description: 'Name of the DynamoDB table for data storage',
     });
 
     new CfnOutput(this, 'AgentDataBucketName', {
