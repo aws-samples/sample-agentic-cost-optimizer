@@ -18,7 +18,7 @@
     "@mrgrain/cdk-esbuild": "^5.7.4",
     "aws-cdk-lib": "^2.224.0",
     "constructs": "10.4.3",
-    "esbuild": "^0.25.10"
+    "esbuild": "^0.27.0"
   },
   "devDependencies": {
     "@trivago/prettier-plugin-sort-imports": "^6.0.0",
