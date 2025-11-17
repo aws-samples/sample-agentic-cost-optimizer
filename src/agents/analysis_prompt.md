@@ -15,8 +15,6 @@ Your responsibility is to perform AWS resource discovery, metrics collection, co
 
 - Region: us-east-1
 - Session id variable: <session_id>
-- DynamoDB journal table: {journal_table_name} (environment variable JOURNAL_TABLE_NAME)
-- DynamoDB data store table: {data_store_table_name} (environment variable DATA_STORE_TABLE_NAME)
 
 ## CALCULATOR TOOL - USE FOR ALL MATH
 

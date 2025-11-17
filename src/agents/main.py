@@ -12,7 +12,7 @@ from strands.models import BedrockModel
 from strands_tools import calculator, use_aws
 
 from src.shared import EventStatus, record_event
-from src.tools import journal, storage
+from src.tools import data_store, journal, storage
 
 s3_bucket_name = os.environ.get("S3_BUCKET_NAME")
 if not s3_bucket_name:
@@ -22,11 +22,17 @@ journal_table_name = os.environ.get("JOURNAL_TABLE_NAME")
 if not journal_table_name:
     raise ValueError("JOURNAL_TABLE_NAME environment variable is required")
 
+data_store_table_name = os.environ.get("DATA_STORE_TABLE_NAME")
+if not data_store_table_name:
+    raise ValueError("DATA_STORE_TABLE_NAME environment variable is required")
+
 session_id = os.environ.get("SESSION_ID", "local-dev-session")
 
 aws_region = os.environ.get("AWS_REGION", "us-east-1")
 model_id = os.environ.get("MODEL_ID", "us.anthropic.claude-sonnet-4-5-20250929-v1:0")
 ttl_days = int(os.environ.get("TTL_DAYS", "90"))
+current_timestamp = int(time.time())
+current_datetime = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
 
 # Required for local development - CDK sets this in deployed environments
 if "BYPASS_TOOL_CONSENT" not in os.environ:
@@ -58,7 +64,11 @@ def create_boto_config(
     )
 
 
-def create_agent(boto_config: Optional[BotocoreConfig] = None) -> Agent:
+def create_agent(
+    boto_config: Optional[BotocoreConfig] = None,
+    system_prompt: str = "",
+    tools: list = None,
+) -> Agent:
     """Create configured Agent instances with proper model setup.
 
     Uses environment variables for configuration:
@@ -67,6 +77,8 @@ def create_agent(boto_config: Optional[BotocoreConfig] = None) -> Agent:
 
     Args:
         boto_config: Optional botocore Config for retry and timeout settings.
+        system_prompt: System prompt for the agent (required).
+        tools: List of tools for the agent (optional).
 
     Returns:
         Configured Agent instance with BedrockModel using the provided configuration.
@@ -74,33 +86,39 @@ def create_agent(boto_config: Optional[BotocoreConfig] = None) -> Agent:
     if boto_config is None:
         boto_config = create_boto_config()
 
+    if not system_prompt:
+        raise ValueError("system_prompt is required")
+
     bedrock_model = BedrockModel(
         model_id=model_id,
         region_name=aws_region,
         boto_client_config=boto_config,
     )
 
-    current_timestamp = int(time.time())
-    current_datetime = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
-
-    SYSTEM_PROMPT = ""
-    SYSTEM_PROMPT += open(os.path.join(os.path.dirname(__file__), "prompt.md")).read()
-    SYSTEM_PROMPT = SYSTEM_PROMPT.replace("{s3_bucket_name}", s3_bucket_name)
-    SYSTEM_PROMPT = SYSTEM_PROMPT.replace("{journal_table_name}", journal_table_name)
-    SYSTEM_PROMPT = SYSTEM_PROMPT.replace("{current_timestamp}", str(current_timestamp))
-    SYSTEM_PROMPT = SYSTEM_PROMPT.replace("{current_datetime}", current_datetime)
-
-    # Note: current_time tool removed - it only returns ISO format which requires parsing
-    # Instead, we inject current_timestamp directly into the prompt in Unix format
     return Agent(
         model=bedrock_model,
-        system_prompt=SYSTEM_PROMPT,
-        tools=[use_aws, journal, storage, calculator],
+        system_prompt=system_prompt,
+        tools=tools or [],
     )
 
 
+REPORT_PROMPT, ANALYSIS_PROMPT = "", ""
+# Read prompts
+ANALYSIS_PROMPT = open(os.path.join(os.path.dirname(__file__), "analysis_prompt.md")).read()
+REPORT_PROMPT = open(os.path.join(os.path.dirname(__file__), "report_prompt.md")).read()
+REPORT_PROMPT = REPORT_PROMPT.replace("{s3_bucket_name}", s3_bucket_name)
+ANALYSIS_PROMPT = ANALYSIS_PROMPT.replace("{current_timestamp}", str(current_timestamp))
+ANALYSIS_PROMPT = ANALYSIS_PROMPT.replace("{current_datetime}", current_datetime)
+
+
 # Initialize at module level for Lambda container reuse across invocations
-agent = create_agent()
+analysis_agent = create_agent(system_prompt=ANALYSIS_PROMPT, tools=[use_aws, journal, calculator, data_store])
+report_agent = create_agent(
+    system_prompt=REPORT_PROMPT,
+    tools=[storage, journal, data_store],
+)
+
+
 app = BedrockAgentCoreApp()
 logger = app.logger
 logger.info("Agent and AgentCore app initialized successfully")
@@ -109,15 +127,23 @@ logger.info("Agent and AgentCore app initialized successfully")
 # Decorator automatically manages AgentCore status: HEALTHY_BUSY while running, HEALTHY when complete
 @app.async_task
 async def background_task(user_message: str, session_id: str):
-    """Background task to process agent request with LLM"""
+    """Background task using workflow pattern"""
     logger.info(f"Background task started - Session: {session_id}")
 
     try:
-        response = await agent.invoke_async(user_message, session_id=session_id)
-
-        logger.info(
-            f"Background task completed - Session: {session_id}, Response length: {len(str(response.message)) if hasattr(response, 'message') else 'unknown'}"
+        # Step 1: Analysis
+        await analysis_agent.invoke_async(
+            "Analyze AWS costs and identify optimization opportunities",
+            session_id=session_id,
         )
+
+        # Step 2: Report (reads from data_store automatically)
+        response = await report_agent.invoke_async(
+            "Generate cost optimization report based on analysis results",
+            session_id=session_id,
+        )
+
+        logger.info(f"Background completed - Session: {session_id}")
         record_event(
             session_id=session_id,
             status=EventStatus.AGENT_BACKGROUND_TASK_COMPLETED,
@@ -168,7 +194,10 @@ async def background_task(user_message: str, session_id: str):
         }
 
     except Exception as e:
-        logger.error(f"Background task failed - Session: {session_id}: {type(e).__name__} - {str(e)}", exc_info=True)
+        logger.error(
+            f"Background task failed - Session: {session_id}: {type(e).__name__} - {str(e)}",
+            exc_info=True,
+        )
         record_event(
             session_id=session_id,
             status=EventStatus.AGENT_BACKGROUND_TASK_FAILED,
@@ -233,7 +262,10 @@ async def invoke(payload):
             error_message=str(e),
             region_name=aws_region,
         )
-        return {"error": f"Error starting background processing: {str(e)}", "session_id": payload_session_id}
+        return {
+            "error": f"Error starting background processing: {str(e)}",
+            "session_id": payload_session_id,
+        }
 
 
 if __name__ == "__main__":

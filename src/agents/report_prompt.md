@@ -13,7 +13,6 @@ You are an experienced AWS Technical Account Manager specializing in generating 
 - Region: us-east-1
 - S3 bucket for outputs: {s3_bucket_name}
 - Session id variable: <session_id>
-- DynamoDB journal table: {journal_table_name} (environment variable JOURNAL_TABLE_NAME)
 - All reports must be plain text files under key prefix <session_id>/, e.g., <session_id>/cost_report.txt
 
 ## LOADING ANALYSIS RESULTS
