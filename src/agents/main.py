@@ -12,7 +12,7 @@ from strands.models import BedrockModel
 from strands_tools import calculator, use_aws
 
 from src.shared import EventStatus, record_event
-from src.tools import data_store, journal, storage
+from src.tools import journal, storage
 
 s3_bucket_name = os.environ.get("S3_BUCKET_NAME")
 if not s3_bucket_name:
@@ -21,10 +21,6 @@ if not s3_bucket_name:
 journal_table_name = os.environ.get("JOURNAL_TABLE_NAME")
 if not journal_table_name:
     raise ValueError("JOURNAL_TABLE_NAME environment variable is required")
-
-data_store_table_name = os.environ.get("DATA_STORE_TABLE_NAME")
-if not data_store_table_name:
-    raise ValueError("DATA_STORE_TABLE_NAME environment variable is required")
 
 session_id = os.environ.get("SESSION_ID", "local-dev-session")
 
@@ -112,10 +108,10 @@ ANALYSIS_PROMPT = ANALYSIS_PROMPT.replace("{current_datetime}", current_datetime
 
 
 # Initialize at module level for Lambda container reuse across invocations
-analysis_agent = create_agent(system_prompt=ANALYSIS_PROMPT, tools=[use_aws, journal, calculator, data_store])
+analysis_agent = create_agent(system_prompt=ANALYSIS_PROMPT, tools=[use_aws, journal, calculator, storage])
 report_agent = create_agent(
     system_prompt=REPORT_PROMPT,
-    tools=[storage, journal, data_store],
+    tools=[storage, journal],
 )
 
 

@@ -260,9 +260,9 @@ After completing all analysis phases (1-5), you MUST save your complete analysis
 
 ### How to Save Analysis Results
 
-1. Use the data_store tool with action="write"
-2. Set data_key="ANALYSIS_RESULTS"
-3. Set data_content to include ALL of the following:
+1. Use the storage tool with action="write"
+2. Set filename="analysis.txt"
+3. Set content to include ALL of the following:
    - All discovery data (function names, ARNs, configurations)
    - All metrics data (invocations, errors, duration, memory usage)
    - All formatted recommendations with full details
@@ -372,12 +372,12 @@ Query 2: Duration Analysis
 
 ### Saving the Data
 
-Call the data_store tool:
+Call the storage tool:
 ```
-data_store(
+storage(
     action="write",
-    data_key="ANALYSIS_RESULTS",
-    data_content="[your complete structured analysis results]"
+    filename="analysis.txt",
+    content="[your complete structured analysis results]"
 )
 ```
 
@@ -413,11 +413,11 @@ data_store(
   - Continue with the next phase even if journaling operations fail
   - Include a summary of all journaling errors in the "Gaps & Limitations" section
   - If table check fails at workflow start, skip all subsequent journaling operations but continue with cost optimization
-- **Data Store Error Handling:**
-  - Always check the "success" field in data_store tool responses
-  - If the data_store tool returns success as false, extract the error message from the "error" field
-  - Log data store failures in "Gaps & Limitations" using format: "Data Store Error: write - [error_message]"
-  - Never let data store failures interrupt the core cost optimization workflow
+- **Storage Error Handling:**
+  - Always check the "success" field in storage tool responses
+  - If the storage tool returns success as false, extract the error message from the "error" field
+  - Log storage failures in "Gaps & Limitations" using format: "Storage Error: write - [error_message]"
+  - Never let storage failures interrupt the core cost optimization workflow
   - Continue with workflow completion even if data store write operations fail
   - Include data store error details in the "Gaps & Limitations" section
 
@@ -478,5 +478,5 @@ data_store(
 - [ ] Each has quantified impact with calculation inputs.
 - [ ] No generic "run this tool" or "enable X" without evidence.
 - [ ] "Gaps & Limitations" explicitly lists missing permissions/data.
-- [ ] Complete analysis results saved to data_store with data_key="ANALYSIS_RESULTS".
-- [ ] All discovery data, metrics, recommendations, cost estimates, and evidence included in data_content.
+- [ ] Write complete analysis results to S3: storage(action="write", filename="analysis.txt", content="<full analysis>")
+- [ ] Include all discovery data, metrics, recommendations, cost estimates, and evidence in content.
