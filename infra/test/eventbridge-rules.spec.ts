@@ -57,6 +57,23 @@ describe('EventBridge Rules', () => {
       expect(rule.Properties.Targets).toBeDefined();
       expect(rule.Properties.Targets).toHaveLength(1);
     });
+
+    it('should use event-id for session_id to meet AgentCore 33+ character requirement', () => {
+      const rules = template.findResources('AWS::Events::Rule', {
+        Properties: {
+          ScheduleExpression: 'cron(0 6 * * ? *)',
+        },
+      });
+
+      const ruleKey = Object.keys(rules)[0];
+      const rule = rules[ruleKey];
+      const target = rule.Properties.Targets[0];
+
+      expect(target.InputTransformer).toBeDefined();
+      expect(target.InputTransformer.InputPathsMap).toHaveProperty('id');
+      expect(target.InputTransformer.InputPathsMap.id).toBe('$.id');
+      expect(target.InputTransformer.InputTemplate).toContain('"session_id":<id>');
+    });
   });
 
   describe('EventBridge Rules Count', () => {
