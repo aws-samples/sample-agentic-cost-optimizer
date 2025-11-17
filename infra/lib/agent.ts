@@ -89,6 +89,7 @@ export class Agent extends Construct {
               'lambda:GetFunctionConfiguration',
               'lambda:GetFunctionConcurrency',
               'lambda:GetProvisionedConcurrencyConfig',
+              'lambda:ListProvisionedConcurrencyConfigs',
               'lambda:ListFunctions',
             ],
             resources: ['*'],
