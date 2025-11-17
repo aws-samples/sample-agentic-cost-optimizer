@@ -162,7 +162,8 @@ export class InfraStack extends Stack {
     scheduledTriggerRule.addTarget(
       new SfnStateMachine(workflow.stateMachine, {
         input: RuleTargetInput.fromObject({
-          session_id: EventField.time,
+          // Use EventField.eventId (UUID format, 36 chars) to meet AgentCore's 33+ character requirement
+          session_id: EventField.eventId,
         }),
       }),
     );
@@ -178,6 +179,7 @@ export class InfraStack extends Stack {
     manualTriggerRule.addTarget(
       new SfnStateMachine(workflow.stateMachine, {
         input: RuleTargetInput.fromObject({
+          // Use EventBridge event-id (UUID format, 36 chars) to meet AgentCore's 33+ character requirement
           session_id: EventField.fromPath('$.id'),
         }),
       }),
