@@ -90,7 +90,7 @@ class TestBackgroundTaskErrorHandling:
     @patch("src.agents.main.record_event")
     @patch("asyncio.create_task")
     @patch("src.agents.main.logger")
-    @patch("src.agents.main.agent")
+    @patch("src.agents.main.analysis_agent")
     async def test_credentials_error_through_invoke(self, mock_agent, mock_logger, mock_create_task, mock_record_event):
         """Test NoCredentialsError handling through invoke integration."""
         from botocore.exceptions import NoCredentialsError
@@ -109,7 +109,7 @@ class TestBackgroundTaskErrorHandling:
     @patch("src.agents.main.record_event")
     @patch("asyncio.create_task")
     @patch("src.agents.main.logger")
-    @patch("src.agents.main.agent")
+    @patch("src.agents.main.analysis_agent")
     async def test_throttling_error_through_invoke(self, mock_agent, mock_logger, mock_create_task, mock_record_event):
         """Test ThrottlingException handling through invoke integration."""
         from botocore.exceptions import ClientError
@@ -131,7 +131,7 @@ class TestBackgroundTaskErrorHandling:
     @patch("src.agents.main.record_event")
     @patch("asyncio.create_task")
     @patch("src.agents.main.logger")
-    @patch("src.agents.main.agent")
+    @patch("src.agents.main.analysis_agent")
     async def test_access_denied_error_through_invoke(
         self, mock_agent, mock_logger, mock_create_task, mock_record_event
     ):
@@ -155,7 +155,7 @@ class TestBackgroundTaskErrorHandling:
     @patch("src.agents.main.record_event")
     @patch("asyncio.create_task")
     @patch("src.agents.main.logger")
-    @patch("src.agents.main.agent")
+    @patch("src.agents.main.analysis_agent")
     async def test_generic_exception_through_invoke(self, mock_agent, mock_logger, mock_create_task, mock_record_event):
         """Test generic Exception handling through invoke integration."""
         mock_create_task.return_value = AsyncMock()
@@ -172,7 +172,7 @@ class TestBackgroundTaskErrorHandling:
     @patch("src.agents.main.record_event")
     @patch("asyncio.create_task")
     @patch("src.agents.main.logger")
-    @patch("src.agents.main.agent")
+    @patch("src.agents.main.analysis_agent")
     async def test_successful_agent_response_through_invoke(
         self, mock_agent, mock_logger, mock_create_task, mock_record_event
     ):
