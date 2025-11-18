@@ -19,6 +19,7 @@ def record_event(
     ttl_days: int = 90,
     error_message: Optional[str] = None,
     region_name: Optional[str] = None,
+    ping_status: Optional[str] = None,
 ) -> None:
     """Record an event in DynamoDB for workflow tracking.
 
@@ -29,6 +30,7 @@ def record_event(
         ttl_days: Number of days before event expires (default: 90)
         error_message: Optional error message for failure events
         region_name: AWS region for DynamoDB (default: from AWS_REGION env var or us-east-1)
+        ping_status: Optional ping status from AgentCore (Healthy, HealthyBusy)
 
     Raises:
         ValueError: If required fields are empty, status is invalid, or contains unsafe characters
@@ -75,6 +77,9 @@ def record_event(
 
         if error_message:
             item["errorMessage"] = error_message
+
+        if ping_status:
+            item["pingStatus"] = ping_status
 
         # Prevent duplicate events from race conditions or retries
         table.put_item(

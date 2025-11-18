@@ -106,30 +106,59 @@ logger = app.logger
 logger.info("Agent and AgentCore app initialized successfully")
 
 
+def get_ping_status() -> str:
+    """Get current ping status value from AgentCore"""
+    return app.get_current_ping_status().value
+
+
 # Decorator automatically manages AgentCore status: HEALTHY_BUSY while running, HEALTHY when complete
 @app.async_task
 async def background_task(user_message: str, session_id: str):
     """Background task to process agent request with LLM"""
     logger.info(f"Background task started - Session: {session_id}")
 
+    # Manually track async task for ping status management
+    task_id = app.add_async_task(f"agent_processing_{session_id}")
+    current_ping = get_ping_status()
+    logger.info(f"Ping status after task start - Session: {session_id}, Status: {current_ping}")
+
     try:
+        record_event(
+            session_id=session_id,
+            status=EventStatus.AGENT_BACKGROUND_TASK_STARTED,
+            table_name=journal_table_name,
+            ttl_days=ttl_days,
+            region_name=aws_region,
+            ping_status=current_ping,
+        )
+
         response = await agent.invoke_async(user_message, session_id=session_id)
 
         logger.info(
             f"Background task completed - Session: {session_id}, Response length: {len(str(response.message)) if hasattr(response, 'message') else 'unknown'}"
         )
+
+        # Complete the task before recording (sets ping status to Healthy)
+        app.complete_async_task(task_id)
+        current_ping = get_ping_status()
+        logger.info(f"Ping status after task completion - Session: {session_id}, Status: {current_ping}")
+
         record_event(
             session_id=session_id,
             status=EventStatus.AGENT_BACKGROUND_TASK_COMPLETED,
             table_name=journal_table_name,
             ttl_days=ttl_days,
             region_name=aws_region,
+            ping_status=current_ping,
         )
         return response
 
-    # Return error dicts for structured logging - decorator handles status management
     except NoCredentialsError as e:
         logger.error(f"Background task failed - Session: {session_id}: NoCredentialsError - {str(e)}")
+        app.complete_async_task(task_id)
+        current_ping = get_ping_status()
+        logger.info(f"Ping status after failure - Session: {session_id}, Status: {current_ping}")
+
         record_event(
             session_id=session_id,
             status=EventStatus.AGENT_BACKGROUND_TASK_FAILED,
@@ -137,6 +166,7 @@ async def background_task(user_message: str, session_id: str):
             ttl_days=ttl_days,
             error_message=f"NoCredentialsError - {str(e)}",
             region_name=aws_region,
+            ping_status=current_ping,
         )
         return {
             "error": "NoCredentialsError",
@@ -151,6 +181,10 @@ async def background_task(user_message: str, session_id: str):
         error_message = e.response.get("Error", {}).get("Message", "")
 
         logger.error(f"Background task failed - Session: {session_id}: {error_code} - {error_message}")
+        app.complete_async_task(task_id)
+        current_ping = get_ping_status()
+        logger.info(f"Ping status after failure - Session: {session_id}, Status: {current_ping}")
+
         record_event(
             session_id=session_id,
             status=EventStatus.AGENT_BACKGROUND_TASK_FAILED,
@@ -158,6 +192,7 @@ async def background_task(user_message: str, session_id: str):
             ttl_days=ttl_days,
             error_message=f"{error_code} - {error_message}",
             region_name=aws_region,
+            ping_status=current_ping,
         )
         return {
             "error": "ClientError",
@@ -169,6 +204,10 @@ async def background_task(user_message: str, session_id: str):
 
     except Exception as e:
         logger.error(f"Background task failed - Session: {session_id}: {type(e).__name__} - {str(e)}", exc_info=True)
+        app.complete_async_task(task_id)
+        current_ping = get_ping_status()
+        logger.info(f"Ping status after failure - Session: {session_id}, Status: {current_ping}")
+
         record_event(
             session_id=session_id,
             status=EventStatus.AGENT_BACKGROUND_TASK_FAILED,
@@ -176,6 +215,7 @@ async def background_task(user_message: str, session_id: str):
             ttl_days=ttl_days,
             error_message=f"{type(e).__name__} - {str(e)}",
             region_name=aws_region,
+            ping_status=current_ping,
         )
         return {
             "error": "Exception",
@@ -184,6 +224,11 @@ async def background_task(user_message: str, session_id: str):
             "session_id": session_id,
             "status": "failed",
         }
+
+    finally:
+        # Always ensure task is completed to prevent sessions staying in HealthyBusy indefinitely
+        # This is a safety net in case complete_async_task wasn't called in exception handlers
+        app.complete_async_task(task_id)
 
 
 @app.entrypoint
@@ -206,18 +251,12 @@ async def invoke(payload):
         table_name=journal_table_name,
         ttl_days=ttl_days,
         region_name=aws_region,
+        ping_status=get_ping_status(),
     )
 
     try:
         asyncio.create_task(background_task(user_message, payload_session_id))
         logger.info(f"Background processing started - Session: {payload_session_id}")
-        record_event(
-            session_id=payload_session_id,
-            status=EventStatus.AGENT_BACKGROUND_TASK_STARTED,
-            table_name=journal_table_name,
-            ttl_days=ttl_days,
-            region_name=aws_region,
-        )
         return {
             "message": f"Started processing request for session {payload_session_id}. Processing will continue in background.",
             "session_id": payload_session_id,
@@ -232,6 +271,7 @@ async def invoke(payload):
             ttl_days=ttl_days,
             error_message=str(e),
             region_name=aws_region,
+            ping_status=get_ping_status(),
         )
         return {"error": f"Error starting background processing: {str(e)}", "session_id": payload_session_id}
 
