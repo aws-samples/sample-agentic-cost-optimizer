@@ -32,10 +32,10 @@ The workflow generates the following event types across different components:
 ### Step Function Events
 - `SESSION_INITIATED` - Step Function starts workflow execution
 
-### Lambda Invoker Events
-- `AGENT_INVOCATION_STARTED` - Lambda invoker calls AgentCore
-- `AGENT_INVOCATION_SUCCEEDED` - AgentCore responds successfully
-- `AGENT_INVOCATION_FAILED` - AgentCore invocation fails
+### Lambda Invoker Events (invoke_agent_runtime boto3 API)
+- `AGENT_RUNTIME_INVOCATION_STARTED` - Lambda invoker calls AgentCore
+- `AGENT_RUNTIME_INVOCATION_SUCCEEDED` - AgentCore responds successfully
+- `AGENT_RUNTIME_INVOCATION_FAILED` - AgentCore invocation fails
 
 ### Agent Entrypoint Events
 - `AGENT_ENTRYPOINT_STARTED` - Agent entrypoint receives request
@@ -58,22 +58,22 @@ The workflow generates the following event types across different components:
 }
 ```
 
-### Agent Invocation Started
+### Agent Runtime Invocation Started
 ```json
 {
   "PK": "SESSION#abc-123-def",
   "SK": "EVENT#2024-11-04T10:30:01.234Z",
-  "Status": "AGENT_INVOCATION_STARTED",
+  "Status": "AGENT_RUNTIME_INVOCATION_STARTED",
   "Timestamp": "2024-11-04T10:30:01.234Z"
 }
 ```
 
-### Agent Invocation Succeeded
+### Agent Runtime Invocation Succeeded
 ```json
 {
   "PK": "SESSION#abc-123-def",
   "SK": "EVENT#2024-11-04T10:30:02.456Z",
-  "Status": "AGENT_INVOCATION_SUCCEEDED",
+  "Status": "AGENT_RUNTIME_INVOCATION_SUCCEEDED",
   "Timestamp": "2024-11-04T10:30:02.456Z"
 }
 ```
@@ -119,12 +119,12 @@ The workflow generates the following event types across different components:
 }
 ```
 
-### Agent Invocation Failed (with error)
+### Agent Runtime Invocation Failed (with error)
 ```json
 {
   "PK": "SESSION#abc-123-def",
   "SK": "EVENT#2024-11-04T10:30:02.456Z",
-  "Status": "AGENT_INVOCATION_FAILED",
+  "Status": "AGENT_RUNTIME_INVOCATION_FAILED",
   "Timestamp": "2024-11-04T10:30:02.456Z",
   "ErrorMessage": "Failed to invoke AgentCore: Timeout"
 }
@@ -217,8 +217,8 @@ aws dynamodb query \
 A typical successful workflow generates events in this order:
 
 1. `SESSION_INITIATED` - Step Function starts
-2. `AGENT_INVOCATION_STARTED` - Lambda begins AgentCore invocation
-3. `AGENT_INVOCATION_SUCCEEDED` - AgentCore accepts the request
+2. `AGENT_RUNTIME_INVOCATION_STARTED` - Lambda begins AgentCore invocation
+3. `AGENT_RUNTIME_INVOCATION_SUCCEEDED` - AgentCore accepts the request
 4. `AGENT_ENTRYPOINT_STARTED` - Agent receives the request
 5. `AGENT_BACKGROUND_TASK_STARTED` - Agent creates background task
 6. `AGENT_BACKGROUND_TASK_COMPLETED` - Agent finishes processing
@@ -227,15 +227,15 @@ A typical successful workflow generates events in this order:
 
 **Scenario 1: Lambda Invocation Failure**
 ```
-SESSION_INITIATED → AGENT_INVOCATION_STARTED → AGENT_INVOCATION_FAILED
+SESSION_INITIATED → AGENT_RUNTIME_INVOCATION_STARTED → AGENT_RUNTIME_INVOCATION_FAILED
 ```
-- Check the ErrorMessage field in AGENT_INVOCATION_FAILED event
+- Check the ErrorMessage field in AGENT_RUNTIME_INVOCATION_FAILED event
 - Review Lambda CloudWatch logs for detailed error traces
 - Common causes: AgentCore timeout, permission issues, network errors
 
 **Scenario 2: Agent Entrypoint Failure**
 ```
-SESSION_INITIATED → AGENT_INVOCATION_STARTED → AGENT_INVOCATION_SUCCEEDED → 
+SESSION_INITIATED → AGENT_RUNTIME_INVOCATION_STARTED → AGENT_RUNTIME_INVOCATION_SUCCEEDED → 
 AGENT_ENTRYPOINT_STARTED → AGENT_ENTRYPOINT_FAILED
 ```
 - Check the ErrorMessage field in AGENT_ENTRYPOINT_FAILED event
@@ -244,7 +244,7 @@ AGENT_ENTRYPOINT_STARTED → AGENT_ENTRYPOINT_FAILED
 
 **Scenario 3: Background Task Failure**
 ```
-SESSION_INITIATED → AGENT_INVOCATION_STARTED → AGENT_INVOCATION_SUCCEEDED → 
+SESSION_INITIATED → AGENT_RUNTIME_INVOCATION_STARTED → AGENT_RUNTIME_INVOCATION_SUCCEEDED → 
 AGENT_ENTRYPOINT_STARTED → AGENT_BACKGROUND_TASK_STARTED → AGENT_BACKGROUND_TASK_FAILED
 ```
 - Check the ErrorMessage field in AGENT_BACKGROUND_TASK_FAILED event
@@ -253,7 +253,7 @@ AGENT_ENTRYPOINT_STARTED → AGENT_BACKGROUND_TASK_STARTED → AGENT_BACKGROUND_
 
 **Scenario 4: Missing Completion Event**
 ```
-SESSION_INITIATED → AGENT_INVOCATION_STARTED → AGENT_INVOCATION_SUCCEEDED → 
+SESSION_INITIATED → AGENT_RUNTIME_INVOCATION_STARTED → AGENT_RUNTIME_INVOCATION_SUCCEEDED → 
 AGENT_ENTRYPOINT_STARTED → AGENT_BACKGROUND_TASK_STARTED → (no completion event)
 ```
 - Agent may have crashed without recording failure event

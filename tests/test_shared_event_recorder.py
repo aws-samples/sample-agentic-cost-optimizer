@@ -22,7 +22,7 @@ class TestRecordEvent:
 
         record_event(
             session_id="session-123",
-            status=EventStatus.AGENT_INVOCATION_STARTED,
+            status=EventStatus.AGENT_RUNTIME_INVOCATION_STARTED,
             table_name="test-table",
             ttl_days=90,
             region_name="us-east-1",
@@ -34,7 +34,7 @@ class TestRecordEvent:
 
         call_args = mock_table.put_item.call_args[1]
         assert call_args["Item"]["PK"] == "SESSION#session-123"
-        assert call_args["Item"]["status"] == EventStatus.AGENT_INVOCATION_STARTED
+        assert call_args["Item"]["status"] == EventStatus.AGENT_RUNTIME_INVOCATION_STARTED
         assert "SK" in call_args["Item"]
         assert "createdAt" in call_args["Item"]
         assert "ttlSeconds" in call_args["Item"]
@@ -53,7 +53,7 @@ class TestRecordEvent:
 
         record_event(
             session_id="session-123",
-            status=EventStatus.AGENT_INVOCATION_FAILED,
+            status=EventStatus.AGENT_RUNTIME_INVOCATION_FAILED,
             table_name="test-table",
             error_message="Connection timeout",
         )
@@ -112,7 +112,7 @@ class TestRecordEvent:
         with pytest.raises(ClientError):
             record_event(
                 session_id="session-123",
-                status=EventStatus.AGENT_INVOCATION_STARTED,
+                status=EventStatus.AGENT_RUNTIME_INVOCATION_STARTED,
                 table_name="test-table",
             )
 
@@ -128,7 +128,7 @@ class TestRecordEvent:
         with pytest.raises(Exception, match="Unexpected error"):
             record_event(
                 session_id="session-123",
-                status=EventStatus.AGENT_INVOCATION_STARTED,
+                status=EventStatus.AGENT_RUNTIME_INVOCATION_STARTED,
                 table_name="test-table",
             )
 
@@ -146,7 +146,7 @@ class TestRecordEvent:
         with pytest.raises(ClientError):
             record_event(
                 session_id="session-123",
-                status=EventStatus.AGENT_INVOCATION_STARTED,
+                status=EventStatus.AGENT_RUNTIME_INVOCATION_STARTED,
                 table_name="test-table",
             )
 

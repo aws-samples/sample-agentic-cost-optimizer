@@ -39,7 +39,7 @@ def handler(event, context):
         logger.info("Calling AgentCore...")
         record_event(
             session_id=session_id,
-            status=EventStatus.AGENT_INVOCATION_STARTED,
+            status=EventStatus.AGENT_RUNTIME_INVOCATION_STARTED,
             table_name=journal_table_name,
             ttl_days=ttl_days,
             region_name=aws_region,
@@ -67,7 +67,7 @@ def handler(event, context):
 
         record_event(
             session_id=session_id,
-            status=EventStatus.AGENT_INVOCATION_SUCCEEDED,
+            status=EventStatus.AGENT_RUNTIME_INVOCATION_SUCCEEDED,
             table_name=journal_table_name,
             ttl_days=ttl_days,
             region_name=aws_region,
@@ -79,7 +79,7 @@ def handler(event, context):
         logger.error("AgentCore failed", error=str(e), sessionId=session_id)
         record_event(
             session_id=session_id,
-            status=EventStatus.AGENT_INVOCATION_FAILED,
+            status=EventStatus.AGENT_RUNTIME_INVOCATION_FAILED,
             table_name=journal_table_name,
             ttl_days=ttl_days,
             error_message=str(e),

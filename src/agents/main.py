@@ -244,7 +244,7 @@ async def invoke(payload):
     logger.info(f"Request received - Session: {payload_session_id}")
     record_event(
         session_id=payload_session_id,
-        status=EventStatus.AGENT_RUNTIME_INVOKE_STARTED,
+        status=EventStatus.AGENT_ENTRYPOINT_INVOKE_STARTED,
         table_name=journal_table_name,
         ttl_days=ttl_days,
         region_name=aws_region,
@@ -263,7 +263,7 @@ async def invoke(payload):
         logger.error(f"Entrypoint error - Session: {payload_session_id}: {str(e)}", exc_info=True)
         record_event(
             session_id=payload_session_id,
-            status=EventStatus.AGENT_RUNTIME_INVOKE_FAILED,
+            status=EventStatus.AGENT_ENTRYPOINT_INVOKE_FAILED,
             table_name=journal_table_name,
             ttl_days=ttl_days,
             error_message=str(e),

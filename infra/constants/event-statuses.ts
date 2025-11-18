@@ -4,7 +4,7 @@
  * The Step Function polls DynamoDB for these statuses to determine when
  * the agent background task has completed or failed.
  *
- * Note: Other event statuses (SESSION_INITIATED, AGENT_INVOCATION_STARTED, etc.)
+ * Note: Other event statuses (SESSION_INITIATED, AGENT_RUNTIME_INVOCATION_STARTED, etc.)
  * are defined in Python at src/shared/event_statuses.py and used by Lambda functions.
  */
 

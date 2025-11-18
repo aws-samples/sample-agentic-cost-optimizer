@@ -57,16 +57,16 @@ class TestValidateEventStatusPredefined:
 
     def test_valid_predefined_status_passes(self):
         """Test that valid predefined statuses pass validation."""
-        valid_statuses = {"SESSION_INITIATED", "AGENT_INVOCATION_STARTED", "AGENT_INVOCATION_COMPLETED"}
+        valid_statuses = {"SESSION_INITIATED", "AGENT_RUNTIME_INVOCATION_STARTED", "AGENT_INVOCATION_COMPLETED"}
 
         # Should not raise any exception
         validate_event_status("SESSION_INITIATED", valid_statuses)
-        validate_event_status("AGENT_INVOCATION_STARTED", valid_statuses)
+        validate_event_status("AGENT_RUNTIME_INVOCATION_STARTED", valid_statuses)
         validate_event_status("AGENT_INVOCATION_COMPLETED", valid_statuses)
 
     def test_invalid_predefined_status_raises_error(self):
         """Test that invalid predefined statuses raise ValueError."""
-        valid_statuses = {"SESSION_INITIATED", "AGENT_INVOCATION_STARTED"}
+        valid_statuses = {"SESSION_INITIATED", "AGENT_RUNTIME_INVOCATION_STARTED"}
 
         with pytest.raises(ValueError, match="Invalid status 'INVALID_STATUS'"):
             validate_event_status("INVALID_STATUS", valid_statuses)
