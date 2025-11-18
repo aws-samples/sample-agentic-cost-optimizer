@@ -5,6 +5,8 @@ import sys
 from functools import wraps
 from unittest.mock import MagicMock
 
+import pytest
+
 
 def mock_tool_decorator(*args, **kwargs):
     """Mock @tool decorator by doing nothing."""
@@ -27,6 +29,9 @@ os.environ["AWS_REGION"] = "us-east-1"
 # Mock all dependencies before any imports of src.agents.main
 mock_app = MagicMock()
 mock_app.entrypoint = lambda func: func  # Make decorator a no-op
+mock_app.add_async_task = MagicMock(return_value="task-123")
+mock_app.complete_async_task = MagicMock()
+mock_app.get_current_ping_status = MagicMock(return_value=MagicMock(value="Healthy"))
 
 # Create strands mock with tool decorator
 mock_strands = MagicMock()
@@ -40,3 +45,10 @@ mocks_to_apply = {
 }
 
 sys.modules.update(mocks_to_apply)
+
+
+@pytest.fixture(autouse=True)
+def _mock_background_task(monkeypatch):
+    """Mock background_task to prevent coroutine warnings."""
+    mock_bg = MagicMock(return_value=MagicMock())
+    monkeypatch.setattr("src.agents.main.background_task", mock_bg)
