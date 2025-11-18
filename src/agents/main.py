@@ -111,13 +111,10 @@ def get_ping_status() -> str:
     return app.get_current_ping_status().value
 
 
-# Decorator automatically manages AgentCore status: HEALTHY_BUSY while running, HEALTHY when complete
-@app.async_task
 async def background_task(user_message: str, session_id: str):
     """Background task to process agent request with LLM"""
     logger.info(f"Background task started - Session: {session_id}")
 
-    # Manually track async task for ping status management
     task_id = app.add_async_task(f"agent_processing_{session_id}")
     current_ping = get_ping_status()
     logger.info(f"Ping status after task start - Session: {session_id}, Status: {current_ping}")

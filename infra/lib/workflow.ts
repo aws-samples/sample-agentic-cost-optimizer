@@ -3,9 +3,21 @@ import { NagSuppressions } from 'cdk-nag';
 import { Construct } from 'constructs';
 
 import { Table } from 'aws-cdk-lib/aws-dynamodb';
+import { Effect, PolicyStatement } from 'aws-cdk-lib/aws-iam';
 import { Code, Function, LayerVersion, Runtime } from 'aws-cdk-lib/aws-lambda';
 import { LogGroup, RetentionDays } from 'aws-cdk-lib/aws-logs';
-import { Choice, Condition, DefinitionBody, Fail, JsonPath, StateMachine, Succeed, Wait, WaitTime } from 'aws-cdk-lib/aws-stepfunctions';
+import {
+  Choice,
+  Condition,
+  DefinitionBody,
+  Fail,
+  JsonPath,
+  Pass,
+  StateMachine,
+  Succeed,
+  Wait,
+  WaitTime,
+} from 'aws-cdk-lib/aws-stepfunctions';
 import { CallAwsService, LambdaInvoke } from 'aws-cdk-lib/aws-stepfunctions-tasks';
 
 import { EventStatus } from '../constants/event-statuses';
@@ -36,16 +48,23 @@ export interface WorkflowProps {
    * Log level for Lambda functions (AWS Powertools)
    */
   lambdaLogLevel: string;
+
+  /**
+   * Agent runtime ARN for cleanup operations
+   */
+  agentRuntimeArn: string;
 }
 
 export class Workflow extends Construct {
   public readonly stateMachine: StateMachine;
   public readonly sessionInitializerFunction: Function;
+  public readonly cleanupStuckSessionFunction: Function;
 
   constructor(scope: Construct, id: string, props: WorkflowProps) {
     super(scope, id);
 
     this.sessionInitializerFunction = this.createSessionInitializerFunction(props);
+    this.cleanupStuckSessionFunction = this.createCleanupStuckSessionFunction(props);
     this.stateMachine = this.createStateMachine(props);
 
     this.applyNagSuppressions();
@@ -110,6 +129,75 @@ export class Workflow extends Construct {
     return sessionInitializerFunction;
   }
 
+  private createCleanupStuckSessionFunction(props: WorkflowProps): Function {
+    const cleanupStuckSessionFunction = new Function(this, 'CleanupStuckSession', {
+      runtime: Runtime.PYTHON_3_12,
+      handler: 'cleanup_stuck_session.lambda_handler',
+      code: Code.fromAsset('..', {
+        bundling: {
+          // Custom bundling: combines handler from infra/lambda with shared code from src/
+          image: Runtime.PYTHON_3_12.bundlingImage,
+          command: [
+            'bash',
+            '-c',
+            'cp infra/lambda/cleanup_stuck_session.py /asset-output/ && ' +
+              'mkdir -p /asset-output/src && ' +
+              'rsync -av --exclude="__pycache__" --exclude="*.pyc" src/shared src/__init__.py /asset-output/src/',
+          ],
+        },
+        exclude: [
+          'node_modules/**',
+          '.venv/**',
+          '.git/**',
+          'infra/cdk.out/**',
+          'infra/dist/**',
+          'infra/node_modules/**',
+          'infra/package-lock.json',
+          '.pytest_cache/**',
+          '.ruff_cache/**',
+          '**/__pycache__/**',
+          '**/*.pyc',
+          'tests/**',
+          '.kiro/**',
+          '*.md',
+          '.gitlab-ci.yml',
+          'Makefile',
+          'uv.lock',
+        ],
+      }),
+      layers: [
+        LayerVersion.fromLayerVersionArn(
+          this,
+          'CleanupStuckSessionPowertoolsLayer',
+          `arn:aws:lambda:${Stack.of(this).region}:017000801446:layer:AWSLambdaPowertoolsPythonV3-python312-x86_64:18`,
+        ),
+      ],
+      timeout: Duration.seconds(30),
+      memorySize: 256,
+      environment: {
+        AGENT_RUNTIME_ARN: props.agentRuntimeArn,
+        JOURNAL_TABLE_NAME: props.journalTable.tableName,
+        TTL_DAYS: props.ttlDays.toString(),
+        POWERTOOLS_SERVICE_NAME: 'cleanup-stuck-session',
+        LOG_LEVEL: props.lambdaLogLevel,
+      },
+      description: 'Lambda function to cleanup stuck AgentCore Runtime sessions',
+    });
+
+    props.journalTable.grantWriteData(cleanupStuckSessionFunction);
+
+    // Grant permission to call bedrock-agentcore:StopRuntimeSession
+    cleanupStuckSessionFunction.addToRolePolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: ['bedrock-agentcore:StopRuntimeSession'],
+        resources: ['*'], // StopRuntimeSession requires wildcard resource
+      }),
+    );
+
+    return cleanupStuckSessionFunction;
+  }
+
   private createStateMachine(props: WorkflowProps): StateMachine {
     const initializeSession = new LambdaInvoke(this, 'InitializeSession', {
       lambdaFunction: this.sessionInitializerFunction,
@@ -148,6 +236,36 @@ export class Workflow extends Construct {
       time: WaitTime.duration(Duration.seconds(10)),
     });
 
+    // Pass state to prepare cleanup Lambda input (for success path)
+    const prepareCleanupInputSuccess = new Pass(this, 'PrepareCleanupInputSuccess', {
+      parameters: {
+        'session_id.$': '$.session_id',
+        'ping_status.$': '$.queryResult.Items[0].pingStatus.S',
+      },
+      resultPath: '$.cleanupInput',
+    });
+
+    // Pass state to prepare cleanup Lambda input (for failure path)
+    const prepareCleanupInputFailure = new Pass(this, 'PrepareCleanupInputFailure', {
+      parameters: {
+        'session_id.$': '$.session_id',
+        'ping_status.$': '$.queryResult.Items[0].pingStatus.S',
+      },
+      resultPath: '$.cleanupInput',
+    });
+
+    const cleanupStuckSessionSuccess = new LambdaInvoke(this, 'CleanupStuckSessionSuccess', {
+      lambdaFunction: this.cleanupStuckSessionFunction,
+      inputPath: '$.cleanupInput',
+      resultPath: '$.cleanupResult',
+    });
+
+    const cleanupStuckSessionFailure = new LambdaInvoke(this, 'CleanupStuckSessionFailure', {
+      lambdaFunction: this.cleanupStuckSessionFunction,
+      inputPath: '$.cleanupInput',
+      resultPath: '$.cleanupResult',
+    });
+
     const success = new Succeed(this, 'Success', {
       comment: 'Agent workflow completed successfully',
     });
@@ -182,20 +300,29 @@ export class Workflow extends Construct {
 
     checkStatus.addCatch(statusCheckFailure);
 
+    // Cleanup failures should not prevent workflow completion
+    cleanupStuckSessionSuccess.addCatch(success, {
+      resultPath: '$.cleanupError',
+    });
+
+    cleanupStuckSessionFailure.addCatch(agentProcessingFailure, {
+      resultPath: '$.cleanupError',
+    });
+
     evaluateStatus
       .when(
         Condition.and(
           Condition.numberGreaterThan('$.queryResult.Count', 0),
           Condition.stringEquals('$.queryResult.Items[0].status.S', EventStatus.AGENT_BACKGROUND_TASK_COMPLETED),
         ),
-        success,
+        prepareCleanupInputSuccess.next(cleanupStuckSessionSuccess).next(success),
       )
       .when(
         Condition.and(
           Condition.numberGreaterThan('$.queryResult.Count', 0),
           Condition.stringEquals('$.queryResult.Items[0].status.S', EventStatus.AGENT_BACKGROUND_TASK_FAILED),
         ),
-        agentProcessingFailure,
+        prepareCleanupInputFailure.next(cleanupStuckSessionFailure).next(agentProcessingFailure),
       )
       .otherwise(waitForCompletion.next(checkStatus));
 
@@ -221,6 +348,7 @@ export class Workflow extends Construct {
 
     this.sessionInitializerFunction.grantInvoke(stateMachine);
     props.agentInvokerFunction.grantInvoke(stateMachine);
+    this.cleanupStuckSessionFunction.grantInvoke(stateMachine);
     props.journalTable.grantReadData(stateMachine);
 
     return stateMachine;
@@ -234,6 +362,27 @@ export class Workflow extends Construct {
           id: 'AwsSolutions-IAM4',
           reason:
             'AWSLambdaBasicExecutionRole is a well-scoped AWS managed policy for Lambda CloudWatch Logs access. Standard practice for Lambda functions.',
+        },
+        {
+          id: 'AwsSolutions-L1',
+          reason: 'Python 3.12 is fully supported by AWS Lambda until October 2028.',
+        },
+      ],
+      true,
+    );
+
+    NagSuppressions.addResourceSuppressions(
+      this.cleanupStuckSessionFunction,
+      [
+        {
+          id: 'AwsSolutions-IAM4',
+          reason:
+            'AWSLambdaBasicExecutionRole is a well-scoped AWS managed policy for Lambda CloudWatch Logs access. Standard practice for Lambda functions.',
+        },
+        {
+          id: 'AwsSolutions-IAM5',
+          reason:
+            'StopRuntimeSession API requires wildcard resource (*) as per AWS service design. This is the minimum permission needed for session cleanup.',
         },
         {
           id: 'AwsSolutions-L1',

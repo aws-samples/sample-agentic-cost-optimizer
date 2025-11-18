@@ -152,6 +152,7 @@ export class InfraStack extends Stack {
       environment,
       ttlDays: InfraConfig.ttlDays,
       lambdaLogLevel: InfraConfig.lambdaLogLevel,
+      agentRuntimeArn: this.agent.runtime.agentRuntimeArn,
     });
 
     const scheduledTriggerRule = new Rule(this, 'ScheduledTriggerRule', {
