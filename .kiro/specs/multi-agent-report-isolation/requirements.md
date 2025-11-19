@@ -2,21 +2,20 @@
 
 ## Introduction
 
-This feature implements a multi-agent architecture to isolate report generation from cost analysis operations. The current monolithic agent (src/agents/main.py) performs AWS resource discovery, metrics collection, cost analysis, report generation, and S3 file writing in a single execution context. This creates context window pressure, token inefficiency, and makes error recovery difficult. The proposed solution separates these concerns into specialized agents orchestrated through the Strands workflow tool, enabling better context management, failure isolation, and retry capabilities.
+This feature implements a multi-agent architecture to isolate report generation from cost analysis operations. The current monolithic agent (src/agents/main.py) performs AWS resource discovery, metrics collection, cost analysis, report generation, and S3 file writing in a single execution context. This creates context window pressure, token inefficiency, and makes error recovery difficult. The implemented solution separates these concerns into specialized agents with sequential invocation, using S3 for data passing between agents, enabling better context management, failure isolation, and retry capabilities.
 
 ## Glossary
 
-- **Main_Agent**: The current monolithic agent that will be refactored into specialized agents
+- **Background_Task**: The async function in src/agents/main.py that orchestrates sequential agent invocation
 - **Analysis_Agent**: A specialized agent responsible for AWS resource discovery, metrics collection, cost analysis, recommendation formatting, and cost estimation (phases 1-5 of current workflow)
 - **Report_Agent**: A specialized agent responsible for report generation and S3 file writing (phases 6-7 of current workflow)
-- **Workflow_Tool**: A Strands framework tool from strands_tools that executes tasks in a deterministic directed acyclic graph (DAG) pattern with automatic dependency resolution
-- **Session_ID**: A unique identifier for a cost optimization execution session used to correlate events and data, passed via invocation_state
+- **Sequential_Invocation**: The orchestration pattern where Analysis_Agent is invoked first, followed by Report_Agent after successful completion
+- **Session_ID**: A unique identifier for a cost optimization execution session used to correlate events and data, passed to agents via session_id parameter
 - **Journal_Table**: A DynamoDB table storing session-scoped events with format PK=SESSION#{session_id}, SK=EVENT#{timestamp}
-- **Data_Store_Table**: A DynamoDB table for storing analysis results and other data with format PK=SESSION#{session_id}, SK=DATA#{data_key}
-- **Analysis_Results_Record**: A DynamoDB record in the Data_Store_Table with SK=DATA#ANALYSIS_RESULTS containing structured output from the Analysis_Agent
-- **Context_Passing**: The mechanism by which data flows from Analysis_Agent to Report_Agent through DynamoDB storage and workflow task outputs
-- **Task_Dependency**: A workflow relationship where the report task depends on the analysis task completing successfully
-- **Invocation_State**: A dictionary passed to agents containing session_id and other context, accessible in tools via ToolContext
+- **S3_Bucket**: The existing S3 bucket used for storing both intermediate data (analysis.txt) and final outputs (cost_report.txt, evidence.txt)
+- **Analysis_Results_File**: An S3 object at path {session_id}/analysis.txt containing structured output from the Analysis_Agent
+- **Context_Passing**: The mechanism by which data flows from Analysis_Agent to Report_Agent through S3 storage using the storage tool
+- **Storage_Tool**: An enhanced tool that supports both read and write actions for S3 operations with session-scoped path management
 
 ## Requirements
 
@@ -28,44 +27,44 @@ This feature implements a multi-agent architecture to isolate report generation 
 
 1. THE System SHALL define an Analysis_Agent with system prompt covering phases 1-5 (Discovery, Usage and Metrics Collection, Analysis and Decision Rules, Recommendation Format, Cost Estimation Method)
 2. THE System SHALL define a Report_Agent with system prompt covering phases 6-7 (Output Contract, S3 Write Requirements)
-3. THE Analysis_Agent SHALL have access to use_aws, journal, and calculator tools
+3. THE Analysis_Agent SHALL have access to use_aws, journal, calculator, and storage tools
 4. THE Report_Agent SHALL have access to storage and journal tools
-5. THE Main_Agent SHALL be refactored to use the workflow tool from strands_tools to coordinate the Analysis_Agent and Report_Agent
+5. THE background_task function SHALL sequentially invoke Analysis_Agent followed by Report_Agent
 
-### Requirement 2: Workflow Orchestration
+### Requirement 2: Sequential Orchestration
 
-**User Story:** As a developer, I want a deterministic workflow pattern to coordinate agent execution, so that task dependencies are automatically managed and execution is repeatable.
-
-#### Acceptance Criteria
-
-1. THE Main_Agent SHALL use the workflow tool from strands_tools with action "create" to define two sequential tasks
-2. THE workflow tool SHALL define task_id "analysis" with the Analysis_Agent system prompt and dependencies set to empty list
-3. THE workflow tool SHALL define task_id "report" with the Report_Agent system prompt and dependencies set to ["analysis"]
-4. THE Main_Agent SHALL use the workflow tool with action "start" to execute the workflow
-5. IF the analysis task fails, THEN THE workflow tool SHALL halt execution without invoking the report task
-
-### Requirement 3: Analysis Data Storage Tool
-
-**User Story:** As a developer, I want a new tool to save and retrieve analysis results from DynamoDB, so that the report agent can access complete analysis data from the analysis agent.
+**User Story:** As a developer, I want a simple sequential orchestration pattern to coordinate agent execution, so that execution order is clear and error handling is straightforward.
 
 #### Acceptance Criteria
 
-1. THE System SHALL provide a new tool named "data_store" with actions "write" and "read"
-2. THE write action SHALL accept parameters data_key and data_content, retrieve session_id from invocation_state, and write to Data_Store_Table with PK=SESSION#{session_id}, SK=DATA#{data_key}
-3. THE read action SHALL accept parameter data_key, retrieve session_id from invocation_state, and query Data_Store_Table for the matching record
-4. THE Data_Store_Table SHALL be a separate DynamoDB table from the Journal_Table with the same PK/SK structure
-5. THE data_key parameter allows storing multiple types of data per session (e.g., "ANALYSIS_RESULTS", "WORKFLOW_METADATA")
+1. THE background_task function SHALL invoke analysis_agent.invoke_async() first with the session_id parameter
+2. THE background_task function SHALL await completion of the analysis agent before proceeding
+3. THE background_task function SHALL invoke report_agent.invoke_async() second with the session_id parameter
+4. THE background_task function SHALL await completion of the report agent before recording completion event
+5. IF the analysis agent fails, THEN THE background_task function SHALL propagate the exception without invoking the report agent
 
-### Requirement 4: Context Passing via DynamoDB
+### Requirement 3: Enhanced Storage Tool
 
-**User Story:** As a developer, I want complete analysis results stored in DynamoDB between agent executions, so that the report agent can access all detailed analysis data to generate high-quality reports and evidence files.
+**User Story:** As a developer, I want the storage tool to support both reading and writing to S3, so that agents can pass data through S3 without needing a separate tool.
 
 #### Acceptance Criteria
 
-1. WHEN the Analysis_Agent completes all analysis phases (1-5), THE Analysis_Agent SHALL use the data_store tool to write complete analysis results with data_key "ANALYSIS_RESULTS"
+1. THE storage tool SHALL support an action parameter with values "read" or "write"
+2. THE write action SHALL accept parameters filename and content, retrieve session_id from tool_context.invocation_state, and write to S3 at path {session_id}/{filename}
+3. THE read action SHALL accept parameter filename, retrieve session_id from tool_context.invocation_state, and read from S3 at path {session_id}/{filename}
+4. THE read action SHALL return a dictionary with success status and content on success, or error message on failure
+5. THE storage tool SHALL use the existing S3_BUCKET_NAME environment variable for all operations
+
+### Requirement 4: Context Passing via S3
+
+**User Story:** As a developer, I want complete analysis results stored in S3 between agent executions, so that the report agent can access all detailed analysis data to generate high-quality reports and evidence files.
+
+#### Acceptance Criteria
+
+1. WHEN the Analysis_Agent completes all analysis phases (1-5), THE Analysis_Agent SHALL use the storage tool to write complete analysis results with filename "analysis.txt"
 2. THE analysis results data SHALL include all discovery data, all metrics data, all formatted recommendations with full details, and all cost estimates without summarization
 3. THE analysis results SHALL preserve all evidence details needed for the Evidence Appendix section of the report
-4. WHEN the Report_Agent starts execution, THE Report_Agent SHALL use the data_store tool to read data with data_key "ANALYSIS_RESULTS"
+4. WHEN the Report_Agent starts execution, THE Report_Agent SHALL use the storage tool to read data with filename "analysis.txt"
 5. IF the analysis results are missing, THEN THE Report_Agent SHALL record a TASK_REPORT_GENERATION_FAILED event with error message and halt execution
 
 ### Requirement 5: Consistent Event Journaling
@@ -88,10 +87,10 @@ This feature implements a multi-agent architecture to isolate report generation 
 #### Acceptance Criteria
 
 1. WHEN the Analysis_Agent encounters an error, THE Analysis_Agent SHALL record a FAILED event with error details to the Journal_Table
-2. IF the Analysis_Agent fails, THEN THE Workflow_Tool SHALL halt execution and return an error without invoking the Report_Agent
+2. IF the Analysis_Agent fails, THEN THE background_task function SHALL catch the exception and record AGENT_BACKGROUND_TASK_FAILED without invoking the Report_Agent
 3. WHEN the Report_Agent encounters an error, THE Report_Agent SHALL record a FAILED event with error details to the Journal_Table
-4. IF the Report_Agent fails, THEN THE Workflow_Tool SHALL return an error while preserving Analysis_Results in the Data_Store_Table
-5. THE Report_Agent SHALL validate received Analysis_Results before generating reports and record validation failures as FAILED events
+4. IF the Report_Agent fails, THEN THE background_task function SHALL catch the exception and record AGENT_BACKGROUND_TASK_FAILED while preserving analysis.txt in S3
+5. THE Report_Agent SHALL validate received analysis results before generating reports and record validation failures as FAILED events
 
 ### Requirement 7: Tool Distribution
 
@@ -99,10 +98,10 @@ This feature implements a multi-agent architecture to isolate report generation 
 
 #### Acceptance Criteria
 
-1. THE Main_Agent SHALL have access to the workflow tool from strands_tools
-2. THE workflow tool SHALL create the Analysis_Agent with access to use_aws, journal, calculator, and data storage tools through task definition
-3. THE workflow tool SHALL create the Report_Agent with access to storage, journal, and data storage tools through task definition
-4. THE Analysis_Agent system prompt SHALL NOT include instructions for output contract generation or S3 writes
+1. THE Analysis_Agent SHALL be created with access to use_aws, journal, calculator, and storage tools
+2. THE Report_Agent SHALL be created with access to storage and journal tools
+3. THE Analysis_Agent SHALL use the storage tool to write analysis.txt to S3
+4. THE Analysis_Agent system prompt SHALL NOT include instructions for output contract generation or final report S3 writes
 5. THE Report_Agent system prompt SHALL NOT include instructions for AWS discovery, metrics collection, or cost analysis
 
 ### Requirement 8: Integration with Existing Infrastructure
@@ -117,17 +116,17 @@ This feature implements a multi-agent architecture to isolate report generation 
 4. THE System SHALL maintain the existing AgentCore entrypoint pattern in src/agents/main.py with background_task decorator
 5. THE System SHALL use the existing Journal_Table and S3 bucket configured through environment variables
 
-### Requirement 9: Workflow Tool Integration Pattern
+### Requirement 9: Agent Invocation Pattern
 
-**User Story:** As a developer, I want to use the Strands workflow tool correctly, so that task execution is reliable and follows framework best practices.
+**User Story:** As a developer, I want to use the Strands agent invocation pattern correctly, so that session context is maintained across agent executions.
 
 #### Acceptance Criteria
 
-1. THE Main_Agent SHALL pass invocation_state containing session_id to the workflow tool
-2. THE workflow tool SHALL propagate invocation_state to both Analysis_Agent and Report_Agent
+1. THE background_task function SHALL pass session_id parameter to analysis_agent.invoke_async()
+2. THE background_task function SHALL pass session_id parameter to report_agent.invoke_async()
 3. THE Analysis_Agent and Report_Agent SHALL access session_id from tool_context.invocation_state in their tools
-4. THE workflow tool SHALL automatically handle task output passing from analysis task to report task
-5. THE Main_Agent SHALL use workflow tool action "status" to check workflow completion and retrieve results
+4. THE storage tool SHALL use session_id to construct S3 paths for reading and writing files
+5. THE journal tool SHALL use session_id to correlate events across both agent executions
 
 ### Requirement 10: Backward Compatibility
 
