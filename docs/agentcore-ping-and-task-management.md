@@ -354,7 +354,7 @@ finally:
 
 | Approach | How it works |
 |----------|--------------|
-| **@app.async_task** | Automatically manages task lifecycle - registers task before function executes, completes task aftefinishes (success or failure) |
+| **@app.async_task** | Automatically manages task lifecycle - registers task before function executes, completes task after function finishes (success or failure) |
 | **Manual add/complete** | Provides granular control over task lifecycle - you decide exactly when to register and complete tasks |
 
 **Recommendation:**
