@@ -61,9 +61,9 @@ def create_boto_config(
 
 
 def create_agent(
+    system_prompt: str,
     boto_config: Optional[BotocoreConfig] = None,
-    system_prompt: str = "",
-    tools: list = None,
+    tools: Optional[list] = None,
 ) -> Agent:
     """Create configured Agent instances with proper model setup.
 
@@ -85,6 +85,9 @@ def create_agent(
     if not system_prompt:
         raise ValueError("system_prompt is required")
 
+    if tools is None:
+        tools = []
+
     bedrock_model = BedrockModel(
         model_id=model_id,
         region_name=aws_region,
@@ -94,7 +97,7 @@ def create_agent(
     return Agent(
         model=bedrock_model,
         system_prompt=system_prompt,
-        tools=tools or [],
+        tools=tools,
     )
 
 
@@ -127,13 +130,11 @@ async def background_task(user_message: str, session_id: str):
     logger.info(f"Background task started - Session: {session_id}")
 
     try:
-        # Step 1: Analysis
         await analysis_agent.invoke_async(
             "Analyze AWS costs and identify optimization opportunities",
             session_id=session_id,
         )
 
-        # Step 2: Report (reads from data_store automatically)
         response = await report_agent.invoke_async(
             "Generate cost optimization report based on analysis results",
             session_id=session_id,
