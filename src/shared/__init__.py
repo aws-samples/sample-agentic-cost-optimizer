@@ -2,7 +2,6 @@
 Shared utilities for Lambda functions and agent
 """
 
-from .data_store_recorder import read_data, write_data
 from .event_recorder import record_event
 from .event_statuses import EventStatus
 from .event_validation import validate_event_status
@@ -13,6 +12,4 @@ __all__ = [
     "EventStatus",
     "validate_event_status",
     "record_metadata",
-    "write_data",
-    "read_data",
 ]
