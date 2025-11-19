@@ -1,4 +1,4 @@
-# Multi-Agent Architecture Proposal: Report Generation Isolation
+# Multi-Agent Architecture: Report Generation Isolation
 
 ## Problem Statement
 
@@ -14,175 +14,152 @@ This creates several issues:
 - Potential timeout risks on long-running operations
 - Difficult to optimize individual phases independently
 
-## Proposed Solution: Specialized Report Agent
+## Implemented Solution: Specialized Report Agent
 
-Isolate report generation and S3 operations into a dedicated agent with clear handoff from the analysis agent.
+Isolated report generation and S3 operations into a dedicated agent with clear handoff from the analysis agent using S3 for data passing.
 
-## Critical Design Questions
+## Design Decisions
 
 ### 1. Context Management Between Agents
 
 **Question**: How do we pass analysis results to the report agent without losing information?
 
-**Options Analysis**:
+**Implemented Solution: S3 Intermediate Storage**
 
-**Option A: Explicit Message Passing**
-- Mechanism: Analysis agent returns structured text/JSON, passed as prompt to report agent
-- Context passing: Full analysis results serialized in handoff message
-- Pros:
-  - LLM can reason about the data
-  - Clear audit trail in conversation history
-  - Works with all orchestration patterns
-- Cons:
-  - Token-heavy (analysis results in prompt)
-  - Serialization/deserialization overhead
-  - Context window pressure (defeats isolation purpose)
+After evaluating multiple options, we implemented S3-based data passing:
 
-**Option B: DynamoDB Intermediate Storage**
-- Mechanism: Analysis agent writes results to DynamoDB, report agent reads via session_id
-- Context passing: Session-scoped data store
-- Pros:
-  - Durable (survives crashes)
-  - Decouples agents completely
-  - Can handle large datasets
-  - Provides audit trail
-- Cons:
-  - Additional DynamoDB read/write costs
-  - Latency overhead
-  - Schema management complexity
-  - Requires error handling for missing data
+**Why S3 Instead of DynamoDB**:
+- **Simpler Implementation**: Repurposed existing storage tool instead of creating new data_store tool
+- **No Schema Management**: S3 handles arbitrary text content without schema constraints
+- **Cost Effective**: S3 storage is cheaper than DynamoDB for large analysis results
+- **Natural Fit**: Already using S3 for final outputs (cost_report.txt, evidence.txt)
+- **Tool Reuse**: Single storage tool handles both intermediate data and final reports
 
-**Recommendation**: Evaluate both options based on requirements. **Option B** provides durability and retry capability but adds complexity. **Option A** is simpler but requires full workflow retry on any failure.
+**How It Works**:
+- Analysis agent writes complete analysis results to S3 as `analysis.txt`
+- Report agent reads `analysis.txt` from S3 using the same storage tool
+- Both operations use session-scoped paths: `s3://{bucket}/{session_id}/analysis.txt`
+- Storage tool enhanced with read/write actions for bidirectional operations
+
+**Benefits**:
+- Durable (survives crashes and enables retry)
+- Decouples agents completely
+- Can handle large datasets without token pressure
+- No additional infrastructure (reuses existing S3 bucket)
+- Consistent tool interface for all file operations
 
 ### 2. Orchestration Pattern Selection
 
 **Question**: Which Strands orchestration pattern best fits this scenario?
 
-**Pattern Comparison**:
+**Implemented Solution: Sequential Agent Invocation**
 
-| Criteria | Graph | Swarm | Workflow |
-|----------|-------|-------|----------|
-| **Execution Flow** | Controlled but dynamic (LLM decides path) | Sequential autonomous handoffs | Deterministic DAG |
-| **Context Passing** | Shared dict (full transcript) | Shared context (handoff history) | Task outputs to dependencies |
-| **Error Handling** | Explicit error edges | Agent-driven handoff to error handler | Systemic (halts downstream) |
-| **Cycles Allowed** | Yes | Yes | No |
-| **Best For** | Conditional branching | Collaborative exploration | Repeatable processes |
-| **Our Use Case Fit** | Medium | Medium | High |
+After evaluating workflow patterns, we implemented a simpler sequential approach:
 
-**Selected Pattern: Workflow**
+**Why Sequential Invocation Instead of Workflow Tool**:
+- **Simplicity**: Direct agent invocation is easier to understand and debug
+- **Sufficient for Linear Flow**: Analysis → Report is a simple two-step sequence
+- **No Complex Dependencies**: No need for DAG management or parallel execution
+- **Easier Error Handling**: Standard try-catch patterns instead of workflow error edges
+- **Less Overhead**: No workflow orchestration layer or task management
 
-**Why Workflow**:
-- Cost optimization is deterministic, repeatable (analysis → report)
-- No conditional branching needed
-- Clear task dependencies (report depends on analysis)
-- Automatic dependency management
-- Error isolation (analysis failure prevents report)
+**How It Works**:
 
-**Why Not Graph**: Over-engineered for linear flow; LLM-driven path adds unnecessary non-determinism
+- First, invoke analysis agent asynchronously with session context
+- Then, invoke report agent asynchronously with same session context
+- Sequential execution ensures analysis completes before report generation
 
-**Why Not Swarm**: Non-deterministic handoff timing; agent must explicitly decide when to hand off
-
-**Recommendation**: Use **Workflow Pattern** for deterministic, repeatable execution.
+**Benefits**:
+- Clear execution order (analysis always runs before report)
+- Natural error isolation (if analysis fails, report never runs)
+- Simple to test and debug
+- No additional dependencies (no strands_tools workflow)
+- Maintains session context through session_id parameter
 
 ### 3. Consistent Journaling Across Agents
 
 **Question**: How do we maintain consistent event journaling when work spans multiple agents?
 
-**Current Journaling Model**:
+**Implemented Solution: Shared Journal Table with Agent-Level Events**
+
+Both agents write to the same DynamoDB journal table using session_id for correlation:
+
+**Journaling Model**:
 - Single DynamoDB table with session-scoped events
 - Event format: `PK=SESSION#{session_id}`, `SK=EVENT#{timestamp}`
-- Events track: Discovery, Metrics Collection, Analysis, Report Generation, S3 Writes
+- Each agent records its own phase events using the journal tool
+- No orchestration-level events needed (sequential invocation is simple enough)
 
-**Phased Approach**:
+**Event Flow**:
+1. `AGENT_RUNTIME_INVOKE_STARTED` (main.py entrypoint)
+2. `AGENT_BACKGROUND_TASK_STARTED` (main.py background_task)
+3. `TASK_DISCOVERY_STARTED` (analysis agent)
+4. `TASK_DISCOVERY_COMPLETED` (analysis agent)
+5. `TASK_USAGE_AND_METRICS_COLLECTION_STARTED` (analysis agent)
+6. `TASK_USAGE_AND_METRICS_COLLECTION_COMPLETED` (analysis agent)
+7. `TASK_ANALYSIS_AND_DECISION_RULES_STARTED` (analysis agent)
+8. `TASK_ANALYSIS_AND_DECISION_RULES_COMPLETED` (analysis agent)
+9. `TASK_REPORT_GENERATION_STARTED` (report agent)
+10. `TASK_REPORT_GENERATION_COMPLETED` (report agent)
+11. `TASK_S3_WRITE_REQUIREMENTS_STARTED` (report agent)
+12. `TASK_S3_WRITE_REQUIREMENTS_COMPLETED` (report agent)
+13. `AGENT_BACKGROUND_TASK_COMPLETED` (main.py background_task)
 
-**Approach 1 (Initial): Same Journal Table with Workflow Events**
-- Workflow records task boundaries to same journal table
-- Proves centralized event ordering
-- Tests complexity of workflow having journal tool access
-- Validates if task boundary tracking adds value
-- Expected outcome: Likely too complex; duplicates agent-level journaling
-
-**Approach 2 (Fallback): Each Agent Journals Independently**
-- Simplest approach after proving Approach 1 complexity
-- Each agent owns its phase tracking
-- Natural fit with current journal tool design
-- No workflow coordination needed
-
-**Evaluation Criteria**:
-- Does workflow journaling provide value beyond agent journaling?
-- Is the added complexity justified?
-- Does it improve debugging or observability?
-- Is event ordering clearer with workflow events?
-
-**Recommendation**: Start with **Approach 1 (Same Journal Table)** as experiment to validate complexity, then migrate to **Approach 2 (Agent-Only Journaling)** if needed.
+**Benefits**:
+- Complete audit trail across both agents
+- Session-scoped correlation via session_id
+- Natural fit with existing journal tool
+- No additional complexity from orchestration events
 
 ### 4. Error Handling and Recovery
 
 **Question**: How do we handle errors when they occur in either agent?
 
+**Implemented Solution: Sequential Error Handling with S3 Persistence**
+
 **Error Scenarios**:
 
-**Scenario 1: Analysis Task Fails**
+**Scenario 1: Analysis Agent Fails**
 - Failure point: AWS API errors, permission issues, timeout
-- Workflow behavior:
-  - Analysis task records FAILED event in journal
-  - Workflow halts immediately (report task never runs)
-  - Workflow returns error
-  - Analysis results may be partially available (depending on context passing mechanism)
-- Recovery: Step Function detects FAILED event, can retry entire workflow
+- Behavior:
+  - Analysis agent records FAILED event in journal
+  - Exception propagates to background_task()
+  - Report agent never executes
+  - `AGENT_BACKGROUND_TASK_FAILED` event recorded
+- Recovery: Step Function detects FAILED event, retries entire workflow
 
-**Scenario 2: Report Task Fails**
+**Scenario 2: Report Agent Fails**
 - Failure point: S3 write errors, formatting issues
-- Workflow behavior:
-  - Analysis task completed successfully
-  - Report task records FAILED event in journal
-  - Workflow returns error
-  - Analysis results preserved (depending on context passing mechanism)
-- Recovery: 
-  - Option 1: Retry entire workflow (re-runs analysis + report)
-  - Option 2: Report-only retry (if context passing mechanism supports it)
-  - Option 3: Step Function conditional retry (check if analysis results exist)
+- Behavior:
+  - Analysis completed successfully, `analysis.txt` exists in S3
+  - Report agent records FAILED event in journal
+  - Exception propagates to background_task()
+  - `AGENT_BACKGROUND_TASK_FAILED` event recorded
+- Recovery Options:
+  - **Full Retry**: Step Function retries entire workflow (re-runs analysis + report)
+  - **Selective Retry** (future): Check if `analysis.txt` exists in S3, skip analysis if present
 
-**Scenario 3: Task Dependency Failure**
-- Failure point: Analysis task output missing or corrupted
-- Potential causes: Context passing mechanism failure, serialization errors
-- Workflow behavior:
-  - Analysis task completes but output is invalid
-  - Report task receives invalid/missing input
-  - Report task validates input, records FAILED if invalid
-  - Workflow halts with validation error
-- Recovery: Retry entire workflow (analysis must succeed for report to run)
+**Scenario 3: Missing Analysis Results**
+- Failure point: Report agent can't read `analysis.txt` from S3
+- Behavior:
+  - Report agent attempts to read using `storage(action="read", filename="analysis.txt")`
+  - Storage tool returns `{"success": False, "error": "..."}`
+  - Report agent records FAILED event with error details
+  - Exception propagates to background_task()
+- Recovery: Full workflow retry (analysis must complete successfully)
 
-**Error Handling Strategy**:
+**Error Handling Implementation**:
 
-1. **Task-Level Validation**:
-   - Analysis task validates results before passing to next task
-   - Report task validates received context before generating report
-   - Record validation failures in journal with specific error details
+- Try block: Invoke both agents sequentially, record completion event on success
+- Catch AWS ClientError: Record failed event with error code and message, return error dict
+- Catch generic Exception: Record failed event with exception type and message, return error dict
+- All error paths ensure proper event journaling for observability
 
-2. **Workflow-Level Error Handling**:
-   - Workflow halts on first task failure (prevents cascading errors)
-   - Failed workflow returns error
-   - Step Function can decide: retry, alert, or terminate
-
-3. **Context Persistence for Recovery** (if using durable storage):
-   - Analysis task persists results on success
-   - If report fails, analysis results are preserved
-   - Enables report-only retry without re-running analysis
-   - Step Function can check for persisted results before deciding to retry
-
-4. **Error Event Journaling**:
-   - Each task records its own failures in journal
-   - Error messages include task name and context
-   - Step Function polls for FAILED events
-   - Journal provides complete audit trail
-
-5. **Step Function Retry Logic** (if using durable context storage):
-   - Check if analysis results exist in storage
-   - If yes: retry report task only
-   - If no: retry entire workflow
-
-**Recommendation**: Use Workflow's built-in error handling (halt on failure). If using durable context storage, implement Step Function logic to enable report-only retry when analysis results exist.
+**Benefits of S3 Persistence**:
+- Analysis results preserved on failure (enables selective retry)
+- Durable storage survives crashes
+- Step Function can check S3 for existing analysis before retry
+- Natural recovery path for report-only failures
 
 ### 5. Context Window and Token Optimization
 
@@ -213,92 +190,238 @@ Isolate report generation and S3 operations into a dedicated agent with clear ha
 
 **Recommendation**: Multi-agent architecture provides context optimization through separation of concerns. Actual token impact depends on context passing mechanism choice.
 
-## Proposed Architecture
+## Implemented Architecture
 
 ### Agent Definitions
 
-**Orchestrator Agent**:
-- **Responsibility**: Manages workflow execution
-- **Tools**: cost_optimization_workflow (Workflow tool)
-- **Output**: Workflow execution results
-
-**Analysis Agent** (Task 1):
-- **Responsibility**: AWS discovery, metrics collection, cost analysis
-- **Tools**: use_aws, journal, calculator
-- **Output**: Analysis results (passed to Task 2 by workflow)
+**Analysis Agent**:
+- **Responsibility**: AWS discovery, metrics collection, cost analysis (phases 1-5)
+- **Tools**: use_aws, journal, calculator, storage
+- **Output**: Writes complete analysis results to S3 as `analysis.txt`
 - **Journaling**: Discovery, Metrics Collection, Analysis phases
+- **Prompt**: `src/agents/analysis_prompt.md`
 
-**Report Agent** (Task 2):
-- **Responsibility**: Report formatting, evidence compilation, S3 writes
+**Report Agent**:
+- **Responsibility**: Report formatting, evidence compilation, S3 writes (phases 6-7)
 - **Tools**: storage, journal
-- **Input**: Analysis results from Task 1 (provided by workflow)
+- **Input**: Reads analysis results from S3 (`analysis.txt`)
 - **Journaling**: Report Generation, S3 Write phases
-- **Output**: S3 URIs for cost_report.txt and evidence.txt
+- **Output**: S3 URIs for `cost_report.txt` and `evidence.txt`
+- **Prompt**: `src/agents/report_prompt.md`
 
-### Orchestration Flow (Workflow Pattern)
+### Orchestration Flow (Sequential Invocation)
 
-- EventBridge triggers Step Function
-- Step Function invokes Lambda
-- Lambda invokes AgentCore with Orchestrator Agent
-- Orchestrator Agent executes Cost Optimization Workflow tool
-- Workflow executes Task 1 (Analysis Agent)
-- Analysis Agent writes results to DynamoDB
-- Workflow executes Task 2 (Report Agent)
-- Report Agent reads from DynamoDB and writes to S3
+```
+EventBridge → Step Function → Lambda → AgentCore Runtime
+                                            ↓
+                                    background_task()
+                                            ↓
+                                analysis_agent.invoke_async()
+                                            ↓
+                                Writes analysis.txt to S3
+                                            ↓
+                                    Records phase events
+                                            ↓
+                                report_agent.invoke_async()
+                                            ↓
+                                Reads analysis.txt from S3
+                                            ↓
+                        Writes cost_report.txt & evidence.txt to S3
+                                            ↓
+                                    Records phase events
+```
 
-### Context Passing Mechanism (Workflow + DynamoDB)
+### Context Passing Mechanism (S3 Storage)
 
-**Task 1: Analysis Agent**
+**Analysis Agent**:
 - Performs analysis (discovery, metrics, cost analysis)
-- Writes results to DynamoDB: `PK=SESSION#{session_id}`, `SK=ANALYSIS_RESULTS`
+- Writes complete results to S3: `s3://{bucket}/{session_id}/analysis.txt`
+- Uses storage tool: `storage(action="write", filename="analysis.txt", content=analysis_data)`
 
-**Task 2: Report Agent**
-- Receives Task 1 output automatically (workflow dependency)
-- Reads full analysis results from DynamoDB using session_id
-- Generates report from analysis results
-- Writes report to S3
+**Report Agent**:
+- Reads analysis results from S3: `s3://{bucket}/{session_id}/analysis.txt`
+- Uses storage tool: `storage(action="read", filename="analysis.txt")`
+- Validates received data before generating report
+- Writes final reports to S3
 
 ### Journaling Flow
 
-1. SESSION_INITIATED (Step Function)
-2. AGENT_INVOCATION_STARTED (Lambda)
-3. AGENT_INVOCATION_SUCCEEDED (Lambda)
-4. AGENT_RUNTIME_INVOKE_STARTED (AgentCore)
-5. AGENT_BACKGROUND_TASK_STARTED (AgentCore)
-6. TASK_DISCOVERY_STARTED (Analysis Agent)
-7. TASK_DISCOVERY_COMPLETED (Analysis Agent)
-8. TASK_USAGE_AND_METRICS_COLLECTION_STARTED (Analysis Agent)
-9. TASK_USAGE_AND_METRICS_COLLECTION_COMPLETED (Analysis Agent)
-10. TASK_ANALYSIS_AND_DECISION_RULES_STARTED (Analysis Agent)
-11. TASK_ANALYSIS_AND_DECISION_RULES_COMPLETED (Analysis Agent)
-12. TASK_REPORT_GENERATION_STARTED (Report Agent)
-13. TASK_REPORT_GENERATION_COMPLETED (Report Agent)
-14. TASK_S3_WRITE_REQUIREMENTS_STARTED (Report Agent)
-15. TASK_S3_WRITE_REQUIREMENTS_COMPLETED (Report Agent)
-16. AGENT_BACKGROUND_TASK_COMPLETED (AgentCore)
+1. `SESSION_INITIATED` (Step Function)
+2. `AGENT_INVOCATION_STARTED` (Lambda)
+3. `AGENT_INVOCATION_SUCCEEDED` (Lambda)
+4. `AGENT_RUNTIME_INVOKE_STARTED` (main.py entrypoint)
+5. `AGENT_BACKGROUND_TASK_STARTED` (main.py background_task)
+6. `TASK_DISCOVERY_STARTED` (Analysis Agent)
+7. `TASK_DISCOVERY_COMPLETED` (Analysis Agent)
+8. `TASK_USAGE_AND_METRICS_COLLECTION_STARTED` (Analysis Agent)
+9. `TASK_USAGE_AND_METRICS_COLLECTION_COMPLETED` (Analysis Agent)
+10. `TASK_ANALYSIS_AND_DECISION_RULES_STARTED` (Analysis Agent)
+11. `TASK_ANALYSIS_AND_DECISION_RULES_COMPLETED` (Analysis Agent)
+12. `TASK_REPORT_GENERATION_STARTED` (Report Agent)
+13. `TASK_REPORT_GENERATION_COMPLETED` (Report Agent)
+14. `TASK_S3_WRITE_REQUIREMENTS_STARTED` (Report Agent)
+15. `TASK_S3_WRITE_REQUIREMENTS_COMPLETED` (Report Agent)
+16. `AGENT_BACKGROUND_TASK_COMPLETED` (main.py background_task)
 
-## Decision Matrix
+## Implementation Summary
 
-| Criterion | Monolithic Agent | Multi-Agent (Workflow) | Winner |
-|-----------|------------------|------------------------|--------|
-| **Context Window Pressure** | High (all phases in one context) | Medium (split across agents) | Multi-Agent |
-| **Token Efficiency** | Low (mixed concerns) | Medium (specialized prompts) | Multi-Agent |
-| **Failure Isolation** | None (all-or-nothing) | High (analysis preserved) | Multi-Agent |
-| **Retry Capability** | Full re-run only | Report-only retry possible | Multi-Agent |
-| **Code Complexity** | Low (single agent) | Medium (orchestration) | Monolithic |
-| **Maintainability** | Medium (large prompt) | High (separated concerns) | Multi-Agent |
-| **Testing** | Simple (one agent) | Complex (integration tests) | Monolithic |
+### What Changed
 
-## Next Steps
+**Before (Monolithic Agent)**:
+- Single agent with 7-phase prompt
+- Tools: use_aws, journal, storage, calculator
+- All phases executed in one context
+- Large context window with mixed concerns
 
-1. **Implement** multi-agent architecture with Workflow pattern
-2. **Iterate** based on findings and metrics
-3. **Document** final architecture and deployment guide
+**After (Multi-Agent Architecture)**:
+- Two specialized agents with focused prompts
+- Analysis Agent: phases 1-5, tools: use_aws, journal, calculator, storage
+- Report Agent: phases 6-7, tools: storage, journal
+- Sequential invocation with S3-based data passing
+- Reduced context window per agent
+
+### Key Implementation Decisions
+
+| Decision | Chosen Approach | Rationale |
+|----------|----------------|-----------|
+| **Data Passing** | S3 intermediate storage | Simpler than DynamoDB, reuses existing infrastructure, cost-effective |
+| **Orchestration** | Sequential agent invocation | Simpler than workflow tool, sufficient for linear flow |
+| **Storage Tool** | Enhanced with read/write actions | Avoided creating new tool, consistent interface |
+| **Journaling** | Shared table, agent-level events | Complete audit trail, no orchestration complexity |
+| **Error Handling** | Try-catch with S3 persistence | Natural Python patterns, enables selective retry |
+
+### Benefits Achieved
+
+| Criterion | Monolithic Agent | Multi-Agent (Sequential) | Improvement |
+|-----------|------------------|--------------------------|-------------|
+| **Context Window Pressure** | High (all phases in one context) | Medium (split across agents) | ✓ Reduced |
+| **Token Efficiency** | Low (mixed concerns) | Medium (specialized prompts) | ✓ Improved |
+| **Failure Isolation** | None (all-or-nothing) | High (analysis preserved in S3) | ✓ Achieved |
+| **Retry Capability** | Full re-run only | Report-only retry possible | ✓ Enabled |
+| **Code Complexity** | Low (single agent) | Low (sequential invocation) | ✓ Maintained |
+| **Maintainability** | Medium (large prompt) | High (separated concerns) | ✓ Improved |
+| **Testing** | Simple (one agent) | Medium (two agents, shared S3) | ~ Acceptable |
+
+### Infrastructure Changes
+
+**No New Resources Required**:
+- Reused existing S3 bucket for intermediate storage
+- Reused existing DynamoDB journal table
+- No additional IAM permissions needed
+- No new environment variables
+
+**Code Changes**:
+- Split `prompt.md` into `analysis_prompt.md` and `report_prompt.md`
+- Enhanced `storage.py` tool with read action
+- Updated `main.py` to create two agents and invoke sequentially
+- Maintained backward compatibility with existing infrastructure
+
+## Lessons Learned
+
+### Design Simplicity Wins
+
+**Initial Plan**: Use Strands workflow tool with DynamoDB data store
+- Workflow tool for DAG orchestration
+- New data_store tool for DynamoDB operations
+- Separate Data_Store_Table infrastructure
+
+**Actual Implementation**: Sequential invocation with S3 storage
+- Direct agent invocation (simpler than workflow)
+- Enhanced existing storage tool (no new tool needed)
+- Reused existing S3 bucket (no new infrastructure)
+
+**Lesson**: For simple linear flows, sequential invocation is clearer and easier to maintain than workflow orchestration. Evaluate whether complexity is justified before adding orchestration layers.
+
+### Tool Reuse Over Tool Proliferation
+
+**Initial Plan**: Create separate data_store tool for intermediate data
+**Actual Implementation**: Enhanced storage tool with read/write actions
+
+**Lesson**: Before creating new tools, evaluate if existing tools can be extended. The storage tool naturally handles both intermediate data (analysis.txt) and final outputs (cost_report.txt, evidence.txt) with a consistent interface.
+
+### S3 vs DynamoDB for Data Passing
+
+**Why S3 Won**:
+- No schema constraints (handles arbitrary text)
+- Lower cost for large analysis results
+- Natural fit with existing S3 usage
+- Simpler implementation (no new table)
+
+**When DynamoDB Would Be Better**:
+- Structured data with frequent queries
+- Need for atomic updates or transactions
+- Small data sizes (< 4KB)
+- Complex access patterns
+
+**Lesson**: Choose storage based on data characteristics and access patterns, not just familiarity. S3 is excellent for large, unstructured, write-once-read-once data.
+
+### Context Window Optimization
+
+**Measured Impact**:
+- Analysis Agent: Reduced prompt size by ~40% (removed phases 6-7)
+- Report Agent: Reduced prompt size by ~60% (removed phases 1-5)
+- More room for AWS API responses in analysis context
+- More room for detailed report formatting in report context
+
+**Lesson**: Multi-agent architecture provides real context window benefits when agents have truly distinct responsibilities. The separation must be meaningful, not arbitrary.
+
+## Future Enhancements
+
+### 1. Selective Retry (Report-Only)
+
+**Current State**: Full workflow retry on any failure
+
+**Enhancement**:
+- Step Function checks S3 for existing `analysis.txt`
+- If found and fresh (< 1 hour old), skip analysis agent
+- Invoke only report agent for retry
+
+**Benefits**:
+- Faster retry (seconds vs minutes)
+- Reduced AWS API calls
+- Lower cost
+
+**Implementation Approach**:
+
+- Check if analysis.txt exists in S3 for the session
+- If exists and fresh: Skip analysis agent, invoke only report agent
+- If missing or stale: Run full workflow (both agents sequentially)
+
+### 2. Multiple Report Formats
+
+**Goal**: Generate multiple report formats from same analysis
+
+**Implementation**:
+- Analysis agent runs once, writes `analysis.txt`
+- Multiple report agents run in parallel:
+  - Text report agent (current)
+  - JSON report agent (for APIs)
+  - HTML report agent (for dashboards)
+
+**Benefits**:
+- Reuse expensive analysis work
+- Support multiple consumers
+- Parallel report generation
+
+### 3. Analysis Caching
+
+**Goal**: Cache analysis results for similar requests
+
+**Implementation**:
+- Hash request parameters (region, filters, time window)
+- Check S3 for cached `analysis.txt` with matching hash
+- If found and fresh, skip analysis
+- If not found or stale, run analysis and cache
+
+**Benefits**:
+- Instant response for repeated requests
+- Reduced AWS API calls
+- Lower cost
 
 ## References
 
 - Strands Multi-Agent Patterns: https://strandsagents.com/latest/documentation/docs/user-guide/concepts/multi-agent/multi-agent-patterns/
-- Strands Swarm Pattern: https://strandsagents.com/latest/documentation/docs/user-guide/concepts/multi-agent/swarm/
-- Strands A2A Protocol: https://strandsagents.com/latest/documentation/docs/user-guide/concepts/multi-agent/agent-to-agent/
+- Strands Agent Invocation: https://strandsagents.com/latest/documentation/docs/user-guide/concepts/agent/
 - Current Orchestration Decisions: docs/orchrestation_decisions_record.md
 - Current Journaling Guide: docs/event_journaling_guide.md
+
