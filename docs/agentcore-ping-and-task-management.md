@@ -37,7 +37,7 @@ Example from production logs:
 
 ### The Three Priority Levels
 
-When AgentCore Runtime (or your code) checks ping status, it follows this priority hierarchy (verified from source code):
+When AgentCore Runtime (or your code) checks ping status, it follows this priority hierarchy:
 
 ```python
 def get_current_ping_status(self) -> PingStatus:
@@ -83,7 +83,7 @@ app.force_ping_status(PingStatus.HEALTHY_BUSY)
 app.clear_forced_ping_status()
 ```
 
-**⚠️ Warning:** Never use in production - this overrides all other status logic.
+**Warning:** Shouldn't be used in production as it overrides all other status logic.
 
 ---
 
@@ -473,14 +473,14 @@ AgentCore Runtime sessions have built-in lifecycle limits:
 
 ### 1. Returning Invalid Status from Custom Handler
 
-**❌ WRONG:**
+**WRONG:**
 ```python
 @app.ping
 def bad_example():
     return "some_status"  # ValueError: 'some_status' is not a valid PingStatus
 ```
 
-**✅ CORRECT:**
+**CORRECT:**
 ```python
 @app.ping
 def good_example():
@@ -492,7 +492,7 @@ def good_example():
 
 ### 2. Forgetting to Complete Tasks
 
-**❌ WRONG:**
+**WRONG:**
 ```python
 task_id = app.add_async_task("work")
 # ... do work ...
@@ -500,7 +500,7 @@ task_id = app.add_async_task("work")
 # Status stays HealthyBusy until session timeout!
 ```
 
-**✅ CORRECT:**
+**CORRECT:**
 ```python
 task_id = app.add_async_task("work")
 try:
@@ -513,7 +513,7 @@ finally:
 
 ### 3. Calling get_current_ping_status() in Custom Handler
 
-**❌ WRONG - Causes recursion:**
+**WRONG - Causes recursion:****
 ```python
 @app.ping
 def bad_example():
@@ -521,7 +521,7 @@ def bad_example():
     return app.get_current_ping_status()
 ```
 
-**✅ CORRECT:**
+**CORRECT:**
 ```python
 @app.ping
 def good_example():
@@ -535,24 +535,24 @@ def good_example():
 ## Summary & Best Practices
 
 ### Ping Status
-1. ✅ AgentCore Runtime pings every 2 seconds via internal Python calls
-2. ✅ Use automatic mode (Level 3) unless you have external dependencies
-3. ✅ Custom handlers must return valid `PingStatus` enum values
-4. ✅ Keep custom handlers fast and stateless
-5. ✅ Avoid recursion in custom handlers
+1. AgentCore Runtime pings every 2 seconds via internal Python calls
+2. Use automatic mode (Level 3) unless you have external dependencies
+3. Custom handlers must return valid `PingStatus` enum values
+4. Keep custom handlers fast and stateless
+5. Avoid recursion in custom handlers
 
 ### Background Task Management
-1. ✅ Use `@app.async_task` decorator for simple tasks
-2. ✅ Use manual `add_async_task()` / `complete_async_task()` when you need observability
-3. ✅ Always use `finally` block to ensure task cleanup
-4. ✅ Record ping status to DynamoDB for stuck session detection
-5. ✅ Multiple calls to `complete_async_task()` with same ID are safe
+1. Use `@app.async_task` decorator for simple tasks
+2. Use manual `add_async_task()` / `complete_async_task()` when you need observability
+3. Always use `finally` block to ensure task cleanup
+4. Record ping status to DynamoDB for stuck session detection
+5. Multiple calls to `complete_async_task()` with same ID are safe
 
 ### Observability
-1. ✅ Record `pingStatus` at task start and completion for monitoring
-2. ✅ Use ping status to detect stuck sessions
-3. ✅ Log ping status changes for debugging
-4. ✅ Monitor AgentCore Runtime's 2-second ping heartbeat in CloudWatch
+1. Record `pingStatus` at task start and completion for monitoring
+2. Use ping status to detect stuck sessions
+3. Log ping status changes for debugging
+4. Monitor AgentCore Runtime's 2-second ping heartbeat in CloudWatch
 
 ---
 
@@ -562,7 +562,7 @@ def good_example():
 
 The following information was **not documented** in official AWS or AgentCore documentation and required investigation through code analysis and production testing:
 
-### 1. Ping Mechanism Not Clearly Explained ❌
+### 1. Ping Mechanism Not Clearly Explained
 
 **What's Missing:**
 - How AgentCore Runtime actually monitors agent health
@@ -585,7 +585,7 @@ The following information was **not documented** in official AWS or AgentCore do
 
 ---
 
-### 2. No External Access to Ping Endpoint ❌
+### 2. No External Access to Ping Endpoint
 
 **What's Missing:**
 - Clear statement that `/ping` endpoint is internal-only
@@ -601,7 +601,7 @@ The following information was **not documented** in official AWS or AgentCore do
 
 ---
 
-### 3. Decorator vs Manual Task Management Not Compared ⚠️
+### 3. Decorator vs Manual Task Management Not Compared
 
 **What's Missing:**
 - When to use `@app.async_task` decorator vs manual `add_async_task()`/`complete_async_task()`
@@ -616,7 +616,7 @@ The following information was **not documented** in official AWS or AgentCore do
 
 ---
 
-### 4. Safety of Multiple complete_async_task() Calls ❌
+### 4. Safety of Multiple complete_async_task() Calls
 
 **What's Missing:**
 - Whether calling `complete_async_task()` multiple times with same ID is safe
