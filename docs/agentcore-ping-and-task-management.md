@@ -20,11 +20,18 @@ AgentCore Runtime monitors every agent session through a ping mechanism that rep
 
 ### How AgentCore Runtime Monitors Agents
 
-**Key Finding from Testing:**
-- AgentCore Runtime pings agents **every 2 seconds** via internal `_handle_ping()` method
-- Pinging is **periodic and continuous** (background thread), but you can also call `get_current_ping_status()` anytime returning the current status
-- Ping frequency is **constant** regardless of Healthy or HealthyBusy status
-- The `/ping` HTTP endpoint exists (required by AgentCore Runtime), but the periodic health checks call `_handle_ping()` method directly via background thread
+**Verified from Source Code:**
+- `BedrockAgentCoreApp` exposes a `/ping` HTTP endpoint (GET method)
+- The endpoint calls `_handle_ping()` which returns current ping status
+- Response format: `{"status": "Healthy" | "HealthyBusy", "time_of_last_update": <timestamp>}`
+- You can call `get_current_ping_status()` anytime in your code to get the current status
+
+**Observed Behavior in Deployed Environment:**
+- AgentCore Runtime makes **HTTP GET requests** to the `/ping` endpoint periodically (~2 seconds)
+- Requests come from `127.0.0.1` (localhost) 
+- Ping frequency appears **constant** regardless of Healthy or HealthyBusy status
+- The HTTP requests trigger the internal `_handle_ping()` method
+
 
 ### The Three Priority Levels
 
@@ -430,11 +437,12 @@ def good_example():
 ## Summary & Best Practices
 
 ### Ping Status
-1. AgentCore Runtime pings every 2 seconds via internal Python calls
-2. Use automatic mode (Level 3) unless you have external dependencies
-3. Custom handlers must return valid `PingStatus` enum values
-4. Keep custom handlers fast and stateless
-5. Avoid recursion in custom handlers
+1. `/ping` endpoint is exposed by `BedrockAgentCoreApp` for health monitoring
+2. AgentCore Runtime makes periodic HTTP GET requests to this endpoint (observed: ~2 seconds)
+3. Use automatic mode (Level 3) unless you have external dependencies
+4. Custom handlers must return valid `PingStatus` enum values
+5. Keep custom handlers fast and stateless (called on every ping request)
+6. Avoid recursion in custom handlers
 
 ### Background Task Management
 1. Use `@app.async_task` decorator for simple tasks
@@ -459,7 +467,7 @@ def good_example():
 - [AWS AgentCore Service Quotas](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/bedrock-agentcore-limits.html)
 
 ### Investigation Sources
-- Source code: `bedrock_agentcore/runtime/app.py`
-- CloudWatch logs analysis
-- Code testing and experimentation
-- Call stack inspection
+- **Verified**: Source code from `bedrock_agentcore/runtime/app.py` (official AgentCore SDK)
+- **Verified**: Official API documentation at https://aws.github.io/bedrock-agentcore-starter-toolkit/
+- **Observed**: CloudWatch logs analysis with HTTP request logging middleware in deployed AgentCore
+- **Observed**: HTTP traffic patterns showing periodic GET requests to `/ping` endpoint
