@@ -22,18 +22,9 @@ AgentCore Runtime monitors every agent session through a ping mechanism that rep
 
 **Key Finding from Testing:**
 - AgentCore Runtime pings agents **every 2 seconds** via internal `_handle_ping()` method
-- Pinging is **periodic and continuous**, not on-demand
+- Pinging is **periodic and continuous** (background thread), but you can also call `get_current_ping_status()` anytime retruning the current status
 - Ping frequency is **constant** regardless of Healthy or HealthyBusy status
-- Pings are **internal Python calls**, not HTTP requests
-
-```
-Example from production logs:
-12:33:40.172 - HealthyBusy
-12:33:42.172 - HealthyBusy  (2.000s interval)
-12:33:44.173 - HealthyBusy  (2.001s interval)
-12:33:46.175 - HealthyBusy  (2.002s interval)
-...continues every 2 seconds...
-```
+- The `/ping` HTTP endpoint exists (required by AgentCore Runtime), but the periodic health checks call `_handle_ping()` method directly via background thread
 
 ### The Three Priority Levels
 
@@ -92,59 +83,19 @@ app.clear_forced_ping_status()
 **Purpose:** Define custom business logic for determining agent availability
 
 **When to use:**
-- Checking external dependencies (database, S3, message queues)
-- Implementing resource-based throttling (memory, CPU)
-- Custom availability logic beyond task tracking
+- You need custom logic beyond checking if tasks are active
 
-**When NOT to use:**
-- Your status is based purely on whether the agent is processing
-- You don't have external dependencies to check
-- Automatic mode (Level 3) is sufficient
-
-#### Example: External Dependency Checks
+#### Example from Documentation
 
 ```python
 @app.ping
-def custom_ping_status():
-    """Check external dependencies before accepting work"""
+def custom_status():
+    """Basic custom ping handler example"""
     from bedrock_agentcore.runtime.models import PingStatus
     
-    # Check if database is overloaded
-    if db_connection_pool.active_connections > 90:
+    if system_busy():
         return PingStatus.HEALTHY_BUSY
-    
-    # Check if message queue is backed up
-    if message_queue.depth() > 1000:
-        return PingStatus.HEALTHY_BUSY
-    
-    # Check if tasks are running (automatic mode logic)
-    if app._active_tasks:
-        return PingStatus.HEALTHY_BUSY
-    
     return PingStatus.HEALTHY
-```
-
-#### Example: Resource-Based Throttling
-
-```python
-@app.ping
-def check_resources():
-    """Prevent new work when resources are constrained"""
-    import psutil
-    from bedrock_agentcore.runtime.models import PingStatus
-    
-    # Check memory usage
-    memory_percent = psutil.virtual_memory().percent
-    if memory_percent > 85:
-        return PingStatus.HEALTHY_BUSY
-    
-    # Check CPU usage
-    cpu_percent = psutil.cpu_percent(interval=0.1)
-    if cpu_percent > 90:
-        return PingStatus.HEALTHY_BUSY
-    
-    # Fall back to automatic mode logic
-    return PingStatus.HEALTHY_BUSY if app._active_tasks else PingStatus.HEALTHY
 ```
 
 #### Custom Handler Requirements
@@ -156,7 +107,7 @@ def check_resources():
 
 ---
 
-### Level 3: Automatic Mode (Default & Recommended)
+### Level 3: Automatic Mode (Default)
 
 **Purpose:** Automatic status based on active background tasks
 
@@ -177,19 +128,10 @@ def check_resources():
 ### Reading Ping Status in Your Code
 
 ```python
-# Get current status as PingStatus enum
-current_status = app.get_current_ping_status()
-print(current_status)  # PingStatus.HEALTHY or PingStatus.HEALTHY_BUSY
-
 # Get current status as string
 current_status_str = app.get_current_ping_status().value
 print(current_status_str)  # "Healthy" or "HealthyBusy"
 ```
-
-**Note:** Calling `get_current_ping_status()` in your code:
-- Does NOT trigger the `/ping` HTTP endpoint
-- Does NOT count as an AgentCore Runtime health check
-- Simply executes the priority hierarchy logic (Forced → Custom → Automatic)
 
 ---
 
@@ -553,82 +495,6 @@ def good_example():
 2. Use ping status to detect stuck sessions
 3. Log ping status changes for debugging
 4. Monitor AgentCore Runtime's 2-second ping heartbeat in CloudWatch
-
----
-
----
-
-## Documentation Gaps
-
-The following information was **not documented** in official AWS or AgentCore documentation and required investigation through code analysis and production testing:
-
-### 1. Ping Mechanism Not Clearly Explained
-
-**What's Missing:**
-- How AgentCore Runtime actually monitors agent health
-- Frequency of health checks
-- Whether checks are automatic or on-demand
-- Implementation details (HTTP vs internal calls)
-
-**What We Discovered:**
-- AgentCore Runtime pings **every 2 seconds automatically** via internal `_handle_ping()` method
-- Pings are **internal Python calls**, not HTTP requests
-- Ping frequency is **constant** regardless of Healthy or HealthyBusy status
-- **Cannot be called from external services** (e.g., Lambda functions cannot call `/ping` endpoint directly)
-
-**Evidence:** Production CloudWatch logs showing consistent 2-second intervals with call stack `_handle_ping -> run -> _bootstrap_inner`
-
-**Impact:** Developers cannot:
-- Monitor agent health from external services
-- Understand monitoring overhead
-- Debug session behavior without this knowledge
-
----
-
-### 2. No External Access to Ping Endpoint
-
-**What's Missing:**
-- Clear statement that `/ping` endpoint is internal-only
-- No boto3 method to check agent health from external code
-- Alternative approaches for external monitoring
-
-**What We Discovered:**
-- The `/ping` endpoint exists but is **not accessible from external services**
-- No AWS SDK method to query agent health status
-- Must use alternative approaches (e.g., DynamoDB journal events) for external monitoring
-
-**Impact:** Developers expecting to check agent status from Lambda/Step Functions must implement workarounds
-
----
-
-### 3. Decorator vs Manual Task Management Not Compared
-
-**What's Missing:**
-- When to use `@app.async_task` decorator vs manual `add_async_task()`/`complete_async_task()`
-- Trade-offs between approaches
-- Use case guidance
-
-**What's Documented:**
-- Both approaches exist and their basic usage
-- API signatures and parameters
-
-**Impact:** Developers may choose wrong approach for their use case
-
----
-
-### 4. Safety of Multiple complete_async_task() Calls
-
-**What's Missing:**
-- Whether calling `complete_async_task()` multiple times with same ID is safe
-- Recommended pattern for ensuring cleanup (try + finally)
-
-**What We Discovered:**
-- Multiple calls with same ID are **safe** - logs warning but doesn't error
-- Enables safety net pattern: explicit cleanup in try/except + finally block
-
-**Evidence:** Logs showing "Attempted to complete unknown task ID" warnings without failures
-
-**Impact:** Developers may avoid safety net pattern thinking it will cause errors
 
 ---
 
