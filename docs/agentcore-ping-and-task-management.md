@@ -22,7 +22,7 @@ AgentCore Runtime monitors every agent session through a ping mechanism that rep
 
 **Key Finding from Testing:**
 - AgentCore Runtime pings agents **every 2 seconds** via internal `_handle_ping()` method
-- Pinging is **periodic and continuous** (background thread), but you can also call `get_current_ping_status()` anytime retruning the current status
+- Pinging is **periodic and continuous** (background thread), but you can also call `get_current_ping_status()` anytime returning the current status
 - Ping frequency is **constant** regardless of Healthy or HealthyBusy status
 - The `/ping` HTTP endpoint exists (required by AgentCore Runtime), but the periodic health checks call `_handle_ping()` method directly via background thread
 
@@ -203,7 +203,7 @@ async def background_task(user_message: str, session_id: str):
 
 **Pros:**
 - Full control over task lifecycle
-- Can record ping status at specific points (limited use, due to ping endpoint be only avalible to AgentCore or localhost)
+- Can record ping status at specific points (limited use, due to ping endpoint be only available to AgentCore or localhost)
 - Can handle complex error scenarios differently
 - Can add custom metadata to tasks
 - Works with both sync and async functions
@@ -305,9 +305,9 @@ finally:
 
 ---
 
-## Part 3: Practical Use Cases
+## Part 3: Practical Use Case
 
-### Use Case 1: Stuck Session Detection (This Project)
+### Use Case 1: Stuck Session Detection
 
 **Problem:** Sessions can get stuck in `HealthyBusy` if task cleanup fails
 
@@ -338,53 +338,6 @@ if ping_status == "HealthyBusy":
         agentRuntimeId=agent_runtime_arn,
         runtimeSessionId=session_id
     )
-```
-
----
-
-### Use Case 2: Load Balancing
-
-Distribute work based on agent availability:
-
-```python
-# Query agents and check their status
-available_agents = [
-    agent for agent in agents 
-    if get_agent_ping_status(agent) == "Healthy"
-]
-
-# Route work to available agent
-if available_agents:
-    route_work_to(available_agents[0])
-else:
-    # All agents busy - queue work or create new session
-    queue_work()
-```
-
----
-
-### Use Case 3: External Dependency Throttling
-
-Prevent new work when external systems are overloaded:
-
-```python
-@app.ping
-def check_dependencies():
-    """Custom ping handler for dependency checks"""
-    from bedrock_agentcore.runtime.models import PingStatus
-    
-    # Check DynamoDB throttling
-    if dynamodb_throttle_count > 10:
-        return PingStatus.HEALTHY_BUSY
-    
-    # Check S3 availability
-    try:
-        s3_client.head_bucket(Bucket=bucket_name)
-    except ClientError:
-        return PingStatus.HEALTHY_BUSY
-    
-    # Fall back to automatic mode
-    return PingStatus.HEALTHY_BUSY if app._active_tasks else PingStatus.HEALTHY
 ```
 
 ---
@@ -455,7 +408,7 @@ finally:
 
 ### 3. Calling get_current_ping_status() in Custom Handler
 
-**WRONG - Causes recursion:****
+**WRONG - Causes recursion:**
 ```python
 @app.ping
 def bad_example():
