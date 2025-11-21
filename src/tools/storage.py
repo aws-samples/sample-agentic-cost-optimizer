@@ -54,8 +54,6 @@ def _read_from_s3(filename: str, tool_context: ToolContext) -> Dict[str, Any]:
         logger.error(f"--> Storage configuration error - {error_msg}")
         return {"success": False, "error": error_msg, "timestamp": timestamp}
 
-    logger.info(f"--> Storage read invoked - Session: {session_id}, File: {filename}")
-
     key = f"{session_id}/{filename}"
     logger.debug(f"--> Reading from S3 key: {key}")
 
@@ -66,7 +64,7 @@ def _read_from_s3(filename: str, tool_context: ToolContext) -> Dict[str, Any]:
         size_bytes = len(content.encode("utf-8"))
         s3_uri = f"s3://{bucket_name}/{key}"
 
-        logger.info(f"--> Successfully read {size_bytes} bytes from {s3_uri}")
+        logger.debug(f"--> Successfully read {size_bytes} bytes from {s3_uri}")
 
         return {
             "success": True,
