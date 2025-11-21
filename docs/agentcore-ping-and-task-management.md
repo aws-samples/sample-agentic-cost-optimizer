@@ -1,10 +1,10 @@
-# AgentCore Task and Ping Management
+# AgentCore Runtine Background Task and Ping Management
 
 ## Overview
 
 This guide covers two interconnected AgentCore features:
-1. **Background Task Management** - How to properly manage async tasks and their impact on ping status
-2. **Ping Status** - How AgentCore Runtime monitors agent health
+1. **Background Task Management** - How to properly manage async tasks and their lifecycle
+2. **Ping Status** - How AgentCore Runtime monitors agent health and how tasks affect status
 
 
 Understanding both is critical for building reliable agents that properly signal their availability to AgentCore Runtime.
@@ -147,23 +147,23 @@ async def background_task(user_message: str, session_id: str):
 
 ### What is Ping Status?
 
-AgentCore Runtime monitors every agent session through a ping mechanism that reports the agent's current state:
+Agent code communicates its processing status using the `/ping` health endpoint:
 - **`Healthy`** - Agent is idle and ready to accept new work
-- **`HealthyBusy`** - Agent is processing and may not accept new work
+- **`HealthyBusy`** - Agent is currently processing background tasks
 
-### How AgentCore Runtime Monitors Agents
+### How Ping Status Works
 
-**Verified from Source Code:**
+**Agent Side:**
 - `BedrockAgentCoreApp` exposes a `/ping` HTTP endpoint (GET method)
 - The endpoint calls `_handle_ping()` which returns current ping status
 - Response format: `{"status": "Healthy" | "HealthyBusy", "time_of_last_update": <timestamp>}`
 - You can call `get_current_ping_status()` anytime in your code to get the current status
 
-**Observed Behavior in Deployed Environment:**
-- AgentCore Runtime makes **HTTP GET requests** to the `/ping` endpoint periodically (~2 seconds)
+**AgentCore Runtime Side:**
+- AgentCore Runtime polls the `/ping` endpoint periodically (~2 seconds observed)
 - Requests come from `127.0.0.1` (localhost) 
-- Ping frequency appears **constant** regardless of Healthy or HealthyBusy status
-- The HTTP requests trigger the internal `_handle_ping()` method
+- Polling frequency appears **constant** regardless of Healthy or HealthyBusy status
+- Runtime uses this status to determine if the agent can accept new work
 
 
 ### The Three Priority Levels
