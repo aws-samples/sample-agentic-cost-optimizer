@@ -4,7 +4,7 @@
 
 This guide covers two interconnected AgentCore features:
 1. **Background Task Management** - How to properly manage async tasks and their lifecycle
-2. **Ping Status** - How AgentCore Runtime monitors agent health and how tasks affect status
+2. **Ping Status** - How agents communicate their health status and how tasks affect it
 
 
 Understanding both is critical for building reliable agents that properly signal their availability to AgentCore Runtime.
