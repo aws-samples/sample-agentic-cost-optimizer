@@ -1,16 +1,149 @@
-# AgentCore Ping Status & Background Task Management
+# AgentCore Task and Ping Management
 
 ## Overview
 
 This guide covers two interconnected AgentCore features:
-1. **Ping Status** - How AgentCore Runtime monitors agent health
-2. **Background Task Management** - How to properly manage async tasks and their impact on ping status
+1. **Background Task Management** - How to properly manage async tasks and their impact on ping status
+2. **Ping Status** - How AgentCore Runtime monitors agent health
+
 
 Understanding both is critical for building reliable agents that properly signal their availability to AgentCore Runtime.
 
 ---
 
-## Part 1: Ping Status
+## Part 1: Background Task Management
+
+### Why Task Management Matters
+
+AgentCore Runtime uses ping status to determine if an agent can accept new work. Proper task management ensures:
+- Accurate status reporting (Healthy vs HealthyBusy)
+- Cost optimization (no stuck sessions)
+- Reliable session lifecycle
+
+### The Two Approaches
+
+#### Approach 1: Automatic with @app.async_task Decorator
+
+**Best for:** The simplest way to track asynchronous functions. The SDK automatically manages the ping status.
+
+**Pros:**
+- Automatic task registration and cleanup
+- Handles task lifecycle automatically
+- Handles exceptions automatically
+
+**Cons:**
+- Can't record ping status at specific points for observability
+- Decorator must wrap entire async function
+- Only works with async functions (raises ValueError for sync functions)
+
+**Example:**
+```python
+@app.async_task
+async def background_task(user_message: str, session_id: str):
+    """Decorator automatically manages status"""
+    logger.info(f"Task started - Session: {session_id}")
+    # Status automatically becomes HealthyBusy here
+    
+    try:
+        response = await agent.invoke_async(user_message, session_id=session_id)
+        logger.info(f"Task completed - Session: {session_id}")
+        return response
+        # Status automatically returns to Healthy here
+        
+    except Exception as e:
+        logger.error(f"Task failed - Session: {session_id}: {str(e)}")
+        return {"error": str(e), "status": "failed"}
+        # Status automatically returns to Healthy even on error
+```
+
+**How it works:**
+- When the function runs, ping status changes to "HealthyBusy" 
+- When the function completes, status returns to "Healthy"
+- Decorator calls `add_async_task(func.__name__)` before function executes
+- Decorator calls `complete_async_task(task_id)` in finally block after function completes
+- Task completion happens regardless of success or failure
+- You don't manage task IDs manually
+- Logs task duration automatically
+
+**Reference:** [AgentCore Runtime API - async_task](https://aws.github.io/bedrock-agentcore-starter-toolkit/api-reference/runtime.md#async_taskfunc)
+
+---
+
+#### Approach 2: Manual with add_async_task() and complete_async_task()
+
+**Best for:** More control over task tracking, using the API methods directly
+
+**Pros:**
+- Full control over task lifecycle
+- Can record ping status at specific points (limited use, due to ping endpoint be only available to AgentCore or localhost)
+- Can handle complex error scenarios differently
+- Can add custom metadata to tasks
+- Works with both sync and async functions
+
+**Cons:**
+- Must remember to call `complete_async_task()` in all paths
+
+**Reference:** [AgentCore Runtime API - add_async_task](https://aws.github.io/bedrock-agentcore-starter-toolkit/api-reference/runtime.md#add_async_taskname-metadatanone)
+
+**Example:**
+```python
+async def background_task(user_message: str, session_id: str):
+    """Manual task management for fine-grained control"""
+    
+    # 1. Manually register task
+    task_id = app.add_async_task(f"agent_processing_{session_id}")
+    current_ping = app.get_current_ping_status().value
+    logger.info(f"Ping status after task start: {current_ping}")  # "HealthyBusy"
+    
+    try:
+        # 2. Do your work
+        response = await agent.invoke_async(user_message, session_id=session_id)
+        
+        # 3. Record completion event (task still active)
+        record_event(
+            session_id=session_id,
+            status="COMPLETED",
+            ping_status=current_ping,  # Still "HealthyBusy"
+        )
+        return response
+        
+    except Exception as e:
+        logger.error(f"Task failed: {str(e)}")
+        
+        record_event(
+            session_id=session_id,
+            status="FAILED",
+            ping_status=current_ping,  # Still "HealthyBusy"
+        )
+        return {"error": str(e), "status": "failed"}
+        
+    finally:
+        # 4. Always cleanup - status returns to Healthy
+        app.complete_async_task(task_id)
+```
+
+**Key Points:**
+1. Register task with `add_async_task()` - status becomes HealthyBusy
+2. Do your work
+3. Record events while task is still active (optional for observability)
+4. Use `finally` block to complete task lifecycle - ensures cleanup regardless of success or failure
+
+**Important:** If you forget to call `complete_async_task()`, the session stays in `HealthyBusy` state until default timeout (15 minutes idle or 8 hours maximum).
+
+---
+
+### Comparison: Decorator vs Manual
+
+| Approach | How it works |
+|----------|--------------|
+| **@app.async_task** | Automatically manages task lifecycle - registers task before function executes, completes task after function finishes (success or failure) |
+| **Manual add/complete** | Provides granular control over task lifecycle - you decide exactly when to register and complete tasks |
+
+**Recommendation:**
+- Use `@app.async_task` when automatic management is sufficient
+- Use manual approach when you need fine-grained control over task lifecycle
+
+## Part 2: Ping Status
 
 ### What is Ping Status?
 
@@ -142,210 +275,7 @@ print(current_status_str)  # "Healthy" or "HealthyBusy"
 
 ---
 
-## Part 2: Background Task Management
 
-### Why Task Management Matters
-
-AgentCore Runtime uses ping status to determine if an agent can accept new work. Proper task management ensures:
-- Accurate status reporting (Healthy vs HealthyBusy)
-- Cost optimization (no stuck sessions)
-- Reliable session lifecycle
-
-### The Two Approaches
-
-#### Approach 1: Automatic with @app.async_task Decorator (Recommended for Simple Tasks)
-
-**Best for:** Simple background tasks where decorator can wrap the entire function
-
-**Pros:**
-- Automatic task registration and cleanup
-- Less boilerplate code
-- Harder to forget cleanup
-- Handles exceptions automatically
-
-**Cons:**
-- Less control over when task starts/stops
-- Can't record ping status at specific points for observability
-- Decorator must wrap entire async function
-- Only works with async functions (raises ValueError for sync functions)
-
-**Example:**
-```python
-@app.async_task
-async def background_task(user_message: str, session_id: str):
-    """Decorator automatically manages status"""
-    logger.info(f"Task started - Session: {session_id}")
-    # Status automatically becomes HealthyBusy here
-    
-    try:
-        response = await agent.invoke_async(user_message, session_id=session_id)
-        logger.info(f"Task completed - Session: {session_id}")
-        return response
-        # Status automatically returns to Healthy here
-        
-    except Exception as e:
-        logger.error(f"Task failed - Session: {session_id}: {str(e)}")
-        return {"error": str(e), "status": "failed"}
-        # Status automatically returns to Healthy even on error
-```
-
-**How it works (verified from source code):**
-- Decorator calls `add_async_task(func.__name__)` before function executes
-- Decorator calls `complete_async_task(task_id)` in finally block after function completes
-- Task completion happens regardless of success or failure
-- You don't manage task IDs manually
-- Logs task duration automatically
-
-**Reference:** [AgentCore Runtime API - async_task](https://aws.github.io/bedrock-agentcore-starter-toolkit/api-reference/runtime.md#async_taskfunc)
-
----
-
-#### Approach 2: Manual with add_async_task() and complete_async_task()
-
-**Best for:** 
-- Need to record ping status at specific lifecycle points (for observability/monitoring)
-- Complex error handling with different cleanup paths
-- Need fine-grained control over task lifecycle
-- Want to include custom metadata with tasks
-
-**Pros:**
-- Full control over task lifecycle
-- Can record ping status at specific points (limited use, due to ping endpoint be only available to AgentCore or localhost)
-- Can handle complex error scenarios differently
-- Can add custom metadata to tasks
-- Works with both sync and async functions
-
-**Cons:**
-- More boilerplate code
-- Must remember to call `complete_async_task()` in all paths
-
-**Reference:** [AgentCore Runtime API - add_async_task](https://aws.github.io/bedrock-agentcore-starter-toolkit/api-reference/runtime.md#add_async_taskname-metadatanone)
-
-**Example:**
-```python
-async def background_task(user_message: str, session_id: str):
-    """Manual task management for fine-grained control"""
-    
-    # 1. Manually register task
-    task_id = app.add_async_task(f"agent_processing_{session_id}")
-    current_ping = app.get_current_ping_status().value
-    logger.info(f"Ping status after task start: {current_ping}")  # "HealthyBusy"
-    
-    try:
-        # 2. Do your work
-        response = await agent.invoke_async(user_message, session_id=session_id)
-        
-        # 3. Complete task BEFORE recording completion
-        app.complete_async_task(task_id)
-        current_ping = app.get_current_ping_status().value
-        logger.info(f"Ping status after completion: {current_ping}")  # "Healthy"
-        
-        # 4. Record completion with accurate ping status
-        record_event(
-            session_id=session_id,
-            status="COMPLETED",
-            ping_status=current_ping,  # Now shows "Healthy"
-        )
-        return response
-        
-    except Exception as e:
-        logger.error(f"Task failed: {str(e)}")
-        app.complete_async_task(task_id)
-        current_ping = app.get_current_ping_status().value
-        
-        record_event(
-            session_id=session_id,
-            status="FAILED",
-            ping_status=current_ping,
-        )
-        return {"error": str(e), "status": "failed"}
-        
-    finally:
-        # 5. Safety net: Always ensure task is completed
-        app.complete_async_task(task_id)
-```
-
-**Key Points:**
-1. Register task with `add_async_task()` - status becomes HealthyBusy
-2. Do your work
-3. Complete task with `complete_async_task()` - status returns to Healthy
-4. Record ping status for observability if needed
-5. Use finally block as safety net (multiple calls are safe)
-
----
-
-### Critical: Always Complete Tasks
-
-**Problem:** If you forget to call `complete_async_task()`, the session stays in `HealthyBusy` state until timeout:
-- **Idle timeout:** 15 minutes
-- **Maximum session duration:** 8 hours
-
-**Solution:** Use `finally` block as safety net:
-
-```python
-task_id = app.add_async_task("my_task")
-try:
-    # ... do work ...
-    app.complete_async_task(task_id)  # Explicit cleanup
-except Exception as e:
-    app.complete_async_task(task_id)  # Cleanup on error
-    raise
-finally:
-    # Safety net: Ensures cleanup even if we forgot above
-    app.complete_async_task(task_id)
-```
-
-**Note:** Calling `complete_async_task()` multiple times with the same ID is safe - it logs a warning but doesn't cause errors.
-
----
-
-### Comparison: Decorator vs Manual
-
-| Approach | How it works |
-|----------|--------------|
-| **@app.async_task** | Automatically manages task lifecycle - registers task before function executes, completes task after function finishes (success or failure) |
-| **Manual add/complete** | Provides granular control over task lifecycle - you decide exactly when to register and complete tasks |
-
-**Recommendation:**
-- Use `@app.async_task` when automatic management is sufficient
-- Use manual approach when you need fine-grained control over task lifecycle
-
----
-
-## Part 3: Practical Use Case
-
-### Use Case 1: Stuck Session Detection
-
-**Problem:** Sessions can get stuck in `HealthyBusy` if task cleanup fails
-
-**Solution:**
-1. Agent records `pingStatus` to DynamoDB when task completes/fails
-2. Step Functions workflow reads `pingStatus` from completion event
-3. Cleanup Lambda checks: if `pingStatus == "HealthyBusy"`, calls `stop_runtime_session()`
-
-**Benefits:**
-- Automatic cost optimization
-- No manual intervention
-- Full observability
-
-**Implementation:**
-```python
-# Agent records ping status
-record_event(
-    session_id=session_id,
-    status=EventStatus.AGENT_BACKGROUND_TASK_COMPLETED,
-    ping_status=app.get_current_ping_status().value,  # "Healthy" or "HealthyBusy"
-)
-
-# Step Functions reads from DynamoDB and passes to cleanup Lambda
-# Cleanup Lambda checks:
-if ping_status == "HealthyBusy":
-    # Session is stuck - force stop
-    bedrock_agentcore.stop_runtime_session(
-        agentRuntimeId=agent_runtime_arn,
-        runtimeSessionId=session_id
-    )
-```
 
 ---
 
@@ -434,7 +364,7 @@ def good_example():
 
 ---
 
-## Summary & Best Practices
+## Summary
 
 ### Ping Status
 1. `/ping` endpoint is exposed by `BedrockAgentCoreApp` for health monitoring
@@ -445,10 +375,9 @@ def good_example():
 6. Avoid recursion in custom handlers
 
 ### Background Task Management
-1. Use `@app.async_task` decorator for simple tasks
+1. Use `@app.async_task` decorator for autmomatic task lifecycle
 2. Use manual `add_async_task()` / `complete_async_task()` when you need observability
-3. Always use `finally` block to ensure task cleanup
-4. Record ping status to DynamoDB for stuck session detection
+3. Use `finally` block to ensure task cleanup
 5. Multiple calls to `complete_async_task()` with same ID are safe
 
 ### Observability
