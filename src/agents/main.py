@@ -105,7 +105,7 @@ REPORT_PROMPT, ANALYSIS_PROMPT = "", ""
 # Read prompts
 ANALYSIS_PROMPT = open(os.path.join(os.path.dirname(__file__), "analysis_prompt.md")).read()
 REPORT_PROMPT = open(os.path.join(os.path.dirname(__file__), "report_prompt.md")).read()
-REPORT_PROMPT = REPORT_PROMPT.replace("{s3_bucket_name}", s3_bucket_name)
+
 ANALYSIS_PROMPT = ANALYSIS_PROMPT.replace("{current_timestamp}", str(current_timestamp))
 ANALYSIS_PROMPT = ANALYSIS_PROMPT.replace("{current_datetime}", current_datetime)
 
