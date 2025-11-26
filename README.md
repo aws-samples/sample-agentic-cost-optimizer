@@ -1,6 +1,6 @@
 # Sample Agentic Cost Optimizer
 
-> *[!NOTE]
+> [!NOTE]
 > This is a sample project and work in progress. Use it as a reference for building AI agents with Amazon Bedrock Agent Core.
 
 An AI agent that analyzes your AWS Lambda functions and generates cost optimization reports. It discovers AWS Lambda resources, collects metrics, identifies savings opportunities, and produces detailed recommendations.
