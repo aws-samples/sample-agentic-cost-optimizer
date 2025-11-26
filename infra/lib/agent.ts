@@ -39,7 +39,7 @@ export class Agent extends Construct {
         objectKey: deploymentPackage.s3ObjectKey,
       },
       AgentCoreRuntime.PYTHON_3_12,
-      ['src/run_with_otel.py'],
+      ['opentelemetry-instrument', 'src/agents/main.py'],
     );
 
     this.runtime = new Runtime(this, 'Runtime', {
