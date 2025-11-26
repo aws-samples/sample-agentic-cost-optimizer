@@ -1,20 +1,17 @@
-import { AgentRuntimeArtifact, Runtime } from '@aws-cdk/aws-bedrock-agentcore-alpha';
+import { AgentCoreRuntime, AgentRuntimeArtifact, Runtime } from '@aws-cdk/aws-bedrock-agentcore-alpha';
 import { Stack } from 'aws-cdk-lib';
 import { NagSuppressions } from 'cdk-nag';
 import { Construct } from 'constructs';
 
-import { Platform } from 'aws-cdk-lib/aws-ecr-assets';
 import { Effect, Policy, PolicyDocument, PolicyStatement } from 'aws-cdk-lib/aws-iam';
+import { Asset } from 'aws-cdk-lib/aws-s3-assets';
 
 import { InfraConfig } from '../constants/infra-config';
 
 export interface AgentProps {
   agentRuntimeName: string;
   description?: string;
-  dockerfilePath?: string;
   environmentVariables?: { [key: string]: string };
-  buildArgs?: { [key: string]: string };
-  platform?: Platform;
 }
 
 export class Agent extends Construct {
@@ -24,26 +21,26 @@ export class Agent extends Construct {
   constructor(scope: Construct, id: string, props: AgentProps) {
     super(scope, id);
 
-    const {
-      agentRuntimeName,
-      description,
-      dockerfilePath = 'Dockerfile',
-      environmentVariables = {},
-      buildArgs = {},
-      platform = Platform.LINUX_ARM64,
-    } = props;
+    const { agentRuntimeName, description, environmentVariables = {} } = props;
 
     const environment = this.node.tryGetContext('env') || 'dev';
     const stack = Stack.of(this);
 
-    const agentRuntimeArtifact = AgentRuntimeArtifact.fromAsset('../', {
-      file: dockerfilePath,
-      buildArgs: {
-        ENVIRONMENT: environment,
-        ...buildArgs,
-      },
-      platform,
+    // Reference pre-built AgentCore Runtime package (built by build-deployment-package script)
+    const deploymentPackage = new Asset(this, 'AgentCoreRuntimePackage', {
+      path: './dist/agentcore_runtime.zip',
     });
+
+    // Use agent-as-code deployment from S3 with OTEL instrumentation
+    // Replicates starter toolkit pattern: ["opentelemetry-instrument", "agents/main.py"]
+    const agentRuntimeArtifact = AgentRuntimeArtifact.fromS3(
+      {
+        bucketName: deploymentPackage.s3BucketName,
+        objectKey: deploymentPackage.s3ObjectKey,
+      },
+      AgentCoreRuntime.PYTHON_3_12,
+      ['src/run_with_otel.py'],
+    );
 
     this.runtime = new Runtime(this, 'Runtime', {
       runtimeName: agentRuntimeName,
@@ -54,6 +51,8 @@ export class Agent extends Construct {
         ...environmentVariables,
       },
     });
+
+    deploymentPackage.grantRead(this.runtime.role);
 
     const modelId = InfraConfig.inferenceProfileRegion
       ? `${InfraConfig.inferenceProfileRegion}.${InfraConfig.modelId}`
