@@ -22,7 +22,7 @@ describe('Agent IAM Policies', () => {
       const policy = policies[policyKey];
       const statements = policy.Properties.PolicyDocument.Statement;
 
-      const metricsStatement = statements.find((stmt: any) => stmt.Sid === 'CloudWatchMetrics');
+      const metricsStatement = statements.find((stmt: any) => stmt.Sid === 'CloudWatchMetricsAccess');
 
       expect(metricsStatement).toBeDefined();
       expect(metricsStatement.Effect).toBe('Allow');
@@ -33,7 +33,7 @@ describe('Agent IAM Policies', () => {
   });
 
   describe('CloudWatch Logs Monitoring Policy', () => {
-    it('should scope CloudWatch Logs access to Lambda log groups only', () => {
+    it('should scope log access actions to Lambda log groups', () => {
       const policies = template.findResources('AWS::IAM::Policy', {
         Properties: {
           PolicyName: 'MonitoringPolicy',
@@ -44,17 +44,20 @@ describe('Agent IAM Policies', () => {
       const policy = policies[policyKey];
       const statements = policy.Properties.PolicyDocument.Statement;
 
-      const logsStatement = statements.find((stmt: any) => stmt.Sid === 'CloudWatchLogsMonitoring');
+      const logsAccessStatement = statements.find((stmt: any) => stmt.Sid === 'CloudWatchLogsAccess');
 
-      expect(logsStatement).toBeDefined();
-      expect(logsStatement.Effect).toBe('Allow');
+      expect(logsAccessStatement).toBeDefined();
+      expect(logsAccessStatement.Effect).toBe('Allow');
+      expect(logsAccessStatement.Action).toContain('logs:StartQuery');
+      expect(logsAccessStatement.Action).toContain('logs:GetLogEvents');
+      expect(logsAccessStatement.Action).toContain('logs:FilterLogEvents');
 
-      const resource = logsStatement.Resource;
+      const resource = logsAccessStatement.Resource;
       const resourceString = JSON.stringify(resource);
       expect(resourceString).toContain('logs:*:*:log-group:/aws/lambda/*');
     });
 
-    it('should not use wildcard for all CloudWatch Logs resources', () => {
+    it('should allow StopQuery and GetQueryResults with wildcard resources', () => {
       const policies = template.findResources('AWS::IAM::Policy', {
         Properties: {
           PolicyName: 'MonitoringPolicy',
@@ -65,12 +68,16 @@ describe('Agent IAM Policies', () => {
       const policy = policies[policyKey];
       const statements = policy.Properties.PolicyDocument.Statement;
 
-      const logsStatement = statements.find((stmt: any) => stmt.Sid === 'CloudWatchLogsMonitoring');
+      const queryResultsStatement = statements.find((stmt: any) => stmt.Sid === 'CloudWatchLogsQueryAccess');
 
-      expect(logsStatement.Resource).not.toContain('*');
+      expect(queryResultsStatement).toBeDefined();
+      expect(queryResultsStatement.Effect).toBe('Allow');
+      expect(queryResultsStatement.Action).toContain('logs:StopQuery');
+      expect(queryResultsStatement.Action).toContain('logs:GetQueryResults');
+      expect(queryResultsStatement.Resource).toEqual('*');
     });
 
-    it('should include required CloudWatch Logs actions', () => {
+    it('should not include CloudWatch Metrics actions in Logs statements', () => {
       const policies = template.findResources('AWS::IAM::Policy', {
         Properties: {
           PolicyName: 'MonitoringPolicy',
@@ -81,30 +88,15 @@ describe('Agent IAM Policies', () => {
       const policy = policies[policyKey];
       const statements = policy.Properties.PolicyDocument.Statement;
 
-      const logsStatement = statements.find((stmt: any) => stmt.Sid === 'CloudWatchLogsMonitoring');
+      const logsStatements = statements.filter(
+        (stmt: any) => stmt.Sid === 'CloudWatchLogsAccess' || stmt.Sid === 'CloudWatchLogsQueryAccess',
+      );
 
-      const requiredActions = ['logs:StartQuery', 'logs:GetLogEvents', 'logs:FilterLogEvents', 'logs:GetQueryResults'];
-
-      requiredActions.forEach((action) => {
-        expect(logsStatement.Action).toContain(action);
+      logsStatements.forEach((stmt: any) => {
+        const actions = Array.isArray(stmt.Action) ? stmt.Action : [stmt.Action];
+        expect(actions).not.toContain('cloudwatch:GetMetricStatistics');
+        expect(actions).not.toContain('cloudwatch:ListMetrics');
       });
-    });
-
-    it('should not include CloudWatch Metrics actions in Logs statement', () => {
-      const policies = template.findResources('AWS::IAM::Policy', {
-        Properties: {
-          PolicyName: 'MonitoringPolicy',
-        },
-      });
-
-      const policyKey = Object.keys(policies)[0];
-      const policy = policies[policyKey];
-      const statements = policy.Properties.PolicyDocument.Statement;
-
-      const logsStatement = statements.find((stmt: any) => stmt.Sid === 'CloudWatchLogsMonitoring');
-
-      expect(logsStatement.Action).not.toContain('cloudwatch:GetMetricStatistics');
-      expect(logsStatement.Action).not.toContain('cloudwatch:ListMetrics');
     });
   });
 
