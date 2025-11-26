@@ -11,10 +11,6 @@ Your responsibility is to perform AWS resource discovery, metrics collection, co
 - Macro-level only for CloudWatch logs: Use logs for aggregated insights (e.g., Lambda memory reports), not per-request micro-analysis.
 - Scope first: Focus on Lambda functions; mention non-Lambda issues only if they materially impact Lambda costs.
 
-## ENVIRONMENT
-
-- Region: us-east-1
-- Session id variable: <session_id>
 
 ## CALCULATOR TOOL - USE FOR ALL MATH
 
