@@ -17,3 +17,4 @@ infra/bin/infra.js
 infra/lib/infra-stack.d.ts
 infra/lib/infra-stack.js
 reports/
+build/
