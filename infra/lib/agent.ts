@@ -95,11 +95,15 @@ export class Agent extends Construct {
             resources: ['*'],
           }),
           new PolicyStatement({
+            sid: 'CloudWatchMetrics',
+            effect: Effect.ALLOW,
+            actions: ['cloudwatch:GetMetricStatistics', 'cloudwatch:ListMetrics'],
+            resources: ['*'],
+          }),
+          new PolicyStatement({
             sid: 'CloudWatchLogsMonitoring',
             effect: Effect.ALLOW,
             actions: [
-              'cloudwatch:GetMetricStatistics',
-              'cloudwatch:ListMetrics',
               'logs:StartQuery',
               'logs:StopQuery',
               'logs:GetQueryResults',
