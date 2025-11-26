@@ -107,7 +107,9 @@ export class Agent extends Construct {
               'logs:GetLogRecord',
               'logs:FilterLogEvents',
             ],
-            resources: ['*'],
+            // Scoped to Lambda log groups. To control which CloudWatch Logs the agent can access,
+            // modify the resource pattern below (e.g., restrict to specific function names or log group patterns)
+            resources: [`arn:${stack.partition}:logs:*:*:log-group:/aws/lambda/*`],
           }),
           new PolicyStatement({
             sid: 'PricingAccess',
