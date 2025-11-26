@@ -32,7 +32,6 @@ export class Agent extends Construct {
     });
 
     // Use agent-as-code deployment from S3 with OTEL instrumentation
-    // Replicates starter toolkit pattern: ["opentelemetry-instrument", "agents/main.py"]
     const agentRuntimeArtifact = AgentRuntimeArtifact.fromS3(
       {
         bucketName: deploymentPackage.s3BucketName,
