@@ -20,7 +20,7 @@ export class InfraStack extends Stack {
     super(scope, id, props);
 
     const environment = process.env.ENVIRONMENT || this.node.tryGetContext('env') || 'dev';
-    const version = process.env.VERSION || this.node.tryGetContext('version') || 'v1';
+    const version = process.env.VERSION || this.node.tryGetContext('version') || 'v2';
 
     const agentsTable = new Table(this, 'AgentsTable', {
       tableName: `agents-table-${environment}`,
@@ -66,7 +66,6 @@ export class InfraStack extends Stack {
     this.agent = new Agent(this, 'AgentCore', {
       agentRuntimeName: `agentRuntime_${environment}_${version}`,
       description: `Agent runtime for ${environment} environment`,
-      dockerfilePath: 'Dockerfile',
       environmentVariables: {
         BYPASS_TOOL_CONSENT: 'true',
         S3_BUCKET_NAME: agentDataBucket.bucketName,
