@@ -106,15 +106,6 @@ export class Workflow extends Construct {
       description: 'Lambda function to initialize session by recording SESSION_INITIATED event',
     });
 
-    sessionInitializerFunction.addToRolePolicy(
-      new PolicyStatement({
-        sid: 'DynamoDBSessionInitializerAccess',
-        effect: Effect.ALLOW,
-        actions: ['dynamodb:PutItem'],
-        resources: [props.journalTable.tableArn],
-      }),
-    );
-
     return sessionInitializerFunction;
   }
 
@@ -229,15 +220,6 @@ export class Workflow extends Construct {
 
     this.sessionInitializerFunction.grantInvoke(stateMachine);
     props.agentInvokerFunction.grantInvoke(stateMachine);
-
-    stateMachine.addToRolePolicy(
-      new PolicyStatement({
-        sid: 'DynamoDBStateMachineAccess',
-        effect: Effect.ALLOW,
-        actions: ['dynamodb:Query'],
-        resources: [props.journalTable.tableArn],
-      }),
-    );
 
     return stateMachine;
   }
