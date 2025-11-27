@@ -3,7 +3,8 @@ import { NagSuppressions } from 'cdk-nag';
 import { Construct } from 'constructs';
 
 import { Table } from 'aws-cdk-lib/aws-dynamodb';
-import { Code, Function, LayerVersion, Runtime } from 'aws-cdk-lib/aws-lambda';
+import { Effect, PolicyStatement } from 'aws-cdk-lib/aws-iam';
+import { Code, Function, LayerVersion, Runtime, Tracing } from 'aws-cdk-lib/aws-lambda';
 import { LogGroup, RetentionDays } from 'aws-cdk-lib/aws-logs';
 import { Choice, Condition, DefinitionBody, Fail, JsonPath, StateMachine, Succeed, Wait, WaitTime } from 'aws-cdk-lib/aws-stepfunctions';
 import { CallAwsService, LambdaInvoke } from 'aws-cdk-lib/aws-stepfunctions-tasks';
@@ -13,9 +14,9 @@ import { InfraConfig } from '../constants/infra-config';
 
 export interface WorkflowProps {
   /**
-   * The Lambda function that invokes the agent
+   * ARN of the Agent Core runtime
    */
-  agentInvokerFunction: Function;
+  agentRuntimeArn: string;
 
   /**
    * The DynamoDB table for session journaling
@@ -41,11 +42,13 @@ export interface WorkflowProps {
 export class Workflow extends Construct {
   public readonly stateMachine: StateMachine;
   public readonly sessionInitializerFunction: Function;
+  public readonly agentInvokerFunction: Function;
 
   constructor(scope: Construct, id: string, props: WorkflowProps) {
     super(scope, id);
 
     this.sessionInitializerFunction = this.createSessionInitializerFunction(props);
+    this.agentInvokerFunction = this.createAgentInvokerFunction(props);
     this.stateMachine = this.createStateMachine(props);
 
     this.applyNagSuppressions();
@@ -55,37 +58,8 @@ export class Workflow extends Construct {
     const sessionInitializerFunction = new Function(this, 'SessionInitializer', {
       runtime: Runtime.PYTHON_3_12,
       handler: 'session_initializer.handler',
-      code: Code.fromAsset('..', {
-        bundling: {
-          // Custom bundling: combines handler from infra/lambda with shared code from src/
-          image: Runtime.PYTHON_3_12.bundlingImage,
-          command: [
-            'bash',
-            '-c',
-            'cp infra/lambda/session_initializer.py /asset-output/ && ' +
-              'mkdir -p /asset-output/src && ' +
-              'rsync -av --exclude="__pycache__" --exclude="*.pyc" src/shared src/__init__.py /asset-output/src/',
-          ],
-        },
-        exclude: [
-          'node_modules/**',
-          '.venv/**',
-          '.git/**',
-          'infra/cdk.out/**',
-          'infra/dist/**',
-          'infra/node_modules/**',
-          'infra/package-lock.json',
-          '.pytest_cache/**',
-          '.ruff_cache/**',
-          '**/__pycache__/**',
-          '**/*.pyc',
-          'tests/**',
-          '.kiro/**',
-          '*.md',
-          '.gitlab-ci.yml',
-          'Makefile',
-          'uv.lock',
-        ],
+      code: Code.fromAsset('dist/build-lambda', {
+        exclude: ['agent_invoker.py', '__pycache__', '*.pyc'],
       }),
       layers: [
         LayerVersion.fromLayerVersionArn(
@@ -110,6 +84,47 @@ export class Workflow extends Construct {
     return sessionInitializerFunction;
   }
 
+  private createAgentInvokerFunction(props: WorkflowProps): Function {
+    const agentInvokerFunction = new Function(this, 'AgentInvoker', {
+      runtime: Runtime.PYTHON_3_12,
+      handler: 'agent_invoker.handler',
+      code: Code.fromAsset('dist/build-lambda', {
+        exclude: ['session_initializer.py', '__pycache__', '*.pyc'],
+      }),
+      layers: [
+        LayerVersion.fromLayerVersionArn(
+          this,
+          'AgentInvokerPowertoolsLayer',
+          `arn:aws:lambda:${Stack.of(this).region}:017000801446:layer:AWSLambdaPowertoolsPythonV3-python312-x86_64:18`,
+        ),
+      ],
+      timeout: Duration.minutes(5),
+      memorySize: 512,
+      tracing: Tracing.ACTIVE,
+      environment: {
+        AGENT_CORE_RUNTIME_ARN: props.agentRuntimeArn,
+        JOURNAL_TABLE_NAME: props.journalTable.tableName,
+        TTL_DAYS: props.ttlDays.toString(),
+        ENVIRONMENT: props.environment,
+        POWERTOOLS_SERVICE_NAME: InfraConfig.serviceName,
+        LOG_LEVEL: props.lambdaLogLevel,
+      },
+      description: 'Lambda function to invoke Agent Core runtime',
+    });
+
+    agentInvokerFunction.addToRolePolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: ['bedrock-agentcore:InvokeAgentRuntime', 'bedrock-agentcore:GetRuntime'],
+        resources: [props.agentRuntimeArn, `${props.agentRuntimeArn}/*`],
+      }),
+    );
+
+    props.journalTable.grantWriteData(agentInvokerFunction);
+
+    return agentInvokerFunction;
+  }
+
   private createStateMachine(props: WorkflowProps): StateMachine {
     const initializeSession = new LambdaInvoke(this, 'InitializeSession', {
       lambdaFunction: this.sessionInitializerFunction,
@@ -117,7 +132,7 @@ export class Workflow extends Construct {
     });
 
     const invokeAgent = new LambdaInvoke(this, 'InvokeAgent', {
-      lambdaFunction: props.agentInvokerFunction,
+      lambdaFunction: this.agentInvokerFunction,
       resultPath: '$.agentResult',
     });
 
@@ -220,28 +235,31 @@ export class Workflow extends Construct {
     });
 
     this.sessionInitializerFunction.grantInvoke(stateMachine);
-    props.agentInvokerFunction.grantInvoke(stateMachine);
+    this.agentInvokerFunction.grantInvoke(stateMachine);
     props.journalTable.grantReadData(stateMachine);
 
     return stateMachine;
   }
 
   private applyNagSuppressions(): void {
-    NagSuppressions.addResourceSuppressions(
-      this.sessionInitializerFunction,
-      [
-        {
-          id: 'AwsSolutions-IAM4',
-          reason:
-            'AWSLambdaBasicExecutionRole is a well-scoped AWS managed policy for Lambda CloudWatch Logs access. Standard practice for Lambda functions.',
-        },
-        {
-          id: 'AwsSolutions-L1',
-          reason: 'Python 3.12 is fully supported by AWS Lambda until October 2028.',
-        },
-      ],
-      true,
-    );
+    const lambdaSuppressions = [
+      {
+        id: 'AwsSolutions-IAM4',
+        reason:
+          'AWSLambdaBasicExecutionRole is a well-scoped AWS managed policy for Lambda CloudWatch Logs access. Standard practice for Lambda functions.',
+      },
+      {
+        id: 'AwsSolutions-IAM5',
+        reason:
+          'Wildcard permissions required for CloudWatch Logs (dynamic log group creation) and resource access. Scoped to specific resources.',
+      },
+      {
+        id: 'AwsSolutions-L1',
+        reason: 'Python 3.12 is fully supported by AWS Lambda until October 2028.',
+      },
+    ];
+
+    NagSuppressions.addResourceSuppressions([this.sessionInitializerFunction, this.agentInvokerFunction], lambdaSuppressions, true);
 
     NagSuppressions.addResourceSuppressions(
       this.stateMachine,

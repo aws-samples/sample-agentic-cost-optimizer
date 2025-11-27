@@ -5,13 +5,14 @@
     "build": "tsc -p tsconfig.json",
     "watch": "tsc -w",
     "clean": "rm -rf cdk.out",
-    "synth": "cdk synth",
+    "prepare-lambda": "rm -rf dist/build-lambda && rsync -a --exclude='__pycache__' --exclude='*.pyc' ../infra/lambda/ ../src/__init__.py ../src/shared dist/build-lambda/",
+    "synth": "npm run prepare-lambda && cdk synth",
     "cdk": "cdk",
-    "deploy": "cdk deploy --require-approval never",
+    "deploy": "npm run prepare-lambda && cdk deploy --require-approval never",
     "destroy": "cdk destroy",
     "prettier": "prettier . --write",
-    "test": "vitest run",
-    "test:watch": "vitest"
+    "test": "npm run prepare-lambda && vitest run",
+    "test:watch": "npm run prepare-lambda && vitest"
   },
   "dependencies": {
     "@aws-cdk/aws-bedrock-agentcore-alpha": "^2.221.0-alpha.0",
