@@ -5,7 +5,7 @@
     "prebuild": "npm run package-agent",
     "build": "tsc -p tsconfig.json",
     "watch": "tsc -w",
-    "clean": "rm -rf cdk.out dist ../build",
+    "clean": "rm -rf cdk.out dist ../build-agents",
     "presynth": "npm run build",
     "synth": "cdk synth",
     "cdk": "cdk",

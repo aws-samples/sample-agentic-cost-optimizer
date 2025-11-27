@@ -74,13 +74,13 @@ cdk-deploy:
 cdk-hotswap: 
 	@echo "Fast deploying Lambda changes..."
 	@echo "Environment: $(or $(ENVIRONMENT),dev), Version: $(or $(VERSION),v1)"
-	npm run build --prefix infra && npx cdk deploy --hotswap --prefix infra
+	npx cdk deploy --hotswap --prefix infra
 	@echo "✓ CDK hotswap deployment completed"
 
 cdk-watch: 
 	@echo "Starting CDK watch mode..."
 	@echo "Environment: $(or $(ENVIRONMENT),dev), Version: $(or $(VERSION),v1)"
-	npm run build --prefix infra && npx cdk watch --prefix infra
+	npx cdk watch --prefix infra
 
 cdk-destroy: 
 	@echo "Destroying CDK stack..."
