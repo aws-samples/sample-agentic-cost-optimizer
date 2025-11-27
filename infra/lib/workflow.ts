@@ -105,8 +105,6 @@ export class Workflow extends Construct {
       description: 'Lambda function to initialize session by recording SESSION_INITIATED event',
     });
 
-    props.journalTable.grantWriteData(sessionInitializerFunction);
-
     return sessionInitializerFunction;
   }
 
@@ -221,7 +219,6 @@ export class Workflow extends Construct {
 
     this.sessionInitializerFunction.grantInvoke(stateMachine);
     props.agentInvokerFunction.grantInvoke(stateMachine);
-    props.journalTable.grantReadData(stateMachine);
 
     return stateMachine;
   }
