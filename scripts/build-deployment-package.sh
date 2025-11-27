@@ -10,21 +10,18 @@ fi
 
 echo "Building AgentCore Runtime package..."
 
-mkdir -p build-agents
+mkdir -p infra/dist/build-agent
 
-uv pip compile pyproject.toml --group agents --output-file build-agents/requirements.txt --quiet
+uv pip compile pyproject.toml --group agents --output-file infra/dist/build-agent/requirements.txt --quiet
 uv pip install \
-  --target build-agents/ \
+  --target infra/dist/build-agent/ \
   --python-version 3.12 \
   --python-platform aarch64-manylinux2014 \
   --only-binary :all: \
-  -r build-agents/requirements.txt
+  -r infra/dist/build-agent/requirements.txt
 
-cp -r src build-agents/
+cp -r src infra/dist/build-agent/
 
-mkdir -p infra/dist
-cd build-agents && zip -qr ../infra/dist/agentcore_runtime.zip . -x "*.pyc" -x "*__pycache__*" -x "requirements.txt" && cd ..
-
-rm -rf build-agents/
+cd infra/dist/build-agent && zip -qr ../agentcore_runtime.zip . -x "*.pyc" -x "*__pycache__*" -x "requirements.txt" && cd ../../..
 
 echo "✓ Package ready: infra/dist/agentcore_runtime.zip ($(du -h infra/dist/agentcore_runtime.zip | cut -f1))"

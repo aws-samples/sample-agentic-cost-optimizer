@@ -1,12 +1,10 @@
-import { CfnOutput, Duration, Fn, RemovalPolicy, Stack, type StackProps } from 'aws-cdk-lib';
-import { NagSuppressions } from 'cdk-nag';
+import { CfnOutput, Fn, RemovalPolicy, Stack, type StackProps } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 
 import { AttributeType, BillingMode, Table } from 'aws-cdk-lib/aws-dynamodb';
 import { EventField, EventPattern, Rule, RuleTargetInput, Schedule } from 'aws-cdk-lib/aws-events';
 import { SfnStateMachine } from 'aws-cdk-lib/aws-events-targets';
-import { ArnPrincipal, Effect, PolicyDocument, PolicyStatement } from 'aws-cdk-lib/aws-iam';
-import { Code, Function, LayerVersion, Runtime, Tracing } from 'aws-cdk-lib/aws-lambda';
+import { ArnPrincipal, Effect, PolicyStatement } from 'aws-cdk-lib/aws-iam';
 import { Bucket, BucketEncryption } from 'aws-cdk-lib/aws-s3';
 
 import { InfraConfig } from '../constants/infra-config';
@@ -86,72 +84,8 @@ export class InfraStack extends Stack {
       }),
     );
 
-    const agentInvokerFunction = new Function(this, 'AgentInvoker', {
-      runtime: Runtime.PYTHON_3_12,
-      handler: 'agent_invoker.handler',
-      code: Code.fromAsset('..', {
-        bundling: {
-          // Custom bundling: combines handler from infra/lambda with shared code from src/
-          image: Runtime.PYTHON_3_12.bundlingImage,
-          command: [
-            'bash',
-            '-c',
-            'cp infra/lambda/agent_invoker.py /asset-output/ && ' +
-              'mkdir -p /asset-output/src && ' +
-              'rsync -av --exclude="__pycache__" --exclude="*.pyc" src/shared src/__init__.py /asset-output/src/',
-          ],
-        },
-        exclude: [
-          'node_modules/**',
-          '.venv/**',
-          '.git/**',
-          'infra/cdk.out/**',
-          'infra/dist/**',
-          'infra/node_modules/**',
-          'infra/package-lock.json',
-          '.pytest_cache/**',
-          '.ruff_cache/**',
-          '**/__pycache__/**',
-          '**/*.pyc',
-          'tests/**',
-          '.kiro/**',
-          '*.md',
-          '.gitlab-ci.yml',
-          'Makefile',
-          'uv.lock',
-        ],
-      }),
-      layers: [
-        LayerVersion.fromLayerVersionArn(
-          this,
-          'PowertoolsLayer',
-          `arn:aws:lambda:${this.region}:017000801446:layer:AWSLambdaPowertoolsPythonV3-python312-x86_64:18`,
-        ),
-      ],
-      timeout: Duration.minutes(5),
-      memorySize: 512,
-      tracing: Tracing.ACTIVE,
-      environment: {
-        AGENT_CORE_RUNTIME_ARN: this.agent.runtimeArn,
-        JOURNAL_TABLE_NAME: agentsTable.tableName,
-        TTL_DAYS: InfraConfig.ttlDays.toString(),
-        ENVIRONMENT: environment,
-        POWERTOOLS_SERVICE_NAME: InfraConfig.serviceName,
-        LOG_LEVEL: InfraConfig.lambdaLogLevel,
-      },
-      description: 'Lambda function to invoke Agent Core runtime',
-    });
-
-    agentInvokerFunction.addToRolePolicy(
-      new PolicyStatement({
-        effect: Effect.ALLOW,
-        actions: ['bedrock-agentcore:InvokeAgentRuntime', 'bedrock-agentcore:GetRuntime'],
-        resources: [this.agent.runtimeArn, `${this.agent.runtimeArn}/*`],
-      }),
-    );
-
     const workflow = new Workflow(this, 'AgentWorkflow', {
-      agentInvokerFunction,
+      agentRuntimeArn: this.agent.runtimeArn,
       journalTable: agentsTable,
       environment,
       ttlDays: InfraConfig.ttlDays,
@@ -172,7 +106,7 @@ export class InfraStack extends Stack {
       new PolicyStatement({
         sid: 'AllowAgentInvokerPutItem',
         effect: Effect.ALLOW,
-        principals: [new ArnPrincipal(agentInvokerFunction.role!.roleArn)],
+        principals: [new ArnPrincipal(workflow.agentInvokerFunction.role!.roleArn)],
         actions: ['dynamodb:PutItem'],
         resources: [Fn.sub('arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/agents-table-${environment}', { environment })],
       }),
@@ -250,7 +184,7 @@ export class InfraStack extends Stack {
     });
 
     new CfnOutput(this, 'AgentInvokerFunctionArn', {
-      value: agentInvokerFunction.functionArn,
+      value: workflow.agentInvokerFunction.functionArn,
       description: 'ARN of the Lambda function for agent invocation',
     });
 
@@ -268,30 +202,5 @@ export class InfraStack extends Stack {
       value: scheduledTriggerRule.ruleArn,
       description: 'ARN of the EventBridge rule for scheduled workflow triggers (daily at 6am UTC)',
     });
-
-    this.applyNagSuppressions(agentInvokerFunction, workflow);
-  }
-
-  private applyNagSuppressions(agentInvokerFunction: Function, workflow: Workflow): void {
-    NagSuppressions.addResourceSuppressions(
-      agentInvokerFunction,
-      [
-        {
-          id: 'AwsSolutions-IAM4',
-          reason:
-            'AWSLambdaBasicExecutionRole is a well-scoped AWS managed policy for Lambda CloudWatch Logs access. Standard practice for Lambda functions.',
-        },
-        {
-          id: 'AwsSolutions-IAM5',
-          reason:
-            'Wildcard permissions required for CloudWatch Logs (dynamic log group creation) and AgentCore runtime invocations (session-level access under specific runtime ARN).',
-        },
-        {
-          id: 'AwsSolutions-L1',
-          reason: 'Python 3.12 is fully supported by AWS Lambda until October 2028.',
-        },
-      ],
-      true,
-    );
   }
 }
