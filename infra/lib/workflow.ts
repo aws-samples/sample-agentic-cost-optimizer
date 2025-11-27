@@ -55,7 +55,7 @@ export class Workflow extends Construct {
   }
 
   private createSessionInitializerFunction(props: WorkflowProps): Function {
-    const sessionInitializerFunction = new Function(this, 'SessionInitializer', {
+    return new Function(this, 'SessionInitializer', {
       runtime: Runtime.PYTHON_3_12,
       handler: 'session_initializer.handler',
       code: Code.fromAsset('dist/build-lambda', {
@@ -78,10 +78,6 @@ export class Workflow extends Construct {
       },
       description: 'Lambda function to initialize session by recording SESSION_INITIATED event',
     });
-
-    props.journalTable.grantWriteData(sessionInitializerFunction);
-
-    return sessionInitializerFunction;
   }
 
   private createAgentInvokerFunction(props: WorkflowProps): Function {
@@ -119,8 +115,6 @@ export class Workflow extends Construct {
         resources: [props.agentRuntimeArn, `${props.agentRuntimeArn}/*`],
       }),
     );
-
-    props.journalTable.grantWriteData(agentInvokerFunction);
 
     return agentInvokerFunction;
   }
@@ -236,7 +230,6 @@ export class Workflow extends Construct {
 
     this.sessionInitializerFunction.grantInvoke(stateMachine);
     this.agentInvokerFunction.grantInvoke(stateMachine);
-    props.journalTable.grantReadData(stateMachine);
 
     return stateMachine;
   }

@@ -1,9 +1,10 @@
-import { CfnOutput, RemovalPolicy, Stack, type StackProps } from 'aws-cdk-lib';
+import { CfnOutput, Fn, RemovalPolicy, Stack, type StackProps } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 
 import { AttributeType, BillingMode, Table } from 'aws-cdk-lib/aws-dynamodb';
 import { EventField, EventPattern, Rule, RuleTargetInput, Schedule } from 'aws-cdk-lib/aws-events';
 import { SfnStateMachine } from 'aws-cdk-lib/aws-events-targets';
+import { ArnPrincipal, Effect, PolicyStatement } from 'aws-cdk-lib/aws-iam';
 import { Bucket, BucketEncryption } from 'aws-cdk-lib/aws-s3';
 
 import { InfraConfig } from '../constants/infra-config';
@@ -73,8 +74,15 @@ export class InfraStack extends Stack {
       },
     });
 
-    agentDataBucket.grantReadWrite(this.agent.runtime.role);
-    agentsTable.grantReadWriteData(this.agent.runtime.role);
+    agentDataBucket.addToResourcePolicy(
+      new PolicyStatement({
+        sid: 'AllowAgentRuntimeAccess',
+        effect: Effect.ALLOW,
+        principals: [new ArnPrincipal(this.agent.runtime.role.roleArn)],
+        actions: ['s3:GetObject', 's3:PutObject'],
+        resources: [`${agentDataBucket.bucketArn}/*`],
+      }),
+    );
 
     const workflow = new Workflow(this, 'AgentWorkflow', {
       agentRuntimeArn: this.agent.runtimeArn,
@@ -83,6 +91,46 @@ export class InfraStack extends Stack {
       ttlDays: InfraConfig.ttlDays,
       lambdaLogLevel: InfraConfig.lambdaLogLevel,
     });
+
+    agentsTable.addToResourcePolicy(
+      new PolicyStatement({
+        sid: 'AllowAgentRuntimePutItem',
+        effect: Effect.ALLOW,
+        principals: [new ArnPrincipal(this.agent.runtime.role.roleArn)],
+        actions: ['dynamodb:PutItem'],
+        resources: [Fn.sub('arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/agents-table-${environment}', { environment })],
+      }),
+    );
+
+    agentsTable.addToResourcePolicy(
+      new PolicyStatement({
+        sid: 'AllowAgentInvokerPutItem',
+        effect: Effect.ALLOW,
+        principals: [new ArnPrincipal(workflow.agentInvokerFunction.role!.roleArn)],
+        actions: ['dynamodb:PutItem'],
+        resources: [Fn.sub('arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/agents-table-${environment}', { environment })],
+      }),
+    );
+
+    agentsTable.addToResourcePolicy(
+      new PolicyStatement({
+        sid: 'AllowSessionInitializerPutItem',
+        effect: Effect.ALLOW,
+        principals: [new ArnPrincipal(workflow.sessionInitializerFunction.role!.roleArn)],
+        actions: ['dynamodb:PutItem'],
+        resources: [Fn.sub('arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/agents-table-${environment}', { environment })],
+      }),
+    );
+
+    agentsTable.addToResourcePolicy(
+      new PolicyStatement({
+        sid: 'AllowStateMachineQuery',
+        effect: Effect.ALLOW,
+        principals: [new ArnPrincipal(workflow.stateMachine.role.roleArn)],
+        actions: ['dynamodb:Query'],
+        resources: [Fn.sub('arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/agents-table-${environment}', { environment })],
+      }),
+    );
 
     const scheduledTriggerRule = new Rule(this, 'ScheduledTriggerRule', {
       schedule: Schedule.cron({ hour: '6', minute: '0' }),
