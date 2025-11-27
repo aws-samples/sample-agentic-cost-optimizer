@@ -3,6 +3,7 @@ import { NagSuppressions } from 'cdk-nag';
 import { Construct } from 'constructs';
 
 import { Table } from 'aws-cdk-lib/aws-dynamodb';
+import { Effect, PolicyStatement } from 'aws-cdk-lib/aws-iam';
 import { Code, Function, LayerVersion, Runtime } from 'aws-cdk-lib/aws-lambda';
 import { LogGroup, RetentionDays } from 'aws-cdk-lib/aws-logs';
 import { Choice, Condition, DefinitionBody, Fail, JsonPath, StateMachine, Succeed, Wait, WaitTime } from 'aws-cdk-lib/aws-stepfunctions';
@@ -105,7 +106,13 @@ export class Workflow extends Construct {
       description: 'Lambda function to initialize session by recording SESSION_INITIATED event',
     });
 
-    props.journalTable.grantWriteData(sessionInitializerFunction);
+    sessionInitializerFunction.addToRolePolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: ['dynamodb:PutItem'],
+        resources: [props.journalTable.tableArn],
+      }),
+    );
 
     return sessionInitializerFunction;
   }
@@ -221,7 +228,15 @@ export class Workflow extends Construct {
 
     this.sessionInitializerFunction.grantInvoke(stateMachine);
     props.agentInvokerFunction.grantInvoke(stateMachine);
-    props.journalTable.grantReadData(stateMachine);
+
+    stateMachine.addToRolePolicy(
+      new PolicyStatement({
+        sid: 'DynamoDBStateMachineAccess',
+        effect: Effect.ALLOW,
+        actions: ['dynamodb:Query'],
+        resources: [props.journalTable.tableArn],
+      }),
+    );
 
     return stateMachine;
   }

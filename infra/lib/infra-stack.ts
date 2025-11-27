@@ -77,7 +77,16 @@ export class InfraStack extends Stack {
     });
 
     agentDataBucket.grantReadWrite(this.agent.runtime.role);
-    agentsTable.grantReadWriteData(this.agent.runtime.role);
+
+    // Least privilege: Agent runtime only needs to write events (PutItem only - no updates)
+    this.agent.runtime.role.addToPrincipalPolicy(
+      new PolicyStatement({
+        sid: 'DynamoDBAgentRuntimeAccess',
+        effect: Effect.ALLOW,
+        actions: ['dynamodb:PutItem'],
+        resources: [agentsTable.tableArn],
+      }),
+    );
 
     const agentInvokerFunction = new Function(this, 'AgentInvoker', {
       runtime: Runtime.PYTHON_3_12,
@@ -143,7 +152,15 @@ export class InfraStack extends Stack {
       }),
     );
 
-    agentsTable.grantWriteData(agentInvokerFunction);
+    // Least privilege: Agent invoker only needs to write invocation events
+    agentInvokerFunction.addToRolePolicy(
+      new PolicyStatement({
+        sid: 'DynamoDBAgentInvokerAccess',
+        effect: Effect.ALLOW,
+        actions: ['dynamodb:PutItem'],
+        resources: [agentsTable.tableArn],
+      }),
+    );
 
     const workflow = new Workflow(this, 'AgentWorkflow', {
       agentInvokerFunction,
