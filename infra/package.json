@@ -6,7 +6,7 @@
     "build": "tsc -p tsconfig.json",
     "watch": "tsc -w",
     "clean": "rm -rf cdk.out dist",
-    "prepare-lambda": "rm -rf dist/build-lambda && rsync -a --exclude='__pycache__' --exclude='*.pyc' ../infra/lambda/ ../src/__init__.py ../src/shared dist/build-lambda/",
+    "prepare-lambda": "rm -rf dist/build-lambda && mkdir -p dist/build-lambda/src && cp ../infra/lambda/*.py dist/build-lambda/ && cp ../src/__init__.py dist/build-lambda/src/ && cp -r ../src/shared dist/build-lambda/src/",
     "package-agent": "rm -rf dist/build-agent && bash ../scripts/build-deployment-package.sh",
     "synth": "npm run build && cdk synth",
     "cdk": "cdk",
