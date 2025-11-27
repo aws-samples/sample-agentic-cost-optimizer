@@ -93,19 +93,29 @@ export class Agent extends Construct {
             resources: ['*'],
           }),
           new PolicyStatement({
-            sid: 'CloudWatchLogsMonitoring',
+            sid: 'CloudWatchMetricsAccess',
             effect: Effect.ALLOW,
-            actions: [
-              'cloudwatch:GetMetricStatistics',
-              'cloudwatch:ListMetrics',
-              'logs:StartQuery',
-              'logs:StopQuery',
-              'logs:GetQueryResults',
-              'logs:GetLogEvents',
-              'logs:GetLogRecord',
-              'logs:FilterLogEvents',
-            ],
+            actions: ['cloudwatch:GetMetricStatistics', 'cloudwatch:ListMetrics'],
             resources: ['*'],
+            conditions: {
+              StringEquals: {
+                'cloudwatch:namespace': 'AWS/Lambda',
+              },
+            },
+          }),
+          new PolicyStatement({
+            sid: 'CloudWatchLogsQueryAccess',
+            effect: Effect.ALLOW,
+            actions: ['logs:StopQuery', 'logs:GetQueryResults'],
+            resources: ['*'],
+          }),
+          new PolicyStatement({
+            sid: 'CloudWatchLogsAccess',
+            effect: Effect.ALLOW,
+            actions: ['logs:StartQuery', 'logs:GetLogEvents', 'logs:GetLogRecord', 'logs:FilterLogEvents'],
+            // Scoped to Lambda log groups. To control which CloudWatch Logs the agent can access,
+            // modify the resource pattern below (e.g., restrict to specific function names or log group patterns)
+            resources: [`arn:${stack.partition}:logs:*:*:log-group:/aws/lambda/*`],
           }),
           new PolicyStatement({
             sid: 'PricingAccess',
