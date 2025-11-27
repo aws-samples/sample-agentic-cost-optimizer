@@ -76,7 +76,14 @@ export class InfraStack extends Stack {
       },
     });
 
-    agentDataBucket.grantReadWrite(this.agent.runtime.role);
+    this.agent.runtime.role.addToPrincipalPolicy(
+      new PolicyStatement({
+        sid: 'S3AgentRuntimeAccess',
+        effect: Effect.ALLOW,
+        actions: ['s3:GetObject', 's3:PutObject'],
+        resources: [`${agentDataBucket.bucketArn}/*`],
+      }),
+    );
 
     // Least privilege: Agent runtime only needs to write events (PutItem only - no updates)
     this.agent.runtime.role.addToPrincipalPolicy(
