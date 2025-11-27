@@ -108,6 +108,7 @@ export class Workflow extends Construct {
 
     sessionInitializerFunction.addToRolePolicy(
       new PolicyStatement({
+        sid: 'DynamoDBSessionInitializerAccess',
         effect: Effect.ALLOW,
         actions: ['dynamodb:PutItem'],
         resources: [props.journalTable.tableArn],
