@@ -2,22 +2,27 @@
   "name": "infra",
   "private": true,
   "scripts": {
+    "prebuild": "npm run package-agent",
     "build": "tsc -p tsconfig.json",
     "watch": "tsc -w",
-    "clean": "rm -rf cdk.out",
+    "clean": "rm -rf cdk.out dist ../build-agents",
+    "presynth": "npm run build",
     "prepare-lambda": "rm -rf dist/build-lambda && rsync -a --exclude='__pycache__' --exclude='*.pyc' ../infra/lambda/ ../src/__init__.py ../src/shared dist/build-lambda/",
     "synth": "npm run prepare-lambda && cdk synth",
     "cdk": "cdk",
+    "predeploy": "npm run build",
     "deploy": "npm run prepare-lambda && cdk deploy --require-approval never",
     "destroy": "cdk destroy",
     "prettier": "prettier . --write",
+    "pretest": "npm run build",
     "test": "npm run prepare-lambda && vitest run",
-    "test:watch": "npm run prepare-lambda && vitest"
+    "test:watch": "npm run prepare-lambda && vitest",
+    "package-agent": "bash ../scripts/build-deployment-package.sh"
   },
   "dependencies": {
-    "@aws-cdk/aws-bedrock-agentcore-alpha": "^2.221.0-alpha.0",
+    "@aws-cdk/aws-bedrock-agentcore-alpha": "^2.229.0-alpha.0",
     "@mrgrain/cdk-esbuild": "^5.7.4",
-    "aws-cdk-lib": "^2.224.0",
+    "aws-cdk-lib": "^2.229.0",
     "constructs": "10.4.3",
     "esbuild": "^0.27.0"
   },
