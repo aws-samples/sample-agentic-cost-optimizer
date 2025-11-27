@@ -5,13 +5,82 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-# Import the internal journal functions directly - these don't have the @tool decorator
+# Import the journal functions - @tool decorator is mocked in conftest.py
 from src.tools.journal import (
-    _complete_session,
     _complete_task,
     _start_task,
-    _update_session,
+    journal,
 )
+
+
+class TestJournalValidation:
+    """Tests for journal function validation."""
+
+    def test_invalid_action(self):
+        """Test journal with invalid action parameter."""
+        mock_context = MagicMock()
+        mock_context.invocation_state = {"session_id": "test-session-123"}
+
+        result = journal(action="invalid_action", tool_context=mock_context, phase_name="Discovery")
+
+        assert result["success"] is False
+        assert "Invalid action 'invalid_action'" in result["error"]
+        assert "start_task, complete_task" in result["error"]
+
+    def test_invalid_status(self):
+        """Test journal complete_task with invalid status parameter."""
+        mock_context = MagicMock()
+        mock_context.invocation_state = {"session_id": "test-session-123"}
+
+        result = journal(
+            action="complete_task", tool_context=mock_context, phase_name="Discovery", status="INVALID_STATUS"
+        )
+
+        assert result["success"] is False
+        assert "Invalid status 'INVALID_STATUS'" in result["error"]
+        assert "COMPLETED, FAILED" in result["error"]
+
+    def test_missing_table_name(self):
+        """Test journal with missing JOURNAL_TABLE_NAME environment variable."""
+        # Temporarily remove the env var
+        original_table_name = os.environ.get("JOURNAL_TABLE_NAME")
+        if "JOURNAL_TABLE_NAME" in os.environ:
+            del os.environ["JOURNAL_TABLE_NAME"]
+
+        try:
+            mock_context = MagicMock()
+            mock_context.invocation_state = {"session_id": "test-session-123"}
+
+            result = journal(action="start_task", tool_context=mock_context, phase_name="Discovery")
+
+            assert result["success"] is False
+            assert "JOURNAL_TABLE_NAME not set" in result["error"]
+        finally:
+            if original_table_name:
+                os.environ["JOURNAL_TABLE_NAME"] = original_table_name
+
+    @patch("src.tools.journal.record_event")
+    def test_phase_name_special_characters(self, mock_record_event):
+        """Test journal with phase names containing special characters."""
+        mock_context = MagicMock()
+        mock_context.invocation_state = {"session_id": "test-session-123"}
+
+        result = journal(action="start_task", tool_context=mock_context, phase_name="Data Analysis & Cleanup")
+
+        assert result["success"] is True
+        mock_record_event.assert_called_once()
+
+        call_args = mock_record_event.call_args
+        event_status = call_args[1]["status"]
+        assert "TASK_DATA_ANALYSIS_&_CLEANUP_STARTED" in event_status
+
+
+@pytest.fixture
+def mock_record_event():
+    """Create a mock record_event function."""
+    mock = MagicMock()
+    mock.return_value = None
+    return mock
 
 
 @pytest.fixture
@@ -20,17 +89,6 @@ def mock_tool_context():
     context = MagicMock()
     context.invocation_state = {"session_id": "test-session-123"}
     return context
-
-
-@pytest.fixture
-def mock_dynamodb_table():
-    """Create a mock DynamoDB table."""
-    table = MagicMock()
-    table.put_item = MagicMock()
-    table.update_item = MagicMock()
-    table.query = MagicMock(return_value={"Items": []})
-    table.get_item = MagicMock(return_value={"Item": {"start_time": "2025-01-01T00:00:00Z"}})
-    return table
 
 
 @pytest.fixture(autouse=True)
@@ -42,74 +100,19 @@ def setup_env():
         del os.environ["JOURNAL_TABLE_NAME"]
 
 
-class TestJournalStartSession:
-    """Tests for start_session action."""
-
-    @patch("src.tools.journal.dynamodb")
-    def test_start_session_success(self, mock_dynamodb, mock_tool_context, mock_dynamodb_table):
-        """Test successful session update - updates existing session from INITIATED to BUSY."""
-        mock_dynamodb.Table.return_value = mock_dynamodb_table
-        mock_dynamodb_table.get_item.return_value = {
-            "Item": {
-                "PK": "test-session-123",
-                "SK": "SESSION",
-                "status": "INITIATED",
-                "start_time": "2025-01-01T00:00:00Z",
-            }
-        }
-
-        result = _update_session(tool_context=mock_tool_context)
-
-        assert result["success"] is True
-        assert result["session_id"] == "test-session-123"
-        assert result["status"] == "BUSY"
-        assert "timestamp" in result
-        mock_dynamodb_table.get_item.assert_called_once()
-        mock_dynamodb_table.update_item.assert_called_once()
-
-    def test_start_session_missing_session_id(self):
-        """Test start_session with missing session_id."""
-        context = MagicMock()
-        context.invocation_state = {}
-
-        result = _update_session(tool_context=context)
-
-        assert result["success"] is False
-        assert "session_id not found" in result["error"]
-
-    def test_start_session_missing_table_name(self, mock_tool_context):
-        """Test start_session with missing JOURNAL_TABLE_NAME."""
-        del os.environ["JOURNAL_TABLE_NAME"]
-
-        result = _update_session(tool_context=mock_tool_context)
-
-        assert result["success"] is False
-        assert "JOURNAL_TABLE_NAME not set" in result["error"]
-
-
 class TestJournalStartTask:
     """Tests for start_task action."""
 
-    @patch("src.tools.journal.dynamodb")
-    @patch(
-        "src.tools.journal._session_cache",
-        {
-            "session_id": "test-session-123",
-            "start_time": "2025-01-01T00:00:00Z",
-            "tasks": {},
-        },
-    )
-    def test_start_task_success(self, mock_dynamodb, mock_tool_context, mock_dynamodb_table):
+    @patch("src.tools.journal.record_event")
+    def test_start_task_success(self, mock_record_event, mock_tool_context):
         """Test successful task start."""
-        mock_dynamodb.Table.return_value = mock_dynamodb_table
-
         result = _start_task(phase_name="Discovery", tool_context=mock_tool_context)
 
         assert result["success"] is True
         assert result["session_id"] == "test-session-123"
         assert result["phase_name"] == "Discovery"
         assert result["status"] == "IN_PROGRESS"
-        mock_dynamodb_table.put_item.assert_called_once()
+        mock_record_event.assert_called_once()
 
     def test_start_task_missing_phase_name(self, mock_tool_context):
         """Test start_task without phase_name."""
@@ -118,10 +121,6 @@ class TestJournalStartTask:
         assert result["success"] is False
         assert "phase_name is required" in result["error"]
 
-    @patch(
-        "src.tools.journal._session_cache",
-        {"session_id": None, "start_time": None, "tasks": {}},
-    )
     def test_start_task_no_session(self):
         """Test start_task without active session."""
         context = MagicMock()
@@ -136,39 +135,20 @@ class TestJournalStartTask:
 class TestJournalCompleteTask:
     """Tests for complete_task action."""
 
-    @patch("src.tools.journal.dynamodb")
-    @patch(
-        "src.tools.journal._session_cache",
-        {
-            "session_id": "test-session-123",
-            "start_time": "2025-01-01T00:00:00Z",
-            "tasks": {
-                "Discovery": {
-                    "record_type": "TASK#2025-01-01T00:00:00Z",
-                    "start_time": "2025-01-01T00:00:00Z",
-                    "session_id": "test-session-123",
-                }
-            },
-        },
-    )
-    def test_complete_task_success(self, mock_dynamodb, mock_tool_context, mock_dynamodb_table):
+    @patch("src.tools.journal.record_event")
+    def test_complete_task_success(self, mock_record_event, mock_tool_context):
         """Test successful task completion."""
-        mock_dynamodb.Table.return_value = mock_dynamodb_table
-
-        from src.tools.journal import TaskStatus
-
         result = _complete_task(
             phase_name="Discovery",
             tool_context=mock_tool_context,
-            status=TaskStatus.COMPLETED,
+            status="COMPLETED",
         )
 
         assert result["success"] is True
         assert result["session_id"] == "test-session-123"
         assert result["phase_name"] == "Discovery"
         assert result["status"] == "COMPLETED"
-        assert "duration_seconds" in result
-        mock_dynamodb_table.update_item.assert_called_once()
+        mock_record_event.assert_called_once()
 
     def test_complete_task_missing_phase_name(self, mock_tool_context):
         """Test complete_task without phase_name."""
@@ -176,47 +156,3 @@ class TestJournalCompleteTask:
 
         assert result["success"] is False
         assert "phase_name is required" in result["error"]
-
-
-class TestJournalCompleteSession:
-    """Tests for complete_session action."""
-
-    @patch("src.tools.journal.dynamodb")
-    @patch(
-        "src.tools.journal._session_cache",
-        {
-            "session_id": "test-session-123",
-            "start_time": "2025-01-01T00:00:00Z",
-            "tasks": {},
-        },
-    )
-    def test_complete_session_success(self, mock_dynamodb, mock_tool_context, mock_dynamodb_table):
-        """Test successful session completion."""
-        mock_dynamodb.Table.return_value = mock_dynamodb_table
-
-        from src.tools.journal import SessionStatus
-
-        result = _complete_session(
-            tool_context=mock_tool_context,
-            status=SessionStatus.COMPLETED,
-        )
-
-        assert result["success"] is True
-        assert result["session_id"] == "test-session-123"
-        assert result["status"] == "COMPLETED"
-        assert "duration_seconds" in result
-        mock_dynamodb_table.update_item.assert_called_once()
-
-    @patch(
-        "src.tools.journal._session_cache",
-        {"session_id": None, "start_time": None, "tasks": {}},
-    )
-    def test_complete_session_no_active_session(self):
-        """Test complete_session without active session."""
-        context = MagicMock()
-        context.invocation_state = {}
-
-        result = _complete_session(tool_context=context)
-
-        assert result["success"] is False
-        assert "No active session" in result["error"]

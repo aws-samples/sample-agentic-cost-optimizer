@@ -69,9 +69,9 @@ class TestAgentInvokerHandler:
         call_args = mock_boto3_client.invoke_agent_runtime.call_args[1]
         assert call_args["agentRuntimeArn"] == "mock-agent-runtime-arn"
         assert call_args["runtimeSessionId"] == "test-session-123"
+        # Payload should be empty - session_id is passed via runtimeSessionId
         payload = json.loads(call_args["payload"])
-        assert payload["prompt"] == "Check my resources and let me know if they're overprovisioned"
-        assert payload["session_id"] == "test-session-123"
+        assert payload == {}
 
         # Verify record_event was called twice (started and succeeded)
         assert mock_record_event.call_count == 2
@@ -86,18 +86,21 @@ class TestAgentInvokerHandler:
             "runtimeSessionId": "test-session-456",
         }
 
-        event = {"session_id": "test-session-456", "prompt": "Custom optimization request"}
+        event = {
+            "session_id": "test-session-456",
+            "prompt": "Custom optimization request",
+        }
         context = MagicMock()
 
         result = agent_invoker.handler(event, context)
 
         assert result == {"status": 200, "sessionId": "test-session-456"}
 
-        # Verify bedrock was called with custom prompt
+        # Verify bedrock was called with empty payload
+        # Note: prompt is ignored in the current implementation
         call_args = mock_boto3_client.invoke_agent_runtime.call_args[1]
         payload = json.loads(call_args["payload"])
-        assert payload["prompt"] == "Custom optimization request"
-        assert payload["session_id"] == "test-session-456"
+        assert payload == {}
 
         # Verify record_event was called twice
         assert mock_record_event.call_count == 2

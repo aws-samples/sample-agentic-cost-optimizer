@@ -1,6 +1,8 @@
 name: CI
+
 permissions:
   contents: read
+  actions: write 
 
 on:
   pull_request:
@@ -10,27 +12,25 @@ on:
     branches:
       - main
 
-permissions:
-  contents: read
-
 jobs:
   python-tests:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
 
       - name: Install uv
-        uses: astral-sh/setup-uv@85856786d1ce8acfbcc2f13a5f3fbd6b938f9f41 # v7.1.2
+        uses: astral-sh/setup-uv@1e862dfacbd1d6d858c55d9b792c756523627244 # v7.1.4
         with:
           python-version: "3.12"
           enable-cache: true
+          prune-cache: false
           cache-dependency-glob: |
             uv.lock
             pyproject.toml
 
       - name: Install dependencies
-        run: uv sync --group agents --group dev
+        run: uv sync --frozen --group agents --group dev
 
       - name: Run tests
         run: uv run pytest tests/ -v --junitxml=test-results.xml
@@ -39,21 +39,60 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@1e862dfacbd1d6d858c55d9b792c756523627244 # v7.1.4
+        with:
+          python-version: "3.12"
+          enable-cache: true
+          prune-cache: false
+          cache-dependency-glob: |
+            uv.lock
+            pyproject.toml
 
       - name: Setup Node.js
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903 # v6.0.0
         with:
-          node-version: 22
-          cache: "npm"
+          node-version: '22'
+          cache: 'npm'
           cache-dependency-path: infra/package-lock.json
 
       - name: Install dependencies
-        working-directory: infra
         run: npm ci
-
-      - name: Run tests
         working-directory: infra
+
+      - name: Run TypeScript tests
         run: npm test
-        env:
-          CI: true
+        working-directory: infra
+
+  cdk-nag-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@1e862dfacbd1d6d858c55d9b792c756523627244 # v7.1.4
+        with:
+          python-version: "3.12"
+          enable-cache: true
+          prune-cache: false
+          cache-dependency-glob: |
+            uv.lock
+            pyproject.toml
+
+      - name: Setup Node.js
+        uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903 # v6.0.0
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: infra/package-lock.json
+
+      - name: Install CDK dependencies
+        run: npm ci
+        working-directory: infra
+
+      - name: Run CDK Nag checks
+        run: npm run synth > /dev/null
+        working-directory: infra

@@ -1,5 +1,4 @@
 export UV_PROJECT_ENVIRONMENT := .venv
-REQ_DIR := requirements
 DOCKER_IMAGE_NAME := strands-agent
 DOCKER_TAG := latest
 
@@ -34,14 +33,9 @@ setup: init pre-commit-install
 	@echo "✓ Project setup complete!"
 
 init:
-	@mkdir -p $(REQ_DIR)
 	uv sync --group agents --group dev
-	uv export --format requirements-txt --no-dev \
-	  --group agents \
-	  -o $(REQ_DIR)/agents.txt
 	cd infra && npm install
 	@echo "✓ Python deps installed in .venv/"
-	@echo "✓ Exported $(REQ_DIR)/agents.txt"
 	@echo "✓ Node deps installed in infra/"
 
 pre-commit-install:
@@ -54,6 +48,8 @@ check:
 test:
 	@echo "Running Python tests..."
 	uv run pytest tests/ -v
+	@echo "Running TypeScript tests..."
+	cd infra && npm test
 	@echo "✓ All tests completed!"
 
 run:
@@ -69,26 +65,26 @@ cdk-bootstrap:
 	cd infra && npm run build && npx cdk bootstrap
 	@echo "✓ CDK bootstrap completed"
 
-cdk-deploy: 
+cdk-deploy:
 	@echo "Deploying CDK stack..."
 	@echo "Environment: $(or $(ENVIRONMENT),dev), Version: $(or $(VERSION),v1)"
-	cd infra && npm run build && npm run deploy
+	npm run deploy --prefix infra
 	@echo "✓ CDK deployment completed"
 
 cdk-hotswap: 
 	@echo "Fast deploying Lambda changes..."
 	@echo "Environment: $(or $(ENVIRONMENT),dev), Version: $(or $(VERSION),v1)"
-	cd infra && npm run build && npx cdk deploy --hotswap
+	npx cdk deploy --hotswap --prefix infra
 	@echo "✓ CDK hotswap deployment completed"
 
 cdk-watch: 
 	@echo "Starting CDK watch mode..."
 	@echo "Environment: $(or $(ENVIRONMENT),dev), Version: $(or $(VERSION),v1)"
-	cd infra && npm run build && npx cdk watch
+	npx cdk watch --prefix infra
 
 cdk-destroy: 
 	@echo "Destroying CDK stack..."
-	cd infra && npm run destroy
+	npm run destroy --prefix infra
 	@echo "✓ CDK stack destroyed"
 
 trigger-workflow:
@@ -97,6 +93,6 @@ trigger-workflow:
 	@echo "✓ Workflow triggered successfully"
 
 clean:
-	rm -rf .venv .pytest_cache __pycache__ */__pycache__ *.pyc .ruff_cache requirements .build dist
+	rm -rf .venv .pytest_cache __pycache__ */__pycache__ *.pyc .ruff_cache .build dist
 	rm -rf infra/node_modules infra/cdk.out infra/dist
 	@echo "Cleaned."

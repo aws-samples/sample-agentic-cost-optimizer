@@ -16,3 +16,5 @@ infra/bin/infra.d.ts
 infra/bin/infra.js
 infra/lib/infra-stack.d.ts
 infra/lib/infra-stack.js
+reports/
+build-agents/

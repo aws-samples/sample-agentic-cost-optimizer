@@ -4,7 +4,7 @@ import time
 from datetime import datetime, timezone
 from typing import Optional
 
-from bedrock_agentcore.runtime import BedrockAgentCoreApp
+from bedrock_agentcore.runtime import BedrockAgentCoreApp, RequestContext
 from botocore.config import Config as BotocoreConfig
 from botocore.exceptions import ClientError, NoCredentialsError
 from strands import Agent
@@ -14,23 +14,28 @@ from strands_tools import calculator, use_aws
 from src.shared import EventStatus, record_event
 from src.tools import journal, storage
 
-# Environment variables (set by CDK stack or local defaults)
-s3_bucket_name = os.environ.get("S3_BUCKET_NAME", "default-bucket")
-journal_table_name = os.environ.get("JOURNAL_TABLE_NAME", "default-table")
-session_id = os.environ.get("SESSION_ID")
+s3_bucket_name = os.environ.get("S3_BUCKET_NAME")
+if not s3_bucket_name:
+    raise ValueError("S3_BUCKET_NAME environment variable is required")
+
+journal_table_name = os.environ.get("JOURNAL_TABLE_NAME")
+if not journal_table_name:
+    raise ValueError("JOURNAL_TABLE_NAME environment variable is required")
+
 aws_region = os.environ.get("AWS_REGION", "us-east-1")
 model_id = os.environ.get("MODEL_ID", "us.anthropic.claude-sonnet-4-5-20250929-v1:0")
 ttl_days = int(os.environ.get("TTL_DAYS", "90"))
+current_timestamp = int(time.time())
+current_datetime = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
 
-# Set BYPASS_TOOL_CONSENT for local development (CDK stack sets it in deployed environments)
+# Required for local development - CDK sets this in deployed environments
 if "BYPASS_TOOL_CONSENT" not in os.environ:
     os.environ["BYPASS_TOOL_CONSENT"] = "true"
 
-# Boto3 configuration constants (optimized for agent workflows)
 DEFAULT_MAX_ATTEMPTS = 5  # Increased from default 3 for better resilience with Bedrock
 DEFAULT_RETRY_MODE = "standard"  # AWS recommended mode with exponential backoff + jitter
-DEFAULT_CONNECT_TIMEOUT = 60  # Sufficient for establishing connections
-DEFAULT_READ_TIMEOUT = 120  # Allows time for large token responses from Bedrock
+DEFAULT_CONNECT_TIMEOUT = 60  # Bedrock connection establishment typically completes within 10s
+DEFAULT_READ_TIMEOUT = 120  # Bedrock streaming responses can take 60-90s for complex queries
 DEFAULT_MAX_POOL_CONNECTIONS = 10
 
 
@@ -53,7 +58,11 @@ def create_boto_config(
     )
 
 
-def create_agent(boto_config: Optional[BotocoreConfig] = None) -> Agent:
+def create_agent(
+    system_prompt: str,
+    boto_config: Optional[BotocoreConfig] = None,
+    tools: Optional[list] = None,
+) -> Agent:
     """Create configured Agent instances with proper model setup.
 
     Uses environment variables for configuration:
@@ -62,66 +71,74 @@ def create_agent(boto_config: Optional[BotocoreConfig] = None) -> Agent:
 
     Args:
         boto_config: Optional botocore Config for retry and timeout settings.
+        system_prompt: System prompt for the agent (required).
+        tools: List of tools for the agent (optional).
 
     Returns:
         Configured Agent instance with BedrockModel using the provided configuration.
     """
-    # Use provided boto_config or create default one
     if boto_config is None:
         boto_config = create_boto_config()
 
-    # Create BedrockModel with boto_client_config
+    if not system_prompt:
+        raise ValueError("system_prompt is required")
+
+    if tools is None:
+        tools = []
+
     bedrock_model = BedrockModel(
         model_id=model_id,
         region_name=aws_region,
         boto_client_config=boto_config,
     )
 
-    # Calculate current time information in Unix format for CloudWatch queries
-    current_timestamp = int(time.time())
-    current_datetime = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
-
-    SYSTEM_PROMPT = ""
-    SYSTEM_PROMPT += open(os.path.join(os.path.dirname(__file__), "prompt.md")).read()
-    SYSTEM_PROMPT = SYSTEM_PROMPT.replace("{s3_bucket_name}", s3_bucket_name)
-    SYSTEM_PROMPT = SYSTEM_PROMPT.replace("{journal_table_name}", journal_table_name)
-    SYSTEM_PROMPT = SYSTEM_PROMPT.replace("{current_timestamp}", str(current_timestamp))
-    SYSTEM_PROMPT = SYSTEM_PROMPT.replace("{current_datetime}", current_datetime)
-
-    # Create agent with configured model and tools
-    # Note: current_time tool removed - it only returns ISO format which requires parsing
-    # Instead, we inject current_timestamp directly into the prompt in Unix format
     return Agent(
         model=bedrock_model,
-        system_prompt=SYSTEM_PROMPT,
-        tools=[use_aws, journal, storage, calculator],
+        system_prompt=system_prompt,
+        tools=tools,
     )
 
 
-# Create agent
-agent = create_agent()
+REPORT_PROMPT, ANALYSIS_PROMPT = "", ""
+# Read prompts
+ANALYSIS_PROMPT = open(os.path.join(os.path.dirname(__file__), "analysis_prompt.md")).read()
+REPORT_PROMPT = open(os.path.join(os.path.dirname(__file__), "report_prompt.md")).read()
 
-# Create BedrockAgentCore app
+ANALYSIS_PROMPT = ANALYSIS_PROMPT.replace("{current_timestamp}", str(current_timestamp))
+ANALYSIS_PROMPT = ANALYSIS_PROMPT.replace("{current_datetime}", current_datetime)
+
+
+# Initialize at module level for Lambda container reuse across invocations
+analysis_agent = create_agent(system_prompt=ANALYSIS_PROMPT, tools=[use_aws, journal, calculator, storage])
+report_agent = create_agent(
+    system_prompt=REPORT_PROMPT,
+    tools=[storage, journal],
+)
+
+
 app = BedrockAgentCoreApp()
-
-# Use the built-in AgentCore logger
 logger = app.logger
 logger.info("Agent and AgentCore app initialized successfully")
 
 
+# Decorator automatically manages AgentCore status: HEALTHY_BUSY while running, HEALTHY when complete
 @app.async_task
-async def agent_background_task(user_message: str, session_id: str):
-    """Background task to process agent request with LLM"""
+async def background_task(user_message: str, session_id: str):
+    """Background task using workflow pattern"""
     logger.info(f"Background task started - Session: {session_id}")
 
     try:
-        # Use Strands native async method - agent will have full LLM interaction
-        response = await agent.invoke_async(user_message, session_id=session_id)
-
-        # Log completion with response summary for observability
-        logger.info(
-            f"Background task completed - Session: {session_id}, Response length: {len(str(response.message)) if hasattr(response, 'message') else 'unknown'}"
+        await analysis_agent.invoke_async(
+            "Analyze AWS costs and identify optimization opportunities",
+            session_id=session_id,
         )
+
+        response = await report_agent.invoke_async(
+            "Generate cost optimization report based on analysis results",
+            session_id=session_id,
+        )
+
+        logger.info(f"Background completed - Session: {session_id}")
         record_event(
             session_id=session_id,
             status=EventStatus.AGENT_BACKGROUND_TASK_COMPLETED,
@@ -129,9 +146,9 @@ async def agent_background_task(user_message: str, session_id: str):
             ttl_days=ttl_days,
             region_name=aws_region,
         )
-        # Return response for proper async task completion (even though no client receives it)
         return response
 
+    # Return error dicts for structured logging - decorator handles status management
     except NoCredentialsError as e:
         logger.error(f"Background task failed - Session: {session_id}: NoCredentialsError - {str(e)}")
         record_event(
@@ -172,7 +189,10 @@ async def agent_background_task(user_message: str, session_id: str):
         }
 
     except Exception as e:
-        logger.error(f"Background task failed - Session: {session_id}: {type(e).__name__} - {str(e)}", exc_info=True)
+        logger.error(
+            f"Background task failed - Session: {session_id}: {type(e).__name__} - {str(e)}",
+            exc_info=True,
+        )
         record_event(
             session_id=session_id,
             status=EventStatus.AGENT_BACKGROUND_TASK_FAILED,
@@ -191,53 +211,57 @@ async def agent_background_task(user_message: str, session_id: str):
 
 
 @app.entrypoint
-async def invoke(payload):
+async def invoke(payload, context: RequestContext):
     """Process user input and return a response - Fire and forget for Lambda.
 
     Fire-and-forget pattern:
     - Lambda returns immediately (avoiding 15-minute timeout)
     - AgentCore continues processing in background
-    - Status automatically becomes HEALTHY_BUSY when agent_background_task() runs
-    - Status returns to HEALTHY when agent_background_task() completes
+    - Status automatically becomes HEALTHY_BUSY when background_task() runs
+    - Status returns to HEALTHY when background_task() completes
     """
     user_message = payload.get("prompt", "Hello")
-    payload_session_id = payload.get("session_id", session_id)
+    # Get session_id from AgentCore context
+    session_id = context.session_id
 
-    logger.info(f"Request received - Session: {payload_session_id}")
+    logger.info(f"Request received - Session: {session_id}")
     record_event(
-        session_id=payload_session_id,
-        status=EventStatus.AGENT_INVOKE_STARTED,
+        session_id=session_id,
+        status=EventStatus.AGENT_RUNTIME_INVOKE_STARTED,
         table_name=journal_table_name,
         ttl_days=ttl_days,
         region_name=aws_region,
     )
 
     try:
-        asyncio.create_task(agent_background_task(user_message, payload_session_id))
-        logger.info(f"Background processing started - Session: {payload_session_id}")
+        asyncio.create_task(background_task(user_message, session_id))
+        logger.info(f"Background processing started - Session: {session_id}")
         record_event(
-            session_id=payload_session_id,
+            session_id=session_id,
             status=EventStatus.AGENT_BACKGROUND_TASK_STARTED,
             table_name=journal_table_name,
             ttl_days=ttl_days,
             region_name=aws_region,
         )
         return {
-            "message": f"Started processing request for session {payload_session_id}. Processing will continue in background.",
-            "session_id": payload_session_id,
+            "message": f"Started processing request for session {session_id}. Processing will continue in background.",
+            "session_id": session_id,
             "status": "started",
         }
     except Exception as e:
-        logger.error(f"Entrypoint error - Session: {payload_session_id}: {str(e)}", exc_info=True)
+        logger.error(f"Entrypoint error - Session: {session_id}: {str(e)}", exc_info=True)
         record_event(
-            session_id=payload_session_id,
-            status=EventStatus.AGENT_INVOKE_FAILED,
+            session_id=session_id,
+            status=EventStatus.AGENT_RUNTIME_INVOKE_FAILED,
             table_name=journal_table_name,
             ttl_days=ttl_days,
             error_message=str(e),
             region_name=aws_region,
         )
-        return {"error": f"Error starting background processing: {str(e)}", "session_id": payload_session_id}
+        return {
+            "error": f"Error starting background processing: {str(e)}",
+            "session_id": session_id,
+        }
 
 
 if __name__ == "__main__":

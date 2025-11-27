@@ -15,8 +15,14 @@ tracer = Tracer()
 bedrock_agentcore = boto3.client("bedrock-agentcore")
 
 # Environment variables
-agent_runtime_arn = os.environ.get("AGENT_CORE_RUNTIME_ARN", "")
-journal_table_name = os.environ.get("JOURNAL_TABLE_NAME", "")
+agent_runtime_arn = os.environ.get("AGENT_CORE_RUNTIME_ARN")
+if not agent_runtime_arn:
+    raise ValueError("AGENT_CORE_RUNTIME_ARN environment variable is required")
+
+journal_table_name = os.environ.get("JOURNAL_TABLE_NAME")
+if not journal_table_name:
+    raise ValueError("JOURNAL_TABLE_NAME environment variable is required")
+
 ttl_days = int(os.environ.get("TTL_DAYS", "90"))
 aws_region = os.environ.get("AWS_REGION", "us-east-1")
 
@@ -25,7 +31,6 @@ aws_region = os.environ.get("AWS_REGION", "us-east-1")
 def handler(event, context):
     """Lambda handler to invoke Bedrock AgentCore runtime"""
     session_id = event["session_id"]
-    prompt = event.get("prompt", "Check my resources and let me know if they're overprovisioned")
 
     logger.info("Lambda started", sessionId=session_id)
 
@@ -43,20 +48,24 @@ def handler(event, context):
         trace_id = get_tracer_id()
 
         # Invoke AgentCore runtime
+        # Note: Empty payload is intentional - session_id is in the context
+        # into the context by AgentCore and accessed via context.session_id
         invoke_params = {
             "agentRuntimeArn": agent_runtime_arn,
             "runtimeSessionId": session_id,
-            "payload": json.dumps({"prompt": prompt, "session_id": session_id}),
+            "payload": json.dumps({}),
         }
 
-        # Pass trace ID to link Lambda with AgentCore in GenAI Observability
+        # Links Lambda X-Ray traces with AgentCore for end-to-end observability in GenAI console
         if trace_id:
             invoke_params["traceId"] = trace_id
 
         response = bedrock_agentcore.invoke_agent_runtime(**invoke_params)
 
         logger.info(
-            "AgentCore responded", sessionId=response.get("runtimeSessionId"), status=response.get("statusCode")
+            "AgentCore responded",
+            sessionId=response.get("runtimeSessionId"),
+            status=response.get("statusCode"),
         )
 
         record_event(
@@ -67,7 +76,10 @@ def handler(event, context):
             region_name=aws_region,
         )
 
-        return {"status": response.get("statusCode"), "sessionId": response.get("runtimeSessionId")}
+        return {
+            "status": response.get("statusCode"),
+            "sessionId": response.get("runtimeSessionId"),
+        }
 
     except Exception as e:
         logger.error("AgentCore failed", error=str(e), sessionId=session_id)

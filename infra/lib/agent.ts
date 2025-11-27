@@ -1,19 +1,17 @@
-import { AgentRuntimeArtifact, Runtime } from '@aws-cdk/aws-bedrock-agentcore-alpha';
+import { AgentCoreRuntime, AgentRuntimeArtifact, Runtime } from '@aws-cdk/aws-bedrock-agentcore-alpha';
 import { Stack } from 'aws-cdk-lib';
+import { NagSuppressions } from 'cdk-nag';
 import { Construct } from 'constructs';
 
-import { Platform } from 'aws-cdk-lib/aws-ecr-assets';
-import { Effect, ManagedPolicy, Policy, PolicyDocument, PolicyStatement } from 'aws-cdk-lib/aws-iam';
+import { Effect, Policy, PolicyDocument, PolicyStatement } from 'aws-cdk-lib/aws-iam';
+import { Asset } from 'aws-cdk-lib/aws-s3-assets';
 
 import { InfraConfig } from '../constants/infra-config';
 
 export interface AgentProps {
   agentRuntimeName: string;
   description?: string;
-  dockerfilePath?: string;
   environmentVariables?: { [key: string]: string };
-  buildArgs?: { [key: string]: string };
-  platform?: Platform;
 }
 
 export class Agent extends Construct {
@@ -23,32 +21,26 @@ export class Agent extends Construct {
   constructor(scope: Construct, id: string, props: AgentProps) {
     super(scope, id);
 
-    const {
-      agentRuntimeName,
-      description,
-      dockerfilePath = 'Dockerfile',
-      environmentVariables = {},
-      buildArgs = {},
-      platform = Platform.LINUX_ARM64,
-    } = props;
+    const { agentRuntimeName, description, environmentVariables = {} } = props;
 
-    // Get environment from context (same as main stack)
     const environment = this.node.tryGetContext('env') || 'dev';
-
-    // Get stack reference for pseudo parameters
     const stack = Stack.of(this);
 
-    // Build Docker image from local asset
-    const agentRuntimeArtifact = AgentRuntimeArtifact.fromAsset('../', {
-      file: dockerfilePath,
-      buildArgs: {
-        ENVIRONMENT: environment,
-        ...buildArgs,
-      },
-      platform,
+    // Reference pre-built AgentCore Runtime package (built by build-deployment-package script)
+    const deploymentPackage = new Asset(this, 'AgentCoreRuntimePackage', {
+      path: './dist/agentcore_runtime.zip',
     });
 
-    // Create Agent Core runtime
+    // Use agent-as-code deployment from S3 with OTEL instrumentation
+    const agentRuntimeArtifact = AgentRuntimeArtifact.fromS3(
+      {
+        bucketName: deploymentPackage.s3BucketName,
+        objectKey: deploymentPackage.s3ObjectKey,
+      },
+      AgentCoreRuntime.PYTHON_3_12,
+      ['opentelemetry-instrument', 'src/agents/main.py'],
+    );
+
     this.runtime = new Runtime(this, 'Runtime', {
       runtimeName: agentRuntimeName,
       agentRuntimeArtifact,
@@ -59,10 +51,8 @@ export class Agent extends Construct {
       },
     });
 
-    // Attach AWS SecurityAudit managed policy for read-only access
-    this.runtime.role.addManagedPolicy(ManagedPolicy.fromAwsManagedPolicyName('SecurityAudit'));
+    deploymentPackage.grantRead(this.runtime.role);
 
-    // Create custome-managed policy for Bedrock model invocation
     const modelId = InfraConfig.inferenceProfileRegion
       ? `${InfraConfig.inferenceProfileRegion}.${InfraConfig.modelId}`
       : InfraConfig.modelId;
@@ -85,7 +75,6 @@ export class Agent extends Construct {
     });
     bedrockPolicy.attachToRole(this.runtime.role);
 
-    // Create custome-managed policy for monitoring
     const monitoringPolicy = new Policy(this, 'MonitoringPolicy', {
       policyName: 'MonitoringPolicy',
       document: new PolicyDocument({
@@ -93,22 +82,40 @@ export class Agent extends Construct {
           new PolicyStatement({
             sid: 'LambdaMonitoring',
             effect: Effect.ALLOW,
-            actions: ['lambda:GetFunction', 'lambda:GetFunctionConcurrency', 'lambda:GetProvisionedConcurrencyConfig'],
+            actions: [
+              'lambda:GetFunction',
+              'lambda:GetFunctionConfiguration',
+              'lambda:GetFunctionConcurrency',
+              'lambda:GetProvisionedConcurrencyConfig',
+              'lambda:ListProvisionedConcurrencyConfigs',
+              'lambda:ListFunctions',
+            ],
             resources: ['*'],
           }),
           new PolicyStatement({
-            sid: 'CloudWatchLogsMonitoring',
+            sid: 'CloudWatchMetricsAccess',
             effect: Effect.ALLOW,
-            actions: [
-              'cloudwatch:GetMetricStatistics',
-              'logs:StartQuery',
-              'logs:StopQuery',
-              'logs:GetQueryResults',
-              'logs:GetLogEvents',
-              'logs:GetLogRecord',
-              'logs:FilterLogEvents',
-            ],
+            actions: ['cloudwatch:GetMetricStatistics', 'cloudwatch:ListMetrics'],
             resources: ['*'],
+            conditions: {
+              StringEquals: {
+                'cloudwatch:namespace': 'AWS/Lambda',
+              },
+            },
+          }),
+          new PolicyStatement({
+            sid: 'CloudWatchLogsQueryAccess',
+            effect: Effect.ALLOW,
+            actions: ['logs:StopQuery', 'logs:GetQueryResults'],
+            resources: ['*'],
+          }),
+          new PolicyStatement({
+            sid: 'CloudWatchLogsAccess',
+            effect: Effect.ALLOW,
+            actions: ['logs:StartQuery', 'logs:GetLogEvents', 'logs:GetLogRecord', 'logs:FilterLogEvents'],
+            // Scoped to Lambda log groups. To control which CloudWatch Logs the agent can access,
+            // modify the resource pattern below (e.g., restrict to specific function names or log group patterns)
+            resources: [`arn:${stack.partition}:logs:*:*:log-group:/aws/lambda/*`],
           }),
           new PolicyStatement({
             sid: 'PricingAccess',
@@ -122,5 +129,45 @@ export class Agent extends Construct {
     monitoringPolicy.attachToRole(this.runtime.role);
 
     this.runtimeArn = this.runtime.agentRuntimeArn;
+
+    this.applyNagSuppressions(bedrockPolicy, monitoringPolicy);
+  }
+
+  private applyNagSuppressions(bedrockPolicy: Policy, monitoringPolicy: Policy): void {
+    NagSuppressions.addResourceSuppressions(
+      this.runtime,
+      [
+        {
+          id: 'AwsSolutions-IAM5',
+          reason:
+            'Wildcard permissions required by AgentCore Runtime construct for CloudWatch Logs, S3 operations, and workload identity management. Auto-generated by @aws-cdk/aws-bedrock-agentcore-alpha.',
+        },
+      ],
+      true,
+    );
+
+    NagSuppressions.addResourceSuppressions(
+      bedrockPolicy,
+      [
+        {
+          id: 'AwsSolutions-IAM5',
+          reason:
+            'Region wildcard required for Bedrock foundation model access. Foundation models are global resources accessible from any region. Model ID is specifically scoped.',
+        },
+      ],
+      true,
+    );
+
+    NagSuppressions.addResourceSuppressions(
+      monitoringPolicy,
+      [
+        {
+          id: 'AwsSolutions-IAM5',
+          reason:
+            'Wildcard resources required for read-only monitoring operations. Lambda functions and CloudWatch resources are created dynamically. Pricing API does not support resource-level permissions. All actions are read-only.',
+        },
+      ],
+      true,
+    );
   }
 }

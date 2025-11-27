@@ -1,10 +1,11 @@
-import { CfnOutput, Duration, RemovalPolicy, Stack, type StackProps } from 'aws-cdk-lib';
+import { CfnOutput, Duration, Fn, RemovalPolicy, Stack, type StackProps } from 'aws-cdk-lib';
+import { NagSuppressions } from 'cdk-nag';
 import { Construct } from 'constructs';
 
 import { AttributeType, BillingMode, Table } from 'aws-cdk-lib/aws-dynamodb';
-import { EventField, EventPattern, Rule, RuleTargetInput } from 'aws-cdk-lib/aws-events';
+import { EventField, EventPattern, Rule, RuleTargetInput, Schedule } from 'aws-cdk-lib/aws-events';
 import { SfnStateMachine } from 'aws-cdk-lib/aws-events-targets';
-import { Effect, PolicyStatement } from 'aws-cdk-lib/aws-iam';
+import { ArnPrincipal, Effect, PolicyDocument, PolicyStatement } from 'aws-cdk-lib/aws-iam';
 import { Code, Function, LayerVersion, Runtime, Tracing } from 'aws-cdk-lib/aws-lambda';
 import { Bucket, BucketEncryption } from 'aws-cdk-lib/aws-s3';
 
@@ -18,11 +19,9 @@ export class InfraStack extends Stack {
   constructor(scope: Construct, id: string, props?: StackProps) {
     super(scope, id, props);
 
-    // Get environment and version from environment variables or context
     const environment = process.env.ENVIRONMENT || this.node.tryGetContext('env') || 'dev';
-    const version = process.env.VERSION || this.node.tryGetContext('version') || 'v1';
+    const version = process.env.VERSION || this.node.tryGetContext('version') || 'v2';
 
-    // Create DynamoDB table for agents
     const agentsTable = new Table(this, 'AgentsTable', {
       tableName: `agents-table-${environment}`,
       partitionKey: {
@@ -34,21 +33,32 @@ export class InfraStack extends Stack {
         type: AttributeType.STRING,
       },
       billingMode: BillingMode.PAY_PER_REQUEST,
-      removalPolicy: RemovalPolicy.DESTROY, // For development/POC
+      removalPolicy: RemovalPolicy.DESTROY, // For development/POC - change to RETAIN for production
       timeToLiveAttribute: 'ttlSeconds',
+      pointInTimeRecoverySpecification: {
+        pointInTimeRecoveryEnabled: true,
+      },
     });
 
-    // Create S3 bucket for agent data storage
-    const agentDataBucket = new Bucket(this, 'AgentDataBucket', {
-      bucketName: `agent-data-${environment}-${this.account}-${this.region}`,
+    const accessLogsBucket = new Bucket(this, 'AccessLogsBucket', {
+      bucketName: `access-logs-${environment}-${this.account}-${this.region}`,
       removalPolicy: RemovalPolicy.DESTROY,
-      autoDeleteObjects: true, // Automatically empty bucket on stack deletion
-      versioned: true,
+      autoDeleteObjects: true,
       encryption: BucketEncryption.S3_MANAGED,
       enforceSSL: true,
     });
 
-    // Create agent using the Agent class
+    const agentDataBucket = new Bucket(this, 'AgentDataBucket', {
+      bucketName: `agent-data-${environment}-${this.account}-${this.region}`,
+      removalPolicy: RemovalPolicy.DESTROY,
+      autoDeleteObjects: true, // For development/POC - remove for production to prevent data loss
+      versioned: true,
+      encryption: BucketEncryption.S3_MANAGED,
+      enforceSSL: true,
+      serverAccessLogsBucket: accessLogsBucket,
+      serverAccessLogsPrefix: 'agent-data-logs/',
+    });
+
     const modelId = InfraConfig.inferenceProfileRegion
       ? `${InfraConfig.inferenceProfileRegion}.${InfraConfig.modelId}`
       : InfraConfig.modelId;
@@ -56,7 +66,6 @@ export class InfraStack extends Stack {
     this.agent = new Agent(this, 'AgentCore', {
       agentRuntimeName: `agentRuntime_${environment}_${version}`,
       description: `Agent runtime for ${environment} environment`,
-      dockerfilePath: 'Dockerfile',
       environmentVariables: {
         BYPASS_TOOL_CONSENT: 'true',
         S3_BUCKET_NAME: agentDataBucket.bucketName,
@@ -67,19 +76,22 @@ export class InfraStack extends Stack {
       },
     });
 
-    // Grant S3 bucket access to the agent role
-    agentDataBucket.grantReadWrite(this.agent.runtime.role);
+    agentDataBucket.addToResourcePolicy(
+      new PolicyStatement({
+        sid: 'AllowAgentRuntimeAccess',
+        effect: Effect.ALLOW,
+        principals: [new ArnPrincipal(this.agent.runtime.role.roleArn)],
+        actions: ['s3:GetObject', 's3:PutObject'],
+        resources: [`${agentDataBucket.bucketArn}/*`],
+      }),
+    );
 
-    // Grant DynamoDB table access to the agent role
-    agentsTable.grantReadWriteData(this.agent.runtime.role);
-
-    // Create Lambda function for agent invocation
     const agentInvokerFunction = new Function(this, 'AgentInvoker', {
       runtime: Runtime.PYTHON_3_12,
       handler: 'agent_invoker.handler',
       code: Code.fromAsset('..', {
-        // Custom bundling: combines handler from infra/lambda with shared code from src/
         bundling: {
+          // Custom bundling: combines handler from infra/lambda with shared code from src/
           image: Runtime.PYTHON_3_12.bundlingImage,
           command: [
             'bash',
@@ -89,7 +101,6 @@ export class InfraStack extends Stack {
               'rsync -av --exclude="__pycache__" --exclude="*.pyc" src/shared src/__init__.py /asset-output/src/',
           ],
         },
-        // Exclude list speeds up CDK asset hash calculation by skipping large/irrelevant directories
         exclude: [
           'node_modules/**',
           '.venv/**',
@@ -111,7 +122,6 @@ export class InfraStack extends Stack {
         ],
       }),
       layers: [
-        // AWS Lambda Powertools Layer - version 18 for Python 3.12 x86_64
         LayerVersion.fromLayerVersionArn(
           this,
           'PowertoolsLayer',
@@ -127,12 +137,11 @@ export class InfraStack extends Stack {
         TTL_DAYS: InfraConfig.ttlDays.toString(),
         ENVIRONMENT: environment,
         POWERTOOLS_SERVICE_NAME: InfraConfig.serviceName,
-        LOG_LEVEL: InfraConfig.logLevel,
+        LOG_LEVEL: InfraConfig.lambdaLogLevel,
       },
       description: 'Lambda function to invoke Agent Core runtime',
     });
 
-    // Grant Lambda permission to invoke Agent Core runtime
     agentInvokerFunction.addToRolePolicy(
       new PolicyStatement({
         effect: Effect.ALLOW,
@@ -141,28 +150,68 @@ export class InfraStack extends Stack {
       }),
     );
 
-    // Grant Lambda permission to write logs
-    agentInvokerFunction.addToRolePolicy(
-      new PolicyStatement({
-        effect: Effect.ALLOW,
-        actions: ['logs:CreateLogGroup', 'logs:CreateLogStream', 'logs:PutLogEvents'],
-        resources: ['*'],
-      }),
-    );
-
-    // Grant Lambda permission to write events to DynamoDB
-    agentsTable.grantWriteData(agentInvokerFunction);
-
-    // Create Step Function workflow
     const workflow = new Workflow(this, 'AgentWorkflow', {
       agentInvokerFunction,
       journalTable: agentsTable,
       environment,
       ttlDays: InfraConfig.ttlDays,
-      logLevel: InfraConfig.logLevel,
+      lambdaLogLevel: InfraConfig.lambdaLogLevel,
     });
 
-    // Create EventBridge rule for manual triggers
+    agentsTable.addToResourcePolicy(
+      new PolicyStatement({
+        sid: 'AllowAgentRuntimePutItem',
+        effect: Effect.ALLOW,
+        principals: [new ArnPrincipal(this.agent.runtime.role.roleArn)],
+        actions: ['dynamodb:PutItem'],
+        resources: [Fn.sub('arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/agents-table-${environment}', { environment })],
+      }),
+    );
+
+    agentsTable.addToResourcePolicy(
+      new PolicyStatement({
+        sid: 'AllowAgentInvokerPutItem',
+        effect: Effect.ALLOW,
+        principals: [new ArnPrincipal(agentInvokerFunction.role!.roleArn)],
+        actions: ['dynamodb:PutItem'],
+        resources: [Fn.sub('arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/agents-table-${environment}', { environment })],
+      }),
+    );
+
+    agentsTable.addToResourcePolicy(
+      new PolicyStatement({
+        sid: 'AllowSessionInitializerPutItem',
+        effect: Effect.ALLOW,
+        principals: [new ArnPrincipal(workflow.sessionInitializerFunction.role!.roleArn)],
+        actions: ['dynamodb:PutItem'],
+        resources: [Fn.sub('arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/agents-table-${environment}', { environment })],
+      }),
+    );
+
+    agentsTable.addToResourcePolicy(
+      new PolicyStatement({
+        sid: 'AllowStateMachineQuery',
+        effect: Effect.ALLOW,
+        principals: [new ArnPrincipal(workflow.stateMachine.role.roleArn)],
+        actions: ['dynamodb:Query'],
+        resources: [Fn.sub('arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/agents-table-${environment}', { environment })],
+      }),
+    );
+
+    const scheduledTriggerRule = new Rule(this, 'ScheduledTriggerRule', {
+      schedule: Schedule.cron({ hour: '6', minute: '0' }),
+      description: 'Rule to trigger agent workflow daily at 6am UTC',
+    });
+
+    scheduledTriggerRule.addTarget(
+      new SfnStateMachine(workflow.stateMachine, {
+        input: RuleTargetInput.fromObject({
+          // Use EventField.eventId (UUID format, 36 chars) to meet AgentCore's 33+ character requirement
+          session_id: EventField.eventId,
+        }),
+      }),
+    );
+
     const manualTriggerRule = new Rule(this, 'ManualTriggerRule', {
       eventPattern: {
         source: ['manual-trigger'],
@@ -171,16 +220,15 @@ export class InfraStack extends Stack {
       description: 'Rule to trigger agent workflow via manual EventBridge events',
     });
 
-    // Add Step Function as target
     manualTriggerRule.addTarget(
       new SfnStateMachine(workflow.stateMachine, {
         input: RuleTargetInput.fromObject({
+          // Use EventBridge event-id (UUID format, 36 chars) to meet AgentCore's 33+ character requirement
           session_id: EventField.fromPath('$.id'),
         }),
       }),
     );
 
-    // CloudFormation Outputs
     new CfnOutput(this, 'AgentsTableName', {
       value: agentsTable.tableName,
       description: 'Name of the DynamoDB table for agents',
@@ -215,5 +263,35 @@ export class InfraStack extends Stack {
       value: manualTriggerRule.ruleArn,
       description: 'ARN of the EventBridge rule for manual workflow triggers',
     });
+
+    new CfnOutput(this, 'ScheduledTriggerRuleArn', {
+      value: scheduledTriggerRule.ruleArn,
+      description: 'ARN of the EventBridge rule for scheduled workflow triggers (daily at 6am UTC)',
+    });
+
+    this.applyNagSuppressions(agentInvokerFunction, workflow);
+  }
+
+  private applyNagSuppressions(agentInvokerFunction: Function, workflow: Workflow): void {
+    NagSuppressions.addResourceSuppressions(
+      agentInvokerFunction,
+      [
+        {
+          id: 'AwsSolutions-IAM4',
+          reason:
+            'AWSLambdaBasicExecutionRole is a well-scoped AWS managed policy for Lambda CloudWatch Logs access. Standard practice for Lambda functions.',
+        },
+        {
+          id: 'AwsSolutions-IAM5',
+          reason:
+            'Wildcard permissions required for CloudWatch Logs (dynamic log group creation) and AgentCore runtime invocations (session-level access under specific runtime ARN).',
+        },
+        {
+          id: 'AwsSolutions-L1',
+          reason: 'Python 3.12 is fully supported by AWS Lambda until October 2028.',
+        },
+      ],
+      true,
+    );
   }
 }
