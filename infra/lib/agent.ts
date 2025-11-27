@@ -99,6 +99,11 @@ export class Agent extends Construct {
             effect: Effect.ALLOW,
             actions: ['cloudwatch:GetMetricStatistics', 'cloudwatch:ListMetrics'],
             resources: ['*'],
+            conditions: {
+              StringEquals: {
+                'cloudwatch:namespace': 'AWS/Lambda',
+              },
+            },
           }),
           new PolicyStatement({
             sid: 'CloudWatchLogsQueryAccess',

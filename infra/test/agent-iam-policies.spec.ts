@@ -11,7 +11,7 @@ describe('Agent IAM Policies', () => {
   const template = Template.fromStack(stack);
 
   describe('CloudWatch Metrics Policy', () => {
-    it('should allow CloudWatch Metrics access with wildcard resources', () => {
+    it('should allow CloudWatch Metrics access scoped to Lambda namespace', () => {
       const policies = template.findResources('AWS::IAM::Policy', {
         Properties: {
           PolicyName: 'MonitoringPolicy',
@@ -29,6 +29,11 @@ describe('Agent IAM Policies', () => {
       expect(metricsStatement.Action).toContain('cloudwatch:GetMetricStatistics');
       expect(metricsStatement.Action).toContain('cloudwatch:ListMetrics');
       expect(metricsStatement.Resource).toEqual('*');
+
+      // Validate namespace condition
+      expect(metricsStatement.Condition).toBeDefined();
+      expect(metricsStatement.Condition.StringEquals).toBeDefined();
+      expect(metricsStatement.Condition.StringEquals['cloudwatch:namespace']).toBe('AWS/Lambda');
     });
   });
 
