@@ -1,8 +1,6 @@
 export UV_PROJECT_ENVIRONMENT := .venv
-DOCKER_IMAGE_NAME := strands-agent
-DOCKER_TAG := latest
 
-.PHONY: help setup init pre-commit-install check test run docker-build cdk-bootstrap cdk-deploy cdk-hotswap cdk-watch cdk-destroy clean
+.PHONY: help setup init pre-commit-install check test run cdk-bootstrap cdk-deploy cdk-hotswap cdk-watch cdk-destroy clean
 
 help:
 	@echo "Development Workflow:"
@@ -17,7 +15,6 @@ help:
 	@echo "Development:"
 	@echo "  make run          - Run the sample local agent"
 	@echo "  make trigger-workflow - Trigger Step Function workflow via EventBridge"
-	@echo "  make docker-build - Build Docker image for agent"
 	@echo ""
 	@echo "AWS Deployment:"
 	@echo "  make cdk-bootstrap - Bootstrap CDK (run once per AWS account/region)"
@@ -55,10 +52,6 @@ test:
 run:
 	PYTHONPATH=src uv run python -m agents.main
 
-docker-build: 
-	@echo "Building Docker image: $(DOCKER_IMAGE_NAME):$(DOCKER_TAG)"
-	docker buildx build --platform linux/arm64 -t $(DOCKER_IMAGE_NAME):$(DOCKER_TAG) --load .
-	@echo "✓ Docker image built successfully"
 
 cdk-bootstrap: 
 	@echo "Bootstrapping CDK..."

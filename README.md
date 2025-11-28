@@ -42,7 +42,6 @@ In order to deploy the agent you will need to have the following tools installed
 - **uv** - Python package manager - [Installation guide](https://docs.astral.sh/uv/getting-started/installation/)
 - **Node.js 20+** - Required for AWS CDK - [Download Node.js](https://nodejs.org/)
 - **AWS CLI** - [Installation guide](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html)
-- **Docker** - Required for local testing - [Get Docker](https://docs.docker.com/get-docker/)
 
 Configure AWS credentials:
 
@@ -78,22 +77,6 @@ aws configure
 
 The agent will analyze your AWS Lambda functions and save a cost optimization report to Amazon S3.
 
-## Local Testing
-
-Run the agent locally:
-
-```bash
-make run
-```
-
-In another terminal, send a request:
-
-```bash
-curl -X POST http://localhost:8080/invocations \
-  -H "Content-Type: application/json" \
-  -d '{"prompt": "Analyze costs"}'
-```
-
 ## Project Structure
 
 ```
@@ -115,8 +98,8 @@ Set these environment variables (or use defaults):
 
 - `ENVIRONMENT`: Environment name (default: `dev`)
 - `VERSION`: Version tag (default: `v1`)
-- `MODEL_ID`: Amazon Bedrock model ID (default: Claude Sonnet 4.5)
-- `TTL_DAYS`: Amazon DynamoDB record retention (default: `90`)
+- `MODEL_ID`: Amazon Bedrock model ID (default: Claude Sonnet 4)
+- `TTL_DAYS`: Amazon DynamoDB record retention (default: `30`)
 
 ## Deployment
 
@@ -174,10 +157,6 @@ Remove local artifacts:
 ```bash
 make clean
 ```
-
-## Development
-
-See [Local Development Guide](docs/LOCAL_DEVELOPMENT.md) for detailed setup and development workflow.
 
 ## Common Issues
 
