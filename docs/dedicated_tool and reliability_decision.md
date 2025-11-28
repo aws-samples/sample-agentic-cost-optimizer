@@ -11,9 +11,9 @@ These changes improve agent reliability, simplify the codebase, and enable succe
 
 ## Problem Statement
 
-### Challenge 1: Write service Operations
+### Challenge 1: S3 Write Operations
 
-The agent was using the `use_aws` tool for service write operations, requiring:
+The agent was using the `use_aws` tool for S3 write operations, requiring:
 - AWS API call construction in the prompt
 - Manual session ID path management
 - Parameter handling by prompt
@@ -115,9 +115,12 @@ exceeds the log groups log retention settings ([0,110])
 **Architecture**:
 ```python
 @tool(context=True)
-def storage(filename: str, content: str, tool_context: ToolContext) -> Dict[str, Any]:
-    """Write text content to S3 with automatic session-based path management."""
-    return _write_to_s3(filename, content, tool_context)
+def storage(action: str, filename: str, tool_context: ToolContext, content: str = "") -> Dict[str, Any]:
+    """Read or write text content to S3 with automatic session-based path management."""
+    if action == "read":
+        return _read_from_s3(filename, tool_context)
+    elif action == "write":
+        return _write_to_s3(filename, content, tool_context)
 ```
 
 **Key Features**:
@@ -145,7 +148,7 @@ use_aws(
 )
 
 # After (using storage tool)
-storage(filename="cost_report.txt", content=report_content)
+storage(action="write", filename="cost_report.txt", content=report_content)
 ```
 
 3. **Comprehensive Error Handling**:
@@ -188,8 +191,9 @@ except ClientError as e:
 ```
 
 **Benefits**:
-- **Simplified Prompt**: Agent just calls `storage(filename, content)`
+- **Simplified Prompt**: Agent just calls `storage(action, filename, content)`
 - **Automatic Path Management**: Session ID handled automatically
+- **Bidirectional Operations**: Supports both read and write actions
 - **Consistent Pattern**: Matches journal tool design
 - **Better Testing**: Tool can be unit tested independently
 
@@ -237,14 +241,16 @@ logger.error(f"--> S3 write failed - Bucket: {bucket}, Key: {key}, Error: {error
 import time
 from datetime import datetime, timezone
 
-def create_agent(...):
-    # Calculate current time information
-    current_timestamp = int(time.time())
-    current_datetime = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
-    
-    # Inject into system prompt
-    SYSTEM_PROMPT = SYSTEM_PROMPT.replace("{current_timestamp}", str(current_timestamp))
-    SYSTEM_PROMPT = SYSTEM_PROMPT.replace("{current_datetime}", current_datetime)
+# Calculate current time information at module level
+current_timestamp = int(time.time())
+current_datetime = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+
+# Read prompts
+ANALYSIS_PROMPT = open(os.path.join(os.path.dirname(__file__), "analysis_prompt.md")).read()
+
+# Inject into system prompt
+ANALYSIS_PROMPT = ANALYSIS_PROMPT.replace("{current_timestamp}", str(current_timestamp))
+ANALYSIS_PROMPT = ANALYSIS_PROMPT.replace("{current_datetime}", current_datetime)
 ```
 
 **Example Values**:
@@ -274,8 +280,8 @@ Current date and time: 2025-10-22 16:07:44 UTC
 **After**:
 ```markdown
 - Use the storage tool to save files to S3:
-  - Save the full report by calling storage with filename "cost_report.txt"
-  - Save supporting evidence by calling storage with filename "evidence.txt"
+  - Save the full report by calling storage with action="write", filename="cost_report.txt", and content
+  - Save supporting evidence by calling storage with action="write", filename="evidence.txt", and content
 - The storage tool automatically handles:
   - Session ID prefixing - files are saved under the session_id prefix
   - S3 bucket configuration - uses the S3_BUCKET_NAME environment variable
