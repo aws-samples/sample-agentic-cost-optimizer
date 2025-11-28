@@ -177,7 +177,6 @@ class TestStorageSuccess:
         assert result["size_bytes"] == len("Test report content".encode("utf-8"))
         assert "timestamp" in result
 
-        # Verify S3 operations
         mock_s3.Bucket.assert_called_once_with("test-bucket")
         mock_s3_bucket.put_object.assert_called_once()
         call_args = mock_s3_bucket.put_object.call_args

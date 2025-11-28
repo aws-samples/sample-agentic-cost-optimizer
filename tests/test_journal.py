@@ -181,7 +181,6 @@ class TestJournalCompleteTask:
         assert result["success"] is True
         assert result["status"] == "FAILED"
         mock_record_event.assert_called_once()
-        # Verify error_message was passed
         call_args = mock_record_event.call_args[1]
         assert call_args["error_message"] == "Processing error"
 

@@ -15,20 +15,28 @@ def mock_context():
     return context
 
 
+@pytest.fixture
+def mock_create_task():
+    """Create a mock for asyncio.create_task that properly handles coroutines."""
+
+    def consume_coroutine(coro):
+        coro.close()
+        return AsyncMock()
+
+    return consume_coroutine
+
+
 class TestInvokeFunction:
     """Test cases for the invoke function with fire-and-forget async behavior."""
 
     @pytest.mark.asyncio
     @patch("src.agents.main.record_event")
     @patch("asyncio.create_task")
-    async def test_successful_task_creation(self, mock_create_task, mock_record_event, mock_context):
+    async def test_successful_task_creation(
+        self, mock_create_task_patch, mock_record_event, mock_context, mock_create_task
+    ):
         """Test successful task creation: invoke returns immediate success message."""
-
-        def consume_coroutine(coro):
-            coro.close()  # Close the coroutine to avoid warning
-            return AsyncMock()
-
-        mock_create_task.side_effect = consume_coroutine
+        mock_create_task_patch.side_effect = mock_create_task
         payload = {"prompt": "hello"}
 
         result = await invoke(payload, mock_context)
@@ -40,14 +48,14 @@ class TestInvokeFunction:
     @pytest.mark.asyncio
     @patch("src.agents.main.record_event")
     @patch("asyncio.create_task")
-    async def test_task_creation_failure(self, mock_create_task, mock_record_event, mock_context):
+    async def test_task_creation_failure(self, mock_create_task_patch, mock_record_event, mock_context):
         """Test task creation failure: invoke returns error message."""
 
-        def consume_coroutine(coro):
-            coro.close()  # Close the coroutine to avoid warning
+        def consume_and_raise(coro):
+            coro.close()
             raise Exception("Task creation failed")
 
-        mock_create_task.side_effect = consume_coroutine
+        mock_create_task_patch.side_effect = consume_and_raise
         payload = {"prompt": "hello"}
 
         result = await invoke(payload, mock_context)
@@ -57,14 +65,11 @@ class TestInvokeFunction:
     @pytest.mark.asyncio
     @patch("src.agents.main.record_event")
     @patch("asyncio.create_task")
-    async def test_default_prompt_when_missing(self, mock_create_task, mock_record_event, mock_context):
+    async def test_default_prompt_when_missing(
+        self, mock_create_task_patch, mock_record_event, mock_context, mock_create_task
+    ):
         """Test that default prompt 'Hello' is used when prompt is missing from payload."""
-
-        def consume_coroutine(coro):
-            coro.close()  # Close the coroutine to avoid warning
-            return AsyncMock()
-
-        mock_create_task.side_effect = consume_coroutine
+        mock_create_task_patch.side_effect = mock_create_task
         payload = {}
 
         result = await invoke(payload, mock_context)
@@ -74,14 +79,11 @@ class TestInvokeFunction:
     @pytest.mark.asyncio
     @patch("src.agents.main.record_event")
     @patch("asyncio.create_task")
-    async def test_session_id_from_context(self, mock_create_task, mock_record_event, mock_context):
+    async def test_session_id_from_context(
+        self, mock_create_task_patch, mock_record_event, mock_context, mock_create_task
+    ):
         """Test that session_id is retrieved from context."""
-
-        def consume_coroutine(coro):
-            coro.close()  # Close the coroutine to avoid warning
-            return AsyncMock()
-
-        mock_create_task.side_effect = consume_coroutine
+        mock_create_task_patch.side_effect = mock_create_task
         payload = {"prompt": "test"}
 
         result = await invoke(payload, mock_context)
@@ -96,14 +98,11 @@ class TestBackgroundTask:
     @pytest.mark.asyncio
     @patch("src.agents.main.record_event")
     @patch("asyncio.create_task")
-    async def test_background_task_is_started(self, mock_create_task, mock_record_event, mock_context):
+    async def test_background_task_is_started(
+        self, mock_create_task_patch, mock_record_event, mock_context, mock_create_task
+    ):
         """Test that background task is started when invoke is called."""
-
-        def consume_coroutine(coro):
-            coro.close()  # Close the coroutine to avoid warning
-            return AsyncMock()
-
-        mock_create_task.side_effect = consume_coroutine
+        mock_create_task_patch.side_effect = mock_create_task
         payload = {"prompt": "hello"}
 
         result = await invoke(payload, mock_context)
@@ -114,7 +113,7 @@ class TestBackgroundTask:
         )
         assert result["session_id"] == "session-456"
         assert result["status"] == "started"
-        mock_create_task.assert_called_once()
+        mock_create_task_patch.assert_called_once()
 
     @pytest.mark.asyncio
     @patch("src.agents.main.record_event")
@@ -122,7 +121,6 @@ class TestBackgroundTask:
     @patch("src.agents.main.analysis_agent")
     async def test_background_task_success(self, mock_analysis_agent, mock_report_agent, mock_record_event):
         """Test successful background task execution."""
-        # Setup mocks
         mock_analysis_response = MagicMock()
         mock_analysis_agent.invoke_async = AsyncMock(return_value=mock_analysis_response)
 
@@ -133,10 +131,8 @@ class TestBackgroundTask:
         session_id = "test-session-123"
         user_message = "Analyze costs"
 
-        # Execute
         result = await background_task(user_message, session_id)
 
-        # Verify
         assert result == mock_report_response
         mock_analysis_agent.invoke_async.assert_called_once_with(
             "Analyze AWS costs and identify optimization opportunities",
@@ -146,7 +142,6 @@ class TestBackgroundTask:
             "Generate cost optimization report based on analysis results",
             session_id=session_id,
         )
-        # Verify completion event was recorded
         assert mock_record_event.call_count == 1
 
     @pytest.mark.asyncio
@@ -156,22 +151,18 @@ class TestBackgroundTask:
         """Test background task handles NoCredentialsError."""
         from botocore.exceptions import NoCredentialsError
 
-        # Setup mock to raise error
         mock_analysis_agent.invoke_async = AsyncMock(side_effect=NoCredentialsError())
 
         session_id = "test-session-123"
         user_message = "Analyze costs"
 
-        # Execute
         result = await background_task(user_message, session_id)
 
-        # Verify error response
         assert result["error"] == "NoCredentialsError"
         assert result["error_code"] == "NoCredentialsError"
         assert result["session_id"] == session_id
         assert result["status"] == "failed"
 
-        # Verify failure event was recorded
         assert mock_record_event.call_count == 1
         call_args = mock_record_event.call_args[1]
         assert "FAILED" in call_args["status"]
@@ -183,7 +174,6 @@ class TestBackgroundTask:
         """Test background task handles ClientError (e.g., ThrottlingException)."""
         from botocore.exceptions import ClientError
 
-        # Setup mock to raise throttling error
         throttling_error = ClientError(
             {"Error": {"Code": "ThrottlingException", "Message": "Rate exceeded"}},
             "InvokeModel",
@@ -193,17 +183,14 @@ class TestBackgroundTask:
         session_id = "test-session-123"
         user_message = "Analyze costs"
 
-        # Execute
         result = await background_task(user_message, session_id)
 
-        # Verify error response
         assert result["error"] == "ClientError"
         assert result["error_code"] == "ThrottlingException"
         assert result["error_message"] == "Rate exceeded"
         assert result["session_id"] == session_id
         assert result["status"] == "failed"
 
-        # Verify failure event was recorded
         assert mock_record_event.call_count == 1
         call_args = mock_record_event.call_args[1]
         assert "FAILED" in call_args["status"]
@@ -213,23 +200,19 @@ class TestBackgroundTask:
     @patch("src.agents.main.analysis_agent")
     async def test_background_task_generic_exception(self, mock_analysis_agent, mock_record_event):
         """Test background task handles generic Exception."""
-        # Setup mock to raise generic error
         mock_analysis_agent.invoke_async = AsyncMock(side_effect=ValueError("Invalid input"))
 
         session_id = "test-session-123"
         user_message = "Analyze costs"
 
-        # Execute
         result = await background_task(user_message, session_id)
 
-        # Verify error response
         assert result["error"] == "Exception"
         assert result["error_type"] == "ValueError"
         assert result["error_message"] == "Invalid input"
         assert result["session_id"] == session_id
         assert result["status"] == "failed"
 
-        # Verify failure event was recorded
         assert mock_record_event.call_count == 1
         call_args = mock_record_event.call_args[1]
         assert "FAILED" in call_args["status"]

@@ -64,16 +64,13 @@ class TestAgentInvokerHandler:
 
         assert result == {"status": 200, "sessionId": "test-session-123"}
 
-        # Verify bedrock was called once
         assert mock_boto3_client.invoke_agent_runtime.call_count == 1
         call_args = mock_boto3_client.invoke_agent_runtime.call_args[1]
         assert call_args["agentRuntimeArn"] == "mock-agent-runtime-arn"
         assert call_args["runtimeSessionId"] == "test-session-123"
-        # Payload should be empty - session_id is passed via runtimeSessionId
         payload = json.loads(call_args["payload"])
         assert payload == {}
 
-        # Verify record_event was called twice (started and succeeded)
         assert mock_record_event.call_count == 2
 
     @patch("agent_invoker.record_event")
@@ -96,13 +93,10 @@ class TestAgentInvokerHandler:
 
         assert result == {"status": 200, "sessionId": "test-session-456"}
 
-        # Verify bedrock was called with empty payload
-        # Note: prompt is ignored in the current implementation
         call_args = mock_boto3_client.invoke_agent_runtime.call_args[1]
         payload = json.loads(call_args["payload"])
         assert payload == {}
 
-        # Verify record_event was called twice
         assert mock_record_event.call_count == 2
 
     @patch("agent_invoker.record_event")
@@ -118,12 +112,10 @@ class TestAgentInvokerHandler:
         with pytest.raises(Exception, match="AgentCore service unavailable"):
             agent_invoker.handler(event, context)
 
-        # Verify bedrock was called
         assert mock_boto3_client.invoke_agent_runtime.call_count == 1
         call_args = mock_boto3_client.invoke_agent_runtime.call_args[1]
         assert call_args["runtimeSessionId"] == "test-session-error"
 
-        # Verify record_event was called twice (started and failed)
         assert mock_record_event.call_count == 2
 
     @patch("agent_invoker.record_event")
@@ -145,7 +137,6 @@ class TestAgentInvokerHandler:
 
         assert result == {"status": 202, "sessionId": "test-session-partial"}
 
-        # Verify record_event was called twice
         assert mock_record_event.call_count == 2
 
     @patch("agent_invoker.record_event")
@@ -169,7 +160,6 @@ class TestAgentInvokerHandler:
 
         assert result == {"status": 200, "sessionId": "test-session-ddb-error"}
         assert mock_boto3_client.invoke_agent_runtime.call_count == 1
-        # Verify record_event was called (it handles its own errors)
         assert mock_record_event.call_count == 2
 
     @patch("agent_invoker.get_tracer_id", return_value="1-5e645f3e-1234567890abcdef")
@@ -194,13 +184,10 @@ class TestAgentInvokerHandler:
 
         assert result == {"status": 200, "sessionId": "test-session-trace"}
 
-        # Verify get_tracer_id was called
         mock_get_tracer_id.assert_called_once()
 
-        # Verify trace ID was passed to AgentCore
         call_args = mock_boto3_client.invoke_agent_runtime.call_args[1]
         assert "traceId" in call_args
         assert call_args["traceId"] == "1-5e645f3e-1234567890abcdef"
 
-        # Verify record_event was called twice
         assert mock_record_event.call_count == 2
