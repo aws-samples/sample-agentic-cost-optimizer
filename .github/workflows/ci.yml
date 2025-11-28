@@ -1,7 +1,8 @@
 name: CI
 
 permissions:
-  contents: read 
+  contents: read
+  pull-requests: write
 
 on:
   pull_request:
@@ -33,6 +34,13 @@ jobs:
 
       - name: Run tests
         run: uv run pytest tests/ -v --cov=src --cov-report=term --cov-report=xml --junitxml=test-results.xml
+
+      - name: Coverage comment
+        uses: py-cov-action/python-coverage-comment-action@v3
+        with:
+          GITHUB_TOKEN: ${{ github.token }}
+          MINIMUM_GREEN: 90
+          MINIMUM_ORANGE: 70
 
   typescript-tests:
     runs-on: ubuntu-latest
