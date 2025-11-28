@@ -26,14 +26,7 @@ Isolated report generation and S3 operations into a dedicated agent with clear h
 
 **Implemented Solution: S3 Intermediate Storage**
 
-After evaluating multiple options, we implemented S3-based data passing:
-
-**Why S3 Instead of DynamoDB**:
-- **Simpler Implementation**: Repurposed existing storage tool instead of creating new data_store tool
-- **No Schema Management**: S3 handles arbitrary text content without schema constraints
-- **Cost Effective**: S3 storage is cheaper than DynamoDB for large analysis results
-- **Natural Fit**: Already using S3 for final outputs (cost_report.txt, evidence.txt)
-- **Tool Reuse**: Single storage tool handles both intermediate data and final reports
+We implemented S3-based data passing for context management between agents.
 
 **How It Works**:
 - Analysis agent writes complete analysis results to S3 as `analysis.txt`
@@ -55,13 +48,6 @@ After evaluating multiple options, we implemented S3-based data passing:
 **Implemented Solution: Sequential Agent Invocation**
 
 After evaluating workflow patterns, we implemented a simpler sequential approach:
-
-**Why Sequential Invocation Instead of Workflow Tool**:
-- **Simplicity**: Direct agent invocation is easier to understand and debug
-- **Sufficient for Linear Flow**: Analysis → Report is a simple two-step sequence
-- **No Complex Dependencies**: No need for DAG management or parallel execution
-- **Easier Error Handling**: Standard try-catch patterns instead of workflow error edges
-- **Less Overhead**: No workflow orchestration layer or task management
 
 **How It Works**:
 
@@ -86,8 +72,9 @@ Both agents write to the same DynamoDB journal table using session_id for correl
 
 **Journaling Model**:
 - Single DynamoDB table with session-scoped events
-- Event format: `PK=SESSION#{session_id}`, `SK=EVENT#{timestamp}`
+- Event format: `PK=SESSION#{session_id}`, `SK=EVENT#{timestamp}#{event_id}`
 - Each agent records its own phase events using the journal tool
+- Dynamic event naming: `TASK_{PHASE_NAME}_{STATUS}` where phase_name is provided by the agent
 - No orchestration-level events needed (sequential invocation is simple enough)
 
 **Event Flow**:
@@ -99,11 +86,15 @@ Both agents write to the same DynamoDB journal table using session_id for correl
 6. `TASK_USAGE_AND_METRICS_COLLECTION_COMPLETED` (analysis agent)
 7. `TASK_ANALYSIS_AND_DECISION_RULES_STARTED` (analysis agent)
 8. `TASK_ANALYSIS_AND_DECISION_RULES_COMPLETED` (analysis agent)
-9. `TASK_REPORT_GENERATION_STARTED` (report agent)
-10. `TASK_REPORT_GENERATION_COMPLETED` (report agent)
-11. `TASK_S3_WRITE_REQUIREMENTS_STARTED` (report agent)
-12. `TASK_S3_WRITE_REQUIREMENTS_COMPLETED` (report agent)
-13. `AGENT_BACKGROUND_TASK_COMPLETED` (main.py background_task)
+9. `TASK_RECOMMENDATION_FORMAT_STARTED` (analysis agent)
+10. `TASK_RECOMMENDATION_FORMAT_COMPLETED` (analysis agent)
+11. `TASK_COST_ESTIMATION_METHOD_STARTED` (analysis agent)
+12. `TASK_COST_ESTIMATION_METHOD_COMPLETED` (analysis agent)
+13. `TASK_OUTPUT_CONTRACT_STARTED` (report agent)
+14. `TASK_OUTPUT_CONTRACT_COMPLETED` (report agent)
+15. `TASK_S3_WRITE_REQUIREMENTS_STARTED` (report agent)
+16. `TASK_S3_WRITE_REQUIREMENTS_COMPLETED` (report agent)
+17. `AGENT_BACKGROUND_TASK_COMPLETED` (main.py background_task)
 
 **Benefits**:
 - Complete audit trail across both agents
@@ -246,6 +237,12 @@ EventBridge → Step Function → Lambda → AgentCore Runtime
 
 ### Journaling Flow
 
+The system uses a dynamic event naming pattern for task-level events: `TASK_{PHASE_NAME}_{STATUS}` where:
+- `PHASE_NAME` is provided by the agent at runtime (e.g., "Discovery", "Usage and Metrics Collection")
+- `STATUS` is one of: STARTED, COMPLETED, or FAILED
+
+**Typical Event Sequence:**
+
 1. `SESSION_INITIATED` (Step Function)
 2. `AGENT_INVOCATION_STARTED` (Lambda)
 3. `AGENT_INVOCATION_SUCCEEDED` (Lambda)
@@ -257,11 +254,15 @@ EventBridge → Step Function → Lambda → AgentCore Runtime
 9. `TASK_USAGE_AND_METRICS_COLLECTION_COMPLETED` (Analysis Agent)
 10. `TASK_ANALYSIS_AND_DECISION_RULES_STARTED` (Analysis Agent)
 11. `TASK_ANALYSIS_AND_DECISION_RULES_COMPLETED` (Analysis Agent)
-12. `TASK_REPORT_GENERATION_STARTED` (Report Agent)
-13. `TASK_REPORT_GENERATION_COMPLETED` (Report Agent)
-14. `TASK_S3_WRITE_REQUIREMENTS_STARTED` (Report Agent)
-15. `TASK_S3_WRITE_REQUIREMENTS_COMPLETED` (Report Agent)
-16. `AGENT_BACKGROUND_TASK_COMPLETED` (main.py background_task)
+12. `TASK_RECOMMENDATION_FORMAT_STARTED` (Analysis Agent)
+13. `TASK_RECOMMENDATION_FORMAT_COMPLETED` (Analysis Agent)
+14. `TASK_COST_ESTIMATION_METHOD_STARTED` (Analysis Agent)
+15. `TASK_COST_ESTIMATION_METHOD_COMPLETED` (Analysis Agent)
+16. `TASK_OUTPUT_CONTRACT_STARTED` (Report Agent)
+17. `TASK_OUTPUT_CONTRACT_COMPLETED` (Report Agent)
+18. `TASK_S3_WRITE_REQUIREMENTS_STARTED` (Report Agent)
+19. `TASK_S3_WRITE_REQUIREMENTS_COMPLETED` (Report Agent)
+20. `AGENT_BACKGROUND_TASK_COMPLETED` (main.py background_task)
 
 ## Implementation Summary
 
