@@ -27,6 +27,7 @@ os.environ["AWS_REGION"] = "us-east-1"
 # Mock all dependencies before any imports of src.agents.main
 mock_app = MagicMock()
 mock_app.entrypoint = lambda func: func  # Make decorator a no-op
+mock_app.async_task = lambda func: func  # Make async_task decorator a no-op
 
 # Create strands mock with tool decorator
 mock_strands = MagicMock()
