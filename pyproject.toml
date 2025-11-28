@@ -18,7 +18,8 @@ dev = [
   "pre-commit",
   "pytest",
   "pytest-mock",
-  "pytest-asyncio"
+  "pytest-asyncio",
+  "pytest-cov>=7.0.0",
 ]
 
 [tool.ruff]
