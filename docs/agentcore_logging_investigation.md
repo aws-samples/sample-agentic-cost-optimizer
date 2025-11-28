@@ -12,38 +12,32 @@ When we invoked the agent, we observed too many log streams being created in Clo
 
 ### AgentCore Log Stream Behavior
 
-**Discovery**: AgentCore creates **11 log streams per deployment**, not per execution as initially assumed.
+**Discovery**: The number of log streams depends on the deployment method:
 
-**Log Stream Types** (from AgentCore Observability documentation):
-- **Standard logs (stdout/stderr)**: `/aws/bedrock-agentcore/runtimes/<agent_id>-<endpoint_name>/[runtime-logs] <UUID>`
-- **OTEL structured logs**: `/aws/bedrock-agentcore/runtimes/<agent_id>-<endpoint_name>/runtime-logs`
-- **Traces and spans**: `/aws/spans/default`
+**Agent-as-Container Deployment** (Docker image):
+- Creates **~11 log streams** (10 runtime + 1 OTEL)
+- AgentCore pre-warms **10 containers** for performance and scalability
+- Each container gets its own log stream: `/aws/bedrock-agentcore/runtimes/<agent_id>-<endpoint_name>/runtime-logs-<UUID>`
+- Plus 1 OTEL stream: `/aws/bedrock-agentcore/runtimes/<agent_id>-<endpoint_name>/otel-rt-logs`
 
-**Documentation Findings**:
-The AgentCore Observability documentation confirms multiple log locations but doesn't explain why 11+ streams are created per deployment. It mentions:
-- Standard logs with UUID-based stream names
-- OTEL structured logs in separate streams
-- Trace data in dedicated spans location
+**Agent-as-Code Deployment** (Python code via S3):
+- Creates **only 2 log streams** (1 runtime + 1 OTEL)
+- Single runtime stream: `/aws/bedrock-agentcore/runtimes/<agent_id>-<endpoint_name>/runtime-logs-<UUID>`
+- Single OTEL stream: `/aws/bedrock-agentcore/runtimes/<agent_id>-<endpoint_name>/otel-rt-logs`
 
-**UUID Investigation**:
-Research confirms that the UUID in log stream names (`[runtime-logs] <UUID>`) is **NOT** the session ID or runtime session ID:
-- **Session IDs** are user-controlled identifiers for conversation state (as shown in session management examples)
-- **Runtime sessions** have 15-minute timeouts and are separate from log stream UUIDs
-- **Log stream UUIDs** appear to be internal AgentCore identifiers, possibly related to:
-  - Container instances
-  - Runtime endpoint instances
-  - Internal service components
-  - Agent version snapshots
+**Current Implementation**:
+Agent-as-code deployment using `AgentRuntimeArtifact.fromS3()` in `infra/lib/agent.ts`.
 
-**Example Log Streams**:
-```
-/aws/bedrock-agentcore/runtimes/agentRuntimedev-1bWpw8Hlj9-DEFAULT/
-├── runtime-logs-<UUID-1>
-├── runtime-logs-<UUID-2>
-├── runtime-logs-<UUID-N>
-├── otel-rt-logs
-└── [additional streams...]
-```
+**Why This Matters**:
+- **Agent-as-code** = cleaner CloudWatch logs (only 2 streams)
+- **Agent-as-container** = more log streams but better cold start performance (pre-warmed containers)
+- The UUID in log stream names represents container instances, not session IDs
+- Session IDs are tracked separately via `context.session_id` in the agent code
+
+**Log Stream Types**:
+- **runtime-logs-<UUID>**: Standard logs (stdout/stderr) from agent execution
+- **otel-rt-logs**: OTEL structured logs with telemetry data
+- **Traces and spans**: `/aws/spans/default` (separate log group)
 
 ### False Assumptions We Made
 
@@ -62,62 +56,33 @@ Research confirms that the UUID in log stream names (`[runtime-logs] <UUID>`) is
 ## What We Tried
 
 ### 1. Complex Multi-Logger Setup
-```python
-# What we tried (unnecessary)
-strands_logger = logging.getLogger("strands")
-agentcore_logger = app.logger
-custom_handler = logging.StreamHandler()
-```
-
-**Result**: Over-complicated, mixed logging sources, confusion about where logs appear.
+- Tried mixing multiple loggers (Strands, AgentCore, custom handlers)
+- Over-complicated and confusing
 
 ### 2. Manual Status Tracking
-```python
-# What we tried (caused recursion)
-@app.ping
-def custom_ping_handler():
-    current_status = app.get_current_ping_status()  # Recursion!
-    logger.info(f"Status: {current_status.value}")
-    return current_status
-```
+- Custom `@app.ping` handler caused recursion errors
+- Unnecessary complexity
 
-**Result**: Recursion errors, unnecessary complexity.
-
-### 3. ThreadPoolExecutor for Async
-```python
-# What we tried (workaround)
-with concurrent.futures.ThreadPoolExecutor() as executor:
-    response = await loop.run_in_executor(executor, lambda: agent(user_message))
-```
-
-**Result**: Worked but was unnecessary - Strands has native `invoke_async()`.
+### 3. Manual Async Task Management
+- Manual `add_async_task()` and `complete_async_task()` calls
+- Manual threading with `threading.Thread()`
+- Worked but verbose and error-prone
 
 ## What Actually Works
 
 ### 1. Simple AgentCore Logger
-```python
-app = BedrockAgentCoreApp()
-logger = app.logger  # Use built-in logger only
-```
+- Use built-in logger: `logger = app.logger`
+- Integrates automatically with AgentCore log streams
 
-### 2. Automatic Status Management
-```python
-@app.async_task
-async def background_agent_task(user_message: str, session_id: str):
-    # Status automatically becomes HEALTHY_BUSY
-    response = await agent.invoke_async(user_message, session_id=session_id)
-    # Status automatically returns to HEALTHY
-    return response
-```
+### 2. Automatic Status Management with @app.async_task
+- Decorator handles status transitions: HEALTHY ↔ HEALTHY_BUSY
+- No manual `add_async_task()` or `complete_async_task()` calls needed
+- Works with native Strands `invoke_async()` methods
 
-### 3. Fire-and-Forget Pattern
-```python
-@app.entrypoint
-async def invoke(payload):
-    # Lambda returns immediately, AgentCore continues processing
-    asyncio.create_task(background_agent_task(user_message, session_id))
-    return {"status": "started"}
-```
+### 3. Fire-and-Forget Pattern with asyncio.create_task
+- Entrypoint uses `asyncio.create_task()` to start background work
+- Returns immediately while agent continues processing
+- Session ID available via `context.session_id` from RequestContext
 
 ## Key Learnings
 
@@ -125,65 +90,67 @@ async def invoke(payload):
 - **Runtime logs**: Basic lifecycle events (agent startup, invocation)
 - **otel-rt-logs**: Continuous telemetry stream with structured JSON
 - **Automatic status logging**: AgentCore logs status changes internally
-- **11 streams per deployment**: Not per execution, this is normal behavior
+- **Log stream count depends on deployment method**:
+  - Agent-as-container: ~11 streams (10 pre-warmed containers + 1 OTEL)
+  - Agent-as-code: 2 streams (1 runtime + 1 OTEL) ← **Our implementation**
 
-### What We Learned (Not Necessarily Best Practices)
+### What We Learned
 1. **AgentCore's built-in logger works** - Simple and integrates with AgentCore streams
-2. **@app.async_task decorator works** - Handles status automatically without manual tracking
+2. **@app.async_task decorator is the recommended approach** - Handles status automatically without manual `add_async_task()` and `complete_async_task()` calls
 3. **External loggers didn't create extra streams** - Powertools and other logging mechanisms didn't contribute to the 11+ stream issue
-4. **Native async is cleaner** - Strands has `invoke_async()`, no ThreadPoolExecutor needed
+4. **Native async is cleaner** - Strands has `invoke_async()`, no ThreadPoolExecutor or manual threading needed
+5. **RequestContext provides session_id** - No need to manually pass session_id through payload, AgentCore provides it via `context.session_id`
+6. **asyncio.create_task() for fire-and-forget** - Cleaner than manual threading for background task execution
 
 **Note**: We haven't confirmed with the AgentCore service team whether using external loggers (like Powertools) is discouraged or problematic. The multiple streams appear to be related to AgentCore's internal architecture, not our logging choices.
 
 ### What to Monitor
 - **otel-rt-logs stream** - Contains detailed execution telemetry
-- **Agent status transitions** - HEALTHY ↔ HEALTHY_BUSY (automatic)
-- **Error logs** - Appear in both streams for different purposes
+- **Agent status transitions** - HEALTHY ↔ HEALTHY_BUSY (automatic via `@app.async_task`)
+- **Error logs** - Appear in both runtime-logs and otel-rt-logs streams
+- **DynamoDB event journal** - Workflow-level tracking (SESSION_INITIATED, AGENT_INVOCATION_STARTED, AGENT_BACKGROUND_TASK_COMPLETED, etc.)
+- **Step Function execution logs** - Orchestration-level visibility
 
-## Unanswered Questions
+## Resolved Questions
 
-### Why Does Agent Deployment Create So Many Log Streams?
+### Why Does Agent Deployment Create Multiple Log Streams?
 
-**Observation**: When deploying and creating new agent versions, we see 11+ log streams created in the agent log group, which creates significant noise in CloudWatch.
+**Answer**: The number of log streams depends on the deployment method:
 
-**Agent Version Context**: Each deployment creates "a snapshot of the agent created automatically with each update, allowing you to track changes, manage rollbacks, and reference specific states."
+**Agent-as-Container Deployment** (Docker image):
+- Creates **~11 log streams** (10 runtime + 1 OTEL)
+- AgentCore pre-warms **10 containers** for performance and scalability
+- Each container gets its own log stream with UUID: `runtime-logs-<UUID>`
+- Plus 1 OTEL stream for telemetry: `otel-rt-logs`
+- **Trade-off**: More log streams but better cold start performance
 
-**Questions**:
-- Why does a single agent version deployment require multiple log streams?
-- Is this related to AgentCore's internal architecture (containers, services, health checks, versioning)?
-- Are the multiple streams related to the agent versioning system?
-- Could this be optimized to reduce CloudWatch noise?
-- Is this behavior documented anywhere in AgentCore documentation?
+**Agent-as-Code Deployment** (Python code via S3):
+- Creates **only 2 log streams** (1 runtime + 1 OTEL)
+- Single runtime stream: `runtime-logs-<UUID>`
+- Single OTEL stream: `otel-rt-logs`
+- **Trade-off**: Cleaner logs but potentially slower cold starts
+
+**Our Implementation**:
+We use **agent-as-code deployment** via `AgentRuntimeArtifact.fromS3()` in CDK, resulting in only 2 log streams.
 
 **Impact**: 
-- Creates cluttered CloudWatch log groups
-- Makes it harder to find relevant application logs
-- Potentially increases CloudWatch costs due to multiple streams
+- Cleaner CloudWatch log groups (only 2 streams)
+- Easier to find relevant application logs
+- Lower CloudWatch costs
+- Simpler log management
 
-**Status**: **Partially Documented** - The AgentCore Observability documentation acknowledges multiple log streams with UUID-based naming but doesn't explain the architectural reason for 11+ streams per deployment. The documentation confirms:
-- Standard logs use UUID-based stream names: `[runtime-logs] <UUID>`
-- OTEL structured logs use separate streams
-- This appears to be intentional architecture, not a bug
-
-**Remaining Questions**:
-- What do the log stream UUIDs actually represent? (Container instances? Service components? Version snapshots?)
-- Why does AgentCore's internal architecture require so many UUID-based streams?
-- Is this related to container orchestration, scaling, health checks, or internal service architecture?
-- Are the UUIDs related to agent versioning system since each deployment creates "snapshots"?
-- Could this be optimized for reduced CloudWatch noise?
+**Key Learning**: 
+- The UUID in log stream names represents **container instances**, not session IDs or agent versions
+- Session IDs are tracked separately via `context.session_id` in the agent code
 
 ## Conclusion
 
-The "multiple log streams issue" was not an issue but normal AgentCore behavior. Our various logging attempts were based on false assumptions about how AgentCore works. The simplest approach - using AgentCore's built-in logging and decorators - provides the best observability with minimal complexity.
+The "multiple log streams issue" was not an issue but normal AgentCore behavior. Our various logging attempts were based on false assumptions about how AgentCore works. The simplest approach - using AgentCore's built-in logging (`app.logger`) and decorators (`@app.async_task`) - provides the best observability with minimal complexity.
 
 **Current Working Architecture**:
-- Using AgentCore's built-in logger (works, but not necessarily required)
-- `@app.async_task` manages status transitions automatically
-- Fire-and-forget pattern for Lambda timeout avoidance
-- Native Strands async methods for clean execution
-
-**Important Notes**:
-- The 11+ streams appear regardless of our logging approach
-- External loggers (Powertools, etc.) didn't contribute to the stream multiplication
-- We need service team confirmation on logging best practices
-- The multiple streams seem to be AgentCore's internal architecture, not a result of our implementation choices
+- Using AgentCore's built-in logger (`app.logger`)
+- `@app.async_task` decorator manages status transitions automatically (HEALTHY ↔ HEALTHY_BUSY)
+- Fire-and-forget pattern using `asyncio.create_task()` for Lambda timeout avoidance
+- Native Strands `invoke_async()` methods for clean async execution
+- AgentCore `RequestContext` provides session_id automatically
+- DynamoDB event journaling for workflow tracking (complements AgentCore logs)

@@ -11,19 +11,25 @@ Each event is stored as a separate DynamoDB record with the following structure:
 ```json
 {
   "PK": "SESSION#{session_id}",
-  "SK": "EVENT#{ISO_timestamp}",
-  "Status": "event_type",
-  "Timestamp": "2024-11-04T10:30:00.123Z",
-  "ErrorMessage": "optional error details (only for failure events)"
+  "SK": "EVENT#{ISO_timestamp}#{event_id}",
+  "sessionId": "session_id",
+  "eventId": "uuid",
+  "status": "event_type",
+  "createdAt": "2024-11-04T10:30:00.123Z",
+  "ttlSeconds": 1730000000,
+  "errorMessage": "optional error details (only for failure events)"
 }
 ```
 
 **Key Attributes:**
 - **PK (Partition Key)**: `SESSION#{session_id}` - Groups all events for a single workflow execution
-- **SK (Sort Key)**: `EVENT#{ISO_timestamp}` - Ensures chronological ordering of events
-- **Status**: The event type (see Event Types section below)
-- **Timestamp**: ISO 8601 formatted timestamp
-- **ErrorMessage**: Optional field included only for failure events
+- **SK (Sort Key)**: `EVENT#{ISO_timestamp}#{event_id}` - Ensures chronological ordering and uniqueness
+- **sessionId**: The session identifier (extracted from PK for easier querying)
+- **eventId**: Unique UUID for each event (prevents duplicate events from race conditions)
+- **status**: The event type (see Event Types section below)
+- **createdAt**: ISO 8601 formatted timestamp
+- **ttlSeconds**: Unix timestamp for DynamoDB TTL (automatic cleanup after configured days)
+- **errorMessage**: Optional field included only for failure events
 
 ## Event Types
 
@@ -33,113 +39,51 @@ The workflow generates the following event types across different components:
 - `SESSION_INITIATED` - Step Function starts workflow execution
 
 ### Lambda Invoker Events
-- `AGENT_INVOCATION_STARTED` - Lambda invoker calls AgentCore
-- `AGENT_INVOCATION_SUCCEEDED` - AgentCore responds successfully
-- `AGENT_INVOCATION_FAILED` - AgentCore invocation fails
+- `AGENT_INVOCATION_STARTED` - Lambda invoker calls AgentCore (recorded in `infra/lambda/agent_invoker.py`)
+- `AGENT_INVOCATION_SUCCEEDED` - AgentCore responds successfully (recorded in `infra/lambda/agent_invoker.py`)
+- `AGENT_INVOCATION_FAILED` - AgentCore invocation fails (recorded in `infra/lambda/agent_invoker.py`)
 
-### Agent Entrypoint Events
-- `AGENT_ENTRYPOINT_STARTED` - Agent entrypoint receives request
-- `AGENT_BACKGROUND_TASK_STARTED` - Background task created successfully
-- `AGENT_ENTRYPOINT_FAILED` - Entrypoint encounters error
+### Agent Runtime Events
+- `AGENT_RUNTIME_INVOKE_STARTED` - Agent entrypoint receives request (recorded in `src/agents/main.py`)
+- `AGENT_BACKGROUND_TASK_STARTED` - Background task created successfully (recorded in `src/agents/main.py`)
+- `AGENT_RUNTIME_INVOKE_FAILED` - Entrypoint encounters error (recorded in `src/agents/main.py`)
 
 ### Agent Background Task Events
-- `AGENT_BACKGROUND_TASK_COMPLETED` - Agent processing completes successfully
-- `AGENT_BACKGROUND_TASK_FAILED` - Agent processing fails
+- `AGENT_BACKGROUND_TASK_COMPLETED` - Agent processing completes successfully (recorded in `src/agents/main.py`)
+- `AGENT_BACKGROUND_TASK_FAILED` - Agent processing fails (recorded in `src/agents/main.py`)
 
 ## Example Event Records
 
-### Session Initiated
-```json
-{
-  "PK": "SESSION#abc-123-def",
-  "SK": "EVENT#2024-11-04T10:30:00.000Z",
-  "Status": "SESSION_INITIATED",
-  "Timestamp": "2024-11-04T10:30:00.000Z"
-}
-```
+### Example Event Records
 
-### Agent Invocation Started
-```json
-{
-  "PK": "SESSION#abc-123-def",
-  "SK": "EVENT#2024-11-04T10:30:01.234Z",
-  "Status": "AGENT_INVOCATION_STARTED",
-  "Timestamp": "2024-11-04T10:30:01.234Z"
-}
-```
+**Session Initiated**:
+- Status: `SESSION_INITIATED`
+- Recorded by: `infra/lambda/session_initializer.py`
 
-### Agent Invocation Succeeded
-```json
-{
-  "PK": "SESSION#abc-123-def",
-  "SK": "EVENT#2024-11-04T10:30:02.456Z",
-  "Status": "AGENT_INVOCATION_SUCCEEDED",
-  "Timestamp": "2024-11-04T10:30:02.456Z"
-}
-```
+**Agent Invocation Started**:
+- Status: `AGENT_INVOCATION_STARTED`
+- Recorded by: `infra/lambda/agent_invoker.py`
 
-### Agent Entrypoint Started
-```json
-{
-  "PK": "SESSION#abc-123-def",
-  "SK": "EVENT#2024-11-04T10:30:03.789Z",
-  "Status": "AGENT_ENTRYPOINT_STARTED",
-  "Timestamp": "2024-11-04T10:30:03.789Z"
-}
-```
+**Agent Invocation Succeeded**:
+- Status: `AGENT_INVOCATION_SUCCEEDED`
+- Recorded by: `infra/lambda/agent_invoker.py`
 
-### Agent Background Task Started
-```json
-{
-  "PK": "SESSION#abc-123-def",
-  "SK": "EVENT#2024-11-04T10:30:04.012Z",
-  "Status": "AGENT_BACKGROUND_TASK_STARTED",
-  "Timestamp": "2024-11-04T10:30:04.012Z"
-}
-```
+**Agent Runtime Invoke Started**:
+- Status: `AGENT_RUNTIME_INVOKE_STARTED`
+- Recorded by: `src/agents/main.py` (entrypoint)
 
-### Agent Background Task Completed
-```json
-{
-  "PK": "SESSION#abc-123-def",
-  "SK": "EVENT#2024-11-04T10:35:45.678Z",
-  "Status": "AGENT_BACKGROUND_TASK_COMPLETED",
-  "Timestamp": "2024-11-04T10:35:45.678Z"
-}
-```
+**Agent Background Task Started**:
+- Status: `AGENT_BACKGROUND_TASK_STARTED`
+- Recorded by: `src/agents/main.py` (entrypoint)
 
-### Agent Background Task Failed (with error)
-```json
-{
-  "PK": "SESSION#abc-123-def",
-  "SK": "EVENT#2024-11-04T10:35:45.678Z",
-  "Status": "AGENT_BACKGROUND_TASK_FAILED",
-  "Timestamp": "2024-11-04T10:35:45.678Z",
-  "ErrorMessage": "ClientError: ThrottlingException - Rate exceeded"
-}
-```
+**Agent Background Task Completed**:
+- Status: `AGENT_BACKGROUND_TASK_COMPLETED`
+- Recorded by: `src/agents/main.py` (background task)
 
-### Agent Invocation Failed (with error)
-```json
-{
-  "PK": "SESSION#abc-123-def",
-  "SK": "EVENT#2024-11-04T10:30:02.456Z",
-  "Status": "AGENT_INVOCATION_FAILED",
-  "Timestamp": "2024-11-04T10:30:02.456Z",
-  "ErrorMessage": "Failed to invoke AgentCore: Timeout"
-}
-```
-
-### Agent Entrypoint Failed (with error)
-```json
-{
-  "PK": "SESSION#abc-123-def",
-  "SK": "EVENT#2024-11-04T10:30:03.789Z",
-  "Status": "AGENT_ENTRYPOINT_FAILED",
-  "Timestamp": "2024-11-04T10:30:03.789Z",
-  "ErrorMessage": "ValueError: Invalid request format"
-}
-```
+**Failure Events** (include `errorMessage` field):
+- `AGENT_BACKGROUND_TASK_FAILED`: Agent processing error
+- `AGENT_INVOCATION_FAILED`: Lambda → AgentCore invocation error
+- `AGENT_RUNTIME_INVOKE_FAILED`: Agent entrypoint error
 
 ## Querying Events
 
@@ -169,46 +113,13 @@ aws dynamodb query \
 
 ### Filter for Specific Event Types
 
-Query for completion events only:
-
-```bash
-aws dynamodb query \
-  --table-name agents-table-dev \
-  --key-condition-expression "PK = :pk" \
-  --filter-expression "Status = :status" \
-  --expression-attribute-values '{
-    ":pk":{"S":"SESSION#abc-123-def"},
-    ":status":{"S":"AGENT_BACKGROUND_TASK_COMPLETED"}
-  }'
-```
-
-### Filter for Failure Events
-
-Query for any failure events:
-
-```bash
-aws dynamodb query \
-  --table-name agents-table-dev \
-  --key-condition-expression "PK = :pk" \
-  --filter-expression "contains(Status, :failed)" \
-  --expression-attribute-values '{
-    ":pk":{"S":"SESSION#abc-123-def"},
-    ":failed":{"S":"FAILED"}
-  }'
-```
+Use `--filter-expression` with expression attribute names (required for reserved keyword `status`):
+- Completion events: `#status = :status` where `:status` = `AGENT_BACKGROUND_TASK_COMPLETED`
+- Failure events: `contains(#status, :failed)` where `:failed` = `FAILED`
 
 ### Get Latest N Events
 
-Retrieve the 10 most recent events:
-
-```bash
-aws dynamodb query \
-  --table-name agents-table-dev \
-  --key-condition-expression "PK = :pk" \
-  --expression-attribute-values '{":pk":{"S":"SESSION#abc-123-def"}}' \
-  --scan-index-forward false \
-  --limit 10
-```
+Use `--scan-index-forward false` with `--limit N` to retrieve most recent events first.
 
 ## Debugging Workflows
 
@@ -216,12 +127,12 @@ aws dynamodb query \
 
 A typical successful workflow generates events in this order:
 
-1. `SESSION_INITIATED` - Step Function starts
-2. `AGENT_INVOCATION_STARTED` - Lambda begins AgentCore invocation
-3. `AGENT_INVOCATION_SUCCEEDED` - AgentCore accepts the request
-4. `AGENT_ENTRYPOINT_STARTED` - Agent receives the request
-5. `AGENT_BACKGROUND_TASK_STARTED` - Agent creates background task
-6. `AGENT_BACKGROUND_TASK_COMPLETED` - Agent finishes processing
+1. `SESSION_INITIATED` - Step Function starts (recorded by `infra/lambda/session_initializer.py`)
+2. `AGENT_INVOCATION_STARTED` - Lambda begins AgentCore invocation (recorded by `infra/lambda/agent_invoker.py`)
+3. `AGENT_INVOCATION_SUCCEEDED` - AgentCore accepts the request (recorded by `infra/lambda/agent_invoker.py`)
+4. `AGENT_RUNTIME_INVOKE_STARTED` - Agent receives the request (recorded by `src/agents/main.py` entrypoint)
+5. `AGENT_BACKGROUND_TASK_STARTED` - Agent creates background task (recorded by `src/agents/main.py` entrypoint)
+6. `AGENT_BACKGROUND_TASK_COMPLETED` - Agent finishes processing (recorded by `src/agents/main.py` background task)
 
 ### Common Failure Scenarios
 
@@ -233,33 +144,33 @@ SESSION_INITIATED → AGENT_INVOCATION_STARTED → AGENT_INVOCATION_FAILED
 - Review Lambda CloudWatch logs for detailed error traces
 - Common causes: AgentCore timeout, permission issues, network errors
 
-**Scenario 2: Agent Entrypoint Failure**
+**Scenario 2: Agent Runtime Invoke Failure**
 ```
 SESSION_INITIATED → AGENT_INVOCATION_STARTED → AGENT_INVOCATION_SUCCEEDED → 
-AGENT_ENTRYPOINT_STARTED → AGENT_ENTRYPOINT_FAILED
+AGENT_RUNTIME_INVOKE_STARTED → AGENT_RUNTIME_INVOKE_FAILED
 ```
-- Check the ErrorMessage field in AGENT_ENTRYPOINT_FAILED event
+- Check the errorMessage field in AGENT_RUNTIME_INVOKE_FAILED event
 - Review agent CloudWatch logs for stack traces
-- Common causes: Invalid request format, missing environment variables
+- Common causes: Invalid request format, missing environment variables, asyncio.create_task() errors
 
 **Scenario 3: Background Task Failure**
 ```
 SESSION_INITIATED → AGENT_INVOCATION_STARTED → AGENT_INVOCATION_SUCCEEDED → 
-AGENT_ENTRYPOINT_STARTED → AGENT_BACKGROUND_TASK_STARTED → AGENT_BACKGROUND_TASK_FAILED
+AGENT_RUNTIME_INVOKE_STARTED → AGENT_BACKGROUND_TASK_STARTED → AGENT_BACKGROUND_TASK_FAILED
 ```
-- Check the ErrorMessage field in AGENT_BACKGROUND_TASK_FAILED event
+- Check the errorMessage field in AGENT_BACKGROUND_TASK_FAILED event
 - Review agent CloudWatch logs for detailed error information
-- Common causes: AWS credential issues, API throttling, processing errors
+- Common causes: Bedrock throttling (ThrottlingException), AWS credential issues, tool execution errors, agent reasoning failures
 
 **Scenario 4: Missing Completion Event**
 ```
 SESSION_INITIATED → AGENT_INVOCATION_STARTED → AGENT_INVOCATION_SUCCEEDED → 
-AGENT_ENTRYPOINT_STARTED → AGENT_BACKGROUND_TASK_STARTED → (no completion event)
+AGENT_RUNTIME_INVOKE_STARTED → AGENT_BACKGROUND_TASK_STARTED → (no completion event)
 ```
 - Agent may have crashed without recording failure event
-- Check agent CloudWatch logs for unexpected termination
+- Check agent CloudWatch logs (`/aws/bedrock-agentcore/runtimes/...`) for unexpected termination
 - Check Step Function execution for timeout errors
-- Common causes: Out of memory, unhandled exceptions, container crashes
+- Common causes: Out of memory, unhandled exceptions in background task, Bedrock throttling
 
 ### Debugging Workflow
 
@@ -282,7 +193,7 @@ AGENT_ENTRYPOINT_STARTED → AGENT_BACKGROUND_TASK_STARTED → (no completion ev
    - If no completion event exists, the agent may have crashed
 
 4. **Check for Error Messages**
-   - Look for ErrorMessage fields in failure events
+   - Look for errorMessage fields in failure events
    - Cross-reference with CloudWatch logs for detailed traces
 
 5. **Verify Event Sequence**
@@ -292,38 +203,19 @@ AGENT_ENTRYPOINT_STARTED → AGENT_BACKGROUND_TASK_STARTED → (no completion ev
 
 6. **Review Component Logs**
    - **Step Function**: AWS Console → Step Functions → Execution details
-   - **Lambda Invoker**: CloudWatch Logs → `/aws/lambda/agent-invoker-function`
-   - **Agent Runtime**: CloudWatch Logs → AgentCore log group
+   - **Session Initializer Lambda**: CloudWatch Logs → `/aws/lambda/<stack-name>-SessionInitializer-*`
+   - **Agent Invoker Lambda**: CloudWatch Logs → `/aws/lambda/<stack-name>-AgentInvoker-*`
+   - **Agent Runtime**: CloudWatch Logs → `/aws/bedrock-agentcore/runtimes/<agent-runtime-name>/`
+     - `runtime-logs-<UUID>`: Standard agent logs (stdout/stderr)
+     - `otel-rt-logs`: OTEL telemetry data
 
 ### Monitoring Active Workflows
 
-To monitor an active workflow, poll for new events:
-
-```bash
-# Get events from the last 5 minutes
-aws dynamodb query \
-  --table-name agents-table-dev \
-  --key-condition-expression "PK = :pk AND SK > :sk" \
-  --expression-attribute-values '{
-    ":pk":{"S":"SESSION#abc-123-def"},
-    ":sk":{"S":"EVENT#2024-11-04T10:30:00.000Z"}
-  }' \
-  --scan-index-forward false
-```
+Poll for new events using `SK > :timestamp` in key condition expression.
 
 ### Performance Analysis
 
-Calculate workflow duration by comparing timestamps:
-
-```bash
-# Query all events and calculate time between first and last
-aws dynamodb query \
-  --table-name agents-table-dev \
-  --key-condition-expression "PK = :pk" \
-  --expression-attribute-values '{":pk":{"S":"SESSION#abc-123-def"}}' \
-  --scan-index-forward \
-  --output json | jq '[.Items[0].Timestamp.S, .Items[-1].Timestamp.S]'
-```
+Compare `createdAt` timestamps between first and last events to calculate workflow duration.
 
 ## Best Practices
 
