@@ -31,18 +31,18 @@ dev = [
 
 [package.metadata.requires-dev]
 agents = [
-    { name = "aws-opentelemetry-distro" },
-    { name = "bedrock-agentcore" },
-    { name = "strands-agents" },
-    { name = "strands-agents-tools" },
+    { name = "aws-opentelemetry-distro", specifier = ">=0.12.1" },
+    { name = "bedrock-agentcore", specifier = ">=1.0.7" },
+    { name = "strands-agents", specifier = ">=1.12.0" },
+    { name = "strands-agents-tools", specifier = ">=0.2.11" },
 ]
 dev = [
-    { name = "pre-commit" },
-    { name = "pytest" },
-    { name = "pytest-asyncio" },
+    { name = "pre-commit", specifier = ">=4.3.0" },
+    { name = "pytest", specifier = ">=8.4.2" },
+    { name = "pytest-asyncio", specifier = ">=1.2.0" },
     { name = "pytest-cov", specifier = ">=7.0.0" },
-    { name = "pytest-mock" },
-    { name = "ruff" },
+    { name = "pytest-mock", specifier = ">=3.15.1" },
+    { name = "ruff", specifier = ">=0.14.0" },
 ]
 
 [[package]]
