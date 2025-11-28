@@ -122,29 +122,9 @@ See AWS documentation: [Configure observability for custom runtimes](https://doc
 ### Session Correlation
 
 **AgentCore Pattern**:
-```python
-# AgentCore provides session correlation via RequestContext
-@app.entrypoint
-async def invoke(payload, context: RequestContext):
-    # Session ID automatically available from AgentCore context
-    session_id = context.session_id
-    
-    # Used for event journaling and tracking
-    record_event(session_id=session_id, status=EventStatus.AGENT_RUNTIME_INVOKE_STARTED, ...)
-```
-
-**Lambda Invoker Integration**:
-```python
-# Lambda passes X-Ray trace ID to AgentCore for end-to-end observability
-trace_id = get_tracer_id()  # Powertools utility
-invoke_params = {
-    "agentRuntimeArn": agent_runtime_arn,
-    "runtimeSessionId": session_id,
-    "payload": json.dumps({}),
-}
-if trace_id:
-    invoke_params["traceId"] = trace_id  # Links Lambda X-Ray traces with AgentCore
-```
+- Session ID automatically available via `context.session_id` in agent entrypoint
+- Lambda passes X-Ray trace ID to AgentCore using `traceId` parameter
+- Links Lambda X-Ray traces with AgentCore for end-to-end observability
 
 **Benefits**:
 - End-to-end tracing from Step Function → Lambda → AgentCore → Agent
@@ -157,22 +137,13 @@ if trace_id:
 ### Development Workflow
 
 **Local Testing**:
-```bash
-# Set required environment variables
-export S3_BUCKET_NAME=your-bucket
-export JOURNAL_TABLE_NAME=your-table
-export MODEL_ID=us.anthropic.claude-sonnet-4-5-20250929-v1:0
-export AWS_REGION=us-east-1
-export TTL_DAYS=90
-
-# ADOT automatically instruments locally too
-opentelemetry-instrument python -m src.agents.main
-```
+- Same command works locally: `opentelemetry-instrument python -m src.agents.main`
+- Set required environment variables (S3_BUCKET_NAME, JOURNAL_TABLE_NAME, MODEL_ID, etc.)
+- ADOT automatically instruments locally too
 
 **Benefits**:
 - Consistent observability between local and production
 - Early detection of instrumentation issues
-- Local trace analysis and debugging
 - Same entry point as production deployment
 
 ## Performance Considerations

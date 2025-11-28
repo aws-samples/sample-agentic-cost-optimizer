@@ -54,123 +54,36 @@ The workflow generates the following event types across different components:
 
 ## Example Event Records
 
-### Session Initiated
-```json
-{
-  "PK": "SESSION#abc-123-def",
-  "SK": "EVENT#2024-11-04T10:30:00.000Z#uuid-1",
-  "sessionId": "abc-123-def",
-  "eventId": "uuid-1",
-  "status": "SESSION_INITIATED",
-  "createdAt": "2024-11-04T10:30:00.000Z",
-  "ttlSeconds": 1730000000
-}
-```
+### Example Event Records
 
-### Agent Invocation Started
-```json
-{
-  "PK": "SESSION#abc-123-def",
-  "SK": "EVENT#2024-11-04T10:30:01.234Z#uuid-2",
-  "sessionId": "abc-123-def",
-  "eventId": "uuid-2",
-  "status": "AGENT_INVOCATION_STARTED",
-  "createdAt": "2024-11-04T10:30:01.234Z",
-  "ttlSeconds": 1730000000
-}
-```
+**Session Initiated**:
+- Status: `SESSION_INITIATED`
+- Recorded by: `infra/lambda/session_initializer.py`
 
-### Agent Invocation Succeeded
-```json
-{
-  "PK": "SESSION#abc-123-def",
-  "SK": "EVENT#2024-11-04T10:30:02.456Z#uuid-3",
-  "sessionId": "abc-123-def",
-  "eventId": "uuid-3",
-  "status": "AGENT_INVOCATION_SUCCEEDED",
-  "createdAt": "2024-11-04T10:30:02.456Z",
-  "ttlSeconds": 1730000000
-}
-```
+**Agent Invocation Started**:
+- Status: `AGENT_INVOCATION_STARTED`
+- Recorded by: `infra/lambda/agent_invoker.py`
 
-### Agent Runtime Invoke Started
-```json
-{
-  "PK": "SESSION#abc-123-def",
-  "SK": "EVENT#2024-11-04T10:30:03.789Z#uuid",
-  "Status": "AGENT_RUNTIME_INVOKE_STARTED",
-  "Timestamp": "2024-11-04T10:30:03.789Z",
-  "sessionId": "abc-123-def",
-  "eventId": "uuid"
-}
-```
+**Agent Invocation Succeeded**:
+- Status: `AGENT_INVOCATION_SUCCEEDED`
+- Recorded by: `infra/lambda/agent_invoker.py`
 
-### Agent Background Task Started
-```json
-{
-  "PK": "SESSION#abc-123-def",
-  "SK": "EVENT#2024-11-04T10:30:04.012Z#uuid-5",
-  "sessionId": "abc-123-def",
-  "eventId": "uuid-5",
-  "status": "AGENT_BACKGROUND_TASK_STARTED",
-  "createdAt": "2024-11-04T10:30:04.012Z",
-  "ttlSeconds": 1730000000
-}
-```
+**Agent Runtime Invoke Started**:
+- Status: `AGENT_RUNTIME_INVOKE_STARTED`
+- Recorded by: `src/agents/main.py` (entrypoint)
 
-### Agent Background Task Completed
-```json
-{
-  "PK": "SESSION#abc-123-def",
-  "SK": "EVENT#2024-11-04T10:35:45.678Z#uuid-6",
-  "sessionId": "abc-123-def",
-  "eventId": "uuid-6",
-  "status": "AGENT_BACKGROUND_TASK_COMPLETED",
-  "createdAt": "2024-11-04T10:35:45.678Z",
-  "ttlSeconds": 1730000000
-}
-```
+**Agent Background Task Started**:
+- Status: `AGENT_BACKGROUND_TASK_STARTED`
+- Recorded by: `src/agents/main.py` (entrypoint)
 
-### Agent Background Task Failed (with error)
-```json
-{
-  "PK": "SESSION#abc-123-def",
-  "SK": "EVENT#2024-11-04T10:35:45.678Z#uuid-7",
-  "sessionId": "abc-123-def",
-  "eventId": "uuid-7",
-  "status": "AGENT_BACKGROUND_TASK_FAILED",
-  "createdAt": "2024-11-04T10:35:45.678Z",
-  "ttlSeconds": 1730000000,
-  "errorMessage": "ClientError: ThrottlingException - Rate exceeded"
-}
-```
+**Agent Background Task Completed**:
+- Status: `AGENT_BACKGROUND_TASK_COMPLETED`
+- Recorded by: `src/agents/main.py` (background task)
 
-### Agent Invocation Failed (with error)
-```json
-{
-  "PK": "SESSION#abc-123-def",
-  "SK": "EVENT#2024-11-04T10:30:02.456Z#uuid-8",
-  "sessionId": "abc-123-def",
-  "eventId": "uuid-8",
-  "status": "AGENT_INVOCATION_FAILED",
-  "createdAt": "2024-11-04T10:30:02.456Z",
-  "ttlSeconds": 1730000000,
-  "errorMessage": "Failed to invoke AgentCore: Timeout"
-}
-```
-
-### Agent Runtime Invoke Failed (with error)
-```json
-{
-  "PK": "SESSION#abc-123-def",
-  "SK": "EVENT#2024-11-04T10:30:03.789Z#uuid",
-  "Status": "AGENT_RUNTIME_INVOKE_FAILED",
-  "Timestamp": "2024-11-04T10:30:03.789Z",
-  "ErrorMessage": "ValueError: Invalid request format",
-  "sessionId": "abc-123-def",
-  "eventId": "uuid"
-}
-```
+**Failure Events** (include `errorMessage` field):
+- `AGENT_BACKGROUND_TASK_FAILED`: Agent processing error
+- `AGENT_INVOCATION_FAILED`: Lambda → AgentCore invocation error
+- `AGENT_RUNTIME_INVOKE_FAILED`: Agent entrypoint error
 
 ## Querying Events
 
@@ -200,52 +113,13 @@ aws dynamodb query \
 
 ### Filter for Specific Event Types
 
-Query for completion events only:
-
-```bash
-aws dynamodb query \
-  --table-name agents-table-dev \
-  --key-condition-expression "PK = :pk" \
-  --filter-expression "#status = :status" \
-  --expression-attribute-names '{
-    "#status": "status"
-  }' \
-  --expression-attribute-values '{
-    ":pk":{"S":"SESSION#abc-123-def"},
-    ":status":{"S":"AGENT_BACKGROUND_TASK_COMPLETED"}
-  }'
-```
-
-### Filter for Failure Events
-
-Query for any failure events:
-
-```bash
-aws dynamodb query \
-  --table-name agents-table-dev \
-  --key-condition-expression "PK = :pk" \
-  --filter-expression "contains(#status, :failed)" \
-  --expression-attribute-names '{
-    "#status": "status"
-  }' \
-  --expression-attribute-values '{
-    ":pk":{"S":"SESSION#abc-123-def"},
-    ":failed":{"S":"FAILED"}
-  }'
-```
+Use `--filter-expression` with expression attribute names (required for reserved keyword `status`):
+- Completion events: `#status = :status` where `:status` = `AGENT_BACKGROUND_TASK_COMPLETED`
+- Failure events: `contains(#status, :failed)` where `:failed` = `FAILED`
 
 ### Get Latest N Events
 
-Retrieve the 10 most recent events:
-
-```bash
-aws dynamodb query \
-  --table-name agents-table-dev \
-  --key-condition-expression "PK = :pk" \
-  --expression-attribute-values '{":pk":{"S":"SESSION#abc-123-def"}}' \
-  --scan-index-forward false \
-  --limit 10
-```
+Use `--scan-index-forward false` with `--limit N` to retrieve most recent events first.
 
 ## Debugging Workflows
 
@@ -337,33 +211,11 @@ AGENT_RUNTIME_INVOKE_STARTED → AGENT_BACKGROUND_TASK_STARTED → (no completio
 
 ### Monitoring Active Workflows
 
-To monitor an active workflow, poll for new events:
-
-```bash
-# Get events from the last 5 minutes
-aws dynamodb query \
-  --table-name agents-table-dev \
-  --key-condition-expression "PK = :pk AND SK > :sk" \
-  --expression-attribute-values '{
-    ":pk":{"S":"SESSION#abc-123-def"},
-    ":sk":{"S":"EVENT#2024-11-04T10:30:00.000Z"}
-  }' \
-  --scan-index-forward false
-```
+Poll for new events using `SK > :timestamp` in key condition expression.
 
 ### Performance Analysis
 
-Calculate workflow duration by comparing timestamps:
-
-```bash
-# Query all events and calculate time between first and last
-aws dynamodb query \
-  --table-name agents-table-dev \
-  --key-condition-expression "PK = :pk" \
-  --expression-attribute-values '{":pk":{"S":"SESSION#abc-123-def"}}' \
-  --scan-index-forward \
-  --output json | jq '[.Items[0].createdAt.S, .Items[-1].createdAt.S]'
-```
+Compare `createdAt` timestamps between first and last events to calculate workflow duration.
 
 ## Best Practices
 

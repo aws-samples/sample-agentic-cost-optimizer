@@ -60,217 +60,74 @@ agentCoreClient
 
 **Final Solution**: Implement proper async task management within AgentCore itself.
 
-### Issue 3: Agent Processing Pattern Incompatibility
+### Issue 3: Agent Processing Pattern Evolution
 
-**Problem**: Different agent processing approaches caused runtime failures.
+**Problem**: Finding the right async pattern for agent processing in AgentCore.
 
-**Attempts**:
+**Evolution**:
+1. Manual threading with synchronous `agent()` calls - Worked but verbose
+2. Streaming with `agent.stream()` - Failed (incompatible with AgentCore runtime)
+3. Native async with `@app.async_task` + `invoke_async()` - Final solution ✅
 
-1. **Synchronous Agent Call** ✅ (Working):
-```python
-def background_agent_processing(user_message: str, session_id: str, task_id: str):
-    response = agent(user_message, session_id=session_id)
-    return str(response)
-```
+**Resolution**: Use `@app.async_task` decorator with Strands' native `invoke_async()` for clean async execution.
 
-2. **Streaming Agent Call** ❌ (Failed):
-```python
-def background_agent_processing(user_message: str, session_id: str, task_id: str):
-    for event in agent.stream(user_message, session_id=session_id):
-        # Process events...
-```
-
-**Root Cause**: `agent.stream()` was incompatible with AgentCore's runtime environment, likely due to event loop conflicts.
-
-**Resolution**: Stick with simple `agent()` call for background processing.
-
-### Issue 4: AgentCore Async Task Management
+### Issue 4: AgentCore Async Task Management Evolution
 
 **Problem**: Need proper status tracking for fire-and-forget operations.
 
-**Solution**: Implement AgentCore's Manual Task Management pattern:
+**Evolution**:
+- **Initial**: Manual `add_async_task()` / `complete_async_task()` with threading
+- **Final**: `@app.async_task` decorator with `asyncio.create_task()` ✅
 
-```python
-@app.entrypoint
-def invoke(payload):
-    # Start tracking async task (sets status to HealthyBusy)
-    task_id = app.add_async_task("cost_analysis", {
-        "session_id": payload_session_id, 
-        "message": user_message
-    })
-    
-    # Start background thread
-    thread = threading.Thread(
-        target=background_agent_processing,
-        args=(user_message, payload_session_id, task_id),
-        daemon=True
-    )
-    thread.start()
-    
-    # Return immediately (AgentCore connection closes here)
-    return f"Started analysis for session {payload_session_id}"
+**Key Improvement**: Decorator handles status transitions (HEALTHY ↔ HEALTHY_BUSY) automatically, eliminating manual task lifecycle management.
 
-def background_agent_processing(user_message: str, session_id: str, task_id: str):
-    try:
-        response = agent(user_message, session_id=session_id)
-        app.complete_async_task(task_id)  # Mark as complete
-        return str(response)
-    except Exception as e:
-        app.complete_async_task(task_id)  # Mark as complete even on error
-        raise
-```
+### Issue 5: Step Function DynamoDB Integration Evolution
 
-### Issue 5: Step Function DynamoDB Integration
+**Problem**: Step Function needed to poll DynamoDB for agent completion status.
 
-**Problem**: Step Function couldn't properly read DynamoDB session status.
+**Evolution**:
+- **Initial**: GetItem on single SESSION record - Failed (event journaling uses multiple EVENT records)
+- **Final**: Query with filter for completion/failure events ✅
 
-**Errors Encountered**:
-```json
-{
-  "cause": "Invalid path '$.statusResult.Item.STATUS.S': The choice state's condition path references an invalid value.",
-  "error": "States.Runtime"
-}
-```
-
-**Root Causes**:
-1. Incorrect JSONPath evaluation for session_id
-2. Wrong DynamoDB attribute format expectations
-3. Missing item handling
-
-**Solutions Applied**:
-
-1. **Proper JSONPath Usage**:
-```typescript
-// Wrong
-key: {
-  PK: DynamoAttributeValue.fromString('$.session_id'), // Literal string
-}
-
-// Correct
-key: {
-  PK: DynamoAttributeValue.fromString(JsonPath.stringAt('$.session_id')), // Evaluated
-}
-```
-
-2. **Handle Multiple DynamoDB Formats**:
-```typescript
-evaluateStatus
-  .when(
-    Condition.and(
-      Condition.isPresent('$.statusResult.Item'),
-      Condition.or(
-        Condition.stringEquals('$.statusResult.Item.status.S', 'COMPLETED'), // Native format
-        Condition.stringEquals('$.statusResult.Item.status', 'COMPLETED')    // Simplified format
-      )
-    ), 
-    success
-  )
-```
-
-3. **Graceful Missing Item Handling**:
-```typescript
-.when(
-  Condition.or(
-    Condition.isNotPresent('$.statusResult.Item'), // Item doesn't exist yet
-    Condition.and(
-      Condition.isPresent('$.statusResult.Item'),
-      Condition.stringEquals('$.statusResult.Item.status', 'BUSY')
-    )
-  ),
-  waitForCompletion.next(checkStatus) // Continue polling
-)
-```
+**Key Learnings**:
+1. Event journaling = multiple immutable events, not single mutable record
+2. Query needed to find completion events among all events
+3. Expression attribute names required for reserved keyword `status`
+4. `JsonPath.format()` cleaner for composite keys
+5. Filter on query more efficient than scanning all events
 
 ### Issue 6: Logging and Debugging Interference
 
 **Problem**: Changing logging levels from DEBUG to INFO broke the agent execution.
 
-**Root Cause**: The issue wasn't the logging level change itself, but a simultaneous change from `agent()` to `agent.stream()` that was incompatible with AgentCore runtime.
+**Root Cause**: The issue wasn't the logging level itself, but a simultaneous change from synchronous `agent()` to `agent.stream()` that was incompatible with AgentCore runtime.
 
 **Resolution**: 
-- Keep logging at INFO level for production
-- Use simple `agent()` call instead of `agent.stream()`
-- Add meaningful progress logs without debug noise
+- Use INFO level for production
+- Use native async `agent.invoke_async()` instead of `agent.stream()`
+- Use AgentCore's built-in logger (`app.logger`) for consistency
 
 ## Final Working Architecture
 
 ### 1. Lambda Invoker (Fire-and-Forget)
-```typescript
-export const handler = async (event: { session_id: string; prompt?: string }) => {
-  const response = await agentCoreClient.send(
-    new InvokeAgentRuntimeCommand({
-      agentRuntimeArn,
-      runtimeSessionId: event.session_id,
-      payload: JSON.stringify({
-        prompt: event.prompt ?? 'Hello',
-        session_id: event.session_id,
-      }),
-    }),
-  );
-  
-  // Returns immediately after AgentCore starts background task
-  return { status: response.statusCode, sessionId: response.runtimeSessionId };
-};
-```
+- Records `AGENT_INVOCATION_STARTED` event
+- Invokes AgentCore with X-Ray trace ID for observability linking
+- Records `AGENT_INVOCATION_SUCCEEDED` event
+- Returns immediately (~560ms)
 
 ### 2. AgentCore Agent (Async Processing)
-```python
-@app.entrypoint
-def invoke(payload):
-    user_message = payload.get("prompt", "Hello")
-    payload_session_id = payload.get("session_id", session_id)
-    
-    # Start async task tracking
-    task_id = app.add_async_task("cost_analysis", {
-        "session_id": payload_session_id, 
-        "message": user_message
-    })
-    
-    # Start background processing
-    thread = threading.Thread(
-        target=background_agent_processing,
-        args=(user_message, payload_session_id, task_id),
-        daemon=True
-    )
-    thread.start()
-    
-    # Return immediately
-    return f"Started cost optimization analysis for session {payload_session_id}"
-
-def background_agent_processing(user_message: str, session_id: str, task_id: str):
-    try:
-        response = agent(user_message, session_id=session_id)  # Simple call, not streaming
-        app.complete_async_task(task_id)
-        return str(response)
-    except Exception as e:
-        app.complete_async_task(task_id)
-        return f"Error: {str(e)}"
-```
+- Entrypoint gets `session_id` from `context.session_id`
+- Uses `asyncio.create_task()` to start background work
+- Returns immediately to Lambda
+- Background task uses `@app.async_task` decorator for automatic status management
+- Calls multiple agents with `invoke_async()` for multi-agent workflow
+- Records completion/failure events
 
 ### 3. Step Function Workflow
-```typescript
-const checkStatus = new DynamoGetItem(this, 'CheckStatus', {
-  table: props.journalTable,
-  key: {
-    PK: DynamoAttributeValue.fromString(JsonPath.stringAt('$.session_id')), // Proper JSONPath
-    SK: DynamoAttributeValue.fromString('SESSION'),
-  },
-  resultPath: '$.statusResult',
-});
-
-// Robust status evaluation with multiple format support
-evaluateStatus
-  .when(
-    Condition.and(
-      Condition.isPresent('$.statusResult.Item'),
-      Condition.or(
-        Condition.stringEquals('$.statusResult.Item.status.S', 'COMPLETED'),
-        Condition.stringEquals('$.statusResult.Item.status', 'COMPLETED')
-      )
-    ), 
-    success
-  )
-```
+- Queries DynamoDB for completion/failure events using `begins_with(SK, 'EVENT#')`
+- Filters for `AGENT_BACKGROUND_TASK_COMPLETED` or `AGENT_BACKGROUND_TASK_FAILED`
+- Uses expression attribute names for reserved keyword `status`
+- Polls every 10 seconds until completion or failure detected
 
 ## Performance Results
 
@@ -288,28 +145,33 @@ evaluateStatus
 
 ## Key Learnings
 
-1. **AgentCore Manual Task Management**: Essential for proper fire-and-forget behavior
-2. **Threading vs Streaming**: Simple `agent()` calls work better than `agent.stream()` in AgentCore runtime
-3. **JSONPath Evaluation**: Critical for Step Function DynamoDB integration
-4. **Session ID Management**: Use EventBridge event IDs for uniqueness
-5. **Error Handling**: Always complete async tasks, even on failure
-6. **DynamoDB Format Handling**: Support both native and simplified attribute formats
+1. **@app.async_task Decorator**: Simplifies async task management with automatic status transitions (HEALTHY ↔ HEALTHY_BUSY)
+2. **Native Async with invoke_async()**: Cleaner than manual threading or synchronous calls
+3. **RequestContext for session_id**: AgentCore provides session_id automatically via `context.session_id`
+4. **Event Journaling Pattern**: Multiple immutable events better than single mutable record
+5. **DynamoDB Query with Filter**: More efficient than GetItem for event-based tracking
+6. **JSONPath.format()**: Cleaner composite key construction in Step Functions
+7. **Expression Attribute Names**: Required for DynamoDB reserved keywords like `status`
+8. **asyncio.create_task()**: Fire-and-forget pattern for Lambda timeout avoidance
 
 ## Best Practices
 
-1. **Always use `JsonPath.stringAt()` for dynamic values in Step Functions**
-2. **Implement proper async task lifecycle management in AgentCore**
-3. **Use simple agent calls instead of streaming for background processing**
-4. **Handle missing DynamoDB items gracefully in Step Functions**
-5. **Maintain clean logging without interfering with runtime behavior**
-6. **Use unique session IDs to prevent parallel execution issues**
+1. **Use `@app.async_task` decorator** for automatic status management instead of manual `add_async_task()`/`complete_async_task()`
+2. **Use `agent.invoke_async()`** for native async execution instead of threading or synchronous calls
+3. **Get session_id from RequestContext** via `context.session_id` instead of passing through payload
+4. **Use `asyncio.create_task()`** for fire-and-forget pattern instead of manual threading
+5. **Use DynamoDB Query with Filter** for event-based tracking instead of GetItem on single record
+6. **Use `JsonPath.format()`** for composite keys in Step Functions for cleaner code
+7. **Use Expression Attribute Names** for DynamoDB reserved keywords like `status`
+8. **Record events at key lifecycle points** for comprehensive workflow observability
 
 ## Conclusion
 
 The fire-and-forget pattern for Lambda → AgentCore integration requires careful attention to:
-- AgentCore's async task management patterns
-- Proper session lifecycle handling
-- Step Function DynamoDB integration nuances
-- Agent processing compatibility
+- AgentCore's `@app.async_task` decorator for automatic status management
+- RequestContext for session_id retrieval
+- Native async patterns with `invoke_async()` and `asyncio.create_task()`
+- Event journaling pattern with DynamoDB Query for status tracking
+- Step Function integration with proper JSONPath and expression attribute names
 
-The final solution provides immediate Lambda returns while maintaining full agent functionality through background processing, enabling scalable and responsive serverless AI agent architectures.
+The final solution provides immediate Lambda returns (~560ms) while maintaining full agent functionality through background processing, enabling scalable and responsive serverless AI agent architectures. The agent continues processing asynchronously for the full duration (~164 seconds) without Lambda timeout constraints.

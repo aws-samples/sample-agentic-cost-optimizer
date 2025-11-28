@@ -26,17 +26,7 @@ When we invoked the agent, we observed too many log streams being created in Clo
 - Single OTEL stream: `/aws/bedrock-agentcore/runtimes/<agent_id>-<endpoint_name>/otel-rt-logs`
 
 **Current Implementation**:
-```typescript
-// infra/lib/agent.ts - Using agent-as-code deployment
-const agentRuntimeArtifact = AgentRuntimeArtifact.fromS3(
-  {
-    bucketName: deploymentPackage.s3BucketName,
-    objectKey: deploymentPackage.s3ObjectKey,
-  },
-  AgentCoreRuntime.PYTHON_3_12,
-  ['opentelemetry-instrument', 'src/agents/main.py'],
-);
-```
+Agent-as-code deployment using `AgentRuntimeArtifact.fromS3()` in `infra/lib/agent.ts`.
 
 **Why This Matters**:
 - **Agent-as-code** = cleaner CloudWatch logs (only 2 streams)
@@ -66,89 +56,33 @@ const agentRuntimeArtifact = AgentRuntimeArtifact.fromS3(
 ## What We Tried
 
 ### 1. Complex Multi-Logger Setup
-```python
-# What we tried (unnecessary)
-strands_logger = logging.getLogger("strands")
-agentcore_logger = app.logger
-custom_handler = logging.StreamHandler()
-```
-
-**Result**: Over-complicated, mixed logging sources, confusion about where logs appear.
+- Tried mixing multiple loggers (Strands, AgentCore, custom handlers)
+- Over-complicated and confusing
 
 ### 2. Manual Status Tracking
-```python
-# What we tried (caused recursion)
-@app.ping
-def custom_ping_handler():
-    current_status = app.get_current_ping_status()  # Recursion!
-    logger.info(f"Status: {current_status.value}")
-    return current_status
-```
-
-**Result**: Recursion errors, unnecessary complexity.
+- Custom `@app.ping` handler caused recursion errors
+- Unnecessary complexity
 
 ### 3. Manual Async Task Management
-```python
-# What we tried (manual task tracking)
-@app.entrypoint
-def invoke(payload):
-    task_id = app.add_async_task("cost_analysis", {...})
-    thread = threading.Thread(target=background_agent_processing, args=(...), daemon=True)
-    thread.start()
-    return f"Started analysis for session {session_id}"
-
-def background_agent_processing(user_message: str, session_id: str, task_id: str):
-    response = agent(user_message, session_id=session_id)
-    app.complete_async_task(task_id)
-```
-
-**Result**: Worked but required manual task lifecycle management and threading.
+- Manual `add_async_task()` and `complete_async_task()` calls
+- Manual threading with `threading.Thread()`
+- Worked but verbose and error-prone
 
 ## What Actually Works
 
 ### 1. Simple AgentCore Logger
-```python
-app = BedrockAgentCoreApp()
-logger = app.logger  # Use built-in logger only
-
-logger.info(f"Request received - Session: {session_id}")
-logger.error(f"Background task failed - Session: {session_id}: {error_code} - {error_message}")
-```
+- Use built-in logger: `logger = app.logger`
+- Integrates automatically with AgentCore log streams
 
 ### 2. Automatic Status Management with @app.async_task
-```python
-# Decorator automatically manages AgentCore status: HEALTHY_BUSY while running, HEALTHY when complete
-@app.async_task
-async def background_task(user_message: str, session_id: str):
-    # Status automatically becomes HEALTHY_BUSY
-    await analysis_agent.invoke_async(
-        "Analyze AWS costs and identify optimization opportunities",
-        session_id=session_id,
-    )
-    response = await report_agent.invoke_async(
-        "Generate cost optimization report based on analysis results",
-        session_id=session_id,
-    )
-    # Status automatically returns to HEALTHY
-    return response
-```
+- Decorator handles status transitions: HEALTHY ↔ HEALTHY_BUSY
+- No manual `add_async_task()` or `complete_async_task()` calls needed
+- Works with native Strands `invoke_async()` methods
 
 ### 3. Fire-and-Forget Pattern with asyncio.create_task
-```python
-@app.entrypoint
-async def invoke(payload, context: RequestContext):
-    user_message = payload.get("prompt", "Hello")
-    session_id = context.session_id  # Get session_id from AgentCore context
-    
-    # Start background task (returns immediately)
-    asyncio.create_task(background_task(user_message, session_id))
-    
-    return {
-        "message": f"Started processing request for session {session_id}",
-        "session_id": session_id,
-        "status": "started",
-    }
-```
+- Entrypoint uses `asyncio.create_task()` to start background work
+- Returns immediately while agent continues processing
+- Session ID available via `context.session_id` from RequestContext
 
 ## Key Learnings
 
@@ -197,18 +131,7 @@ async def invoke(payload, context: RequestContext):
 - **Trade-off**: Cleaner logs but potentially slower cold starts
 
 **Our Implementation**:
-We use **agent-as-code deployment** via `AgentRuntimeArtifact.fromS3()`:
-```typescript
-// infra/lib/agent.ts
-const agentRuntimeArtifact = AgentRuntimeArtifact.fromS3(
-  {
-    bucketName: deploymentPackage.s3BucketName,
-    objectKey: deploymentPackage.s3ObjectKey,
-  },
-  AgentCoreRuntime.PYTHON_3_12,
-  ['opentelemetry-instrument', 'src/agents/main.py'],
-);
-```
+We use **agent-as-code deployment** via `AgentRuntimeArtifact.fromS3()` in CDK, resulting in only 2 log streams.
 
 **Impact**: 
 - Cleaner CloudWatch log groups (only 2 streams)
