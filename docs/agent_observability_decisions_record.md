@@ -70,19 +70,23 @@ Amazon Bedrock AgentCore provides built-in observability features that require s
 ### Implementation Approach
 
 **Auto-Instrumentation Strategy**:
-```dockerfile
-# Before: Manual execution
-CMD ["python", "-m", "agents.main"]
-
-# After: Auto-instrumented execution  
-CMD ["opentelemetry-instrument", "python", "-m", "agents.main"]
+```typescript
+// CDK Agent construct configuration (infra/lib/agent.ts)
+const agentRuntimeArtifact = AgentRuntimeArtifact.fromS3(
+  {
+    bucketName: deploymentPackage.s3BucketName,
+    objectKey: deploymentPackage.s3ObjectKey,
+  },
+  AgentCoreRuntime.PYTHON_3_12,
+  ['opentelemetry-instrument', 'src/agents/main.py'],  // OTEL auto-instrumentation
+);
 ```
 
 **Key Benefits**:
-- **Zero Code Changes**: No modifications to agent logic required
+- **Minimal Code Changes**: Only CDK construct configuration change required
 - **Comprehensive Coverage**: Automatically instruments HTTP, database, and function calls
 - **AgentCore Integration**: ADOT automatically integrates with AgentCore services
-- **Session Correlation**: Built-in session ID propagation through OTEL baggage
+- **Session Correlation**: Built-in session ID propagation through OTEL baggage and AgentCore RequestContext
 
 ### Automatic Instrumentation Coverage
 
@@ -119,17 +123,34 @@ See AWS documentation: [Configure observability for custom runtimes](https://doc
 
 **AgentCore Pattern**:
 ```python
-# AgentCore automatically provides session correlation via:
-# - X-Amzn-Bedrock-AgentCore-Runtime-Session-Id header
-# - OTEL baggage propagation
-# - Automatic trace correlation
+# AgentCore provides session correlation via RequestContext
+@app.entrypoint
+async def invoke(payload, context: RequestContext):
+    # Session ID automatically available from AgentCore context
+    session_id = context.session_id
+    
+    # Used for event journaling and tracking
+    record_event(session_id=session_id, status=EventStatus.AGENT_RUNTIME_INVOKE_STARTED, ...)
+```
+
+**Lambda Invoker Integration**:
+```python
+# Lambda passes X-Ray trace ID to AgentCore for end-to-end observability
+trace_id = get_tracer_id()  # Powertools utility
+invoke_params = {
+    "agentRuntimeArn": agent_runtime_arn,
+    "runtimeSessionId": session_id,
+    "payload": json.dumps({}),
+}
+if trace_id:
+    invoke_params["traceId"] = trace_id  # Links Lambda X-Ray traces with AgentCore
 ```
 
 **Benefits**:
-- End-to-end tracing across agent execution
-- Correlation between logs, metrics, and traces
-- Session-based performance analysis
-- User journey tracking
+- End-to-end tracing from Step Function → Lambda → AgentCore → Agent
+- Correlation between logs, metrics, and traces across all components
+- Session-based performance analysis via DynamoDB event journaling
+- GenAI Observability console integration via X-Ray trace linking
 
 ## Local Development Support
 
@@ -137,19 +158,22 @@ See AWS documentation: [Configure observability for custom runtimes](https://doc
 
 **Local Testing**:
 ```bash
-# Same command works locally and in AgentCore
-export DDB_TABLE=your-table
-export S3_BUCKET=your-bucket
-export SESSION_ID=test-session-123
+# Set required environment variables
+export S3_BUCKET_NAME=your-bucket
+export JOURNAL_TABLE_NAME=your-table
+export MODEL_ID=us.anthropic.claude-sonnet-4-5-20250929-v1:0
+export AWS_REGION=us-east-1
+export TTL_DAYS=90
 
 # ADOT automatically instruments locally too
-opentelemetry-instrument python -m agents.main
+opentelemetry-instrument python -m src.agents.main
 ```
 
 **Benefits**:
 - Consistent observability between local and production
 - Early detection of instrumentation issues
 - Local trace analysis and debugging
+- Same entry point as production deployment
 
 ## Performance Considerations
 
@@ -233,18 +257,21 @@ opentelemetry-instrument python -m agents.main
 
 ## Key Learnings
 
-1. **ADOT Auto-Instrumentation**: Provides comprehensive observability with minimal code changes
+1. **ADOT Auto-Instrumentation**: Provides comprehensive observability with minimal code changes (CDK construct configuration only)
 2. **AgentCore Integration**: Built-in observability features eliminate need for custom solutions
-3. **Session Correlation**: Automatic correlation enables end-to-end tracing without manual implementation
+3. **Session Correlation**: AgentCore RequestContext provides session_id automatically, enabling end-to-end tracing
 4. **CloudWatch GenAI**: Specialized dashboards provide AI/ML-specific insights out of the box
+5. **X-Ray Trace Linking**: Lambda Powertools `get_tracer_id()` enables seamless trace correlation between Lambda and AgentCore
+6. **Event Journaling**: DynamoDB event recording complements OTEL traces for workflow-level observability
 
 ## Conclusion
 
 The observability implementation using ADOT auto-instrumentation with AgentCore provides:
 
-- **Comprehensive Visibility**: Complete insight into agent execution and performance
-- **Minimal Implementation**: Auto-instrumentation requires only Docker CMD change
-- **AgentCore Native**: Leverages built-in observability features for optimal integration
+- **Comprehensive Visibility**: Complete insight into agent execution and performance across Step Function → Lambda → AgentCore → Agent
+- **Minimal Implementation**: Auto-instrumentation requires only CDK construct configuration change
+- **AgentCore Native**: Leverages built-in observability features (RequestContext, session correlation) for optimal integration
 - **Production Ready**: Scalable, secure, and performant observability solution
+- **Multi-Layer Observability**: Combines OTEL traces, CloudWatch logs, X-Ray traces, and DynamoDB event journaling
 
 This approach enables effective monitoring, debugging, and optimization of agent workloads while maintaining simplicity and leveraging AWS-native observability services.
