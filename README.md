@@ -42,7 +42,6 @@ In order to deploy the agent you will need to have the following tools installed
 - **uv** - Python package manager - [Installation guide](https://docs.astral.sh/uv/getting-started/installation/)
 - **Node.js 20+** - Required for AWS CDK - [Download Node.js](https://nodejs.org/)
 - **AWS CLI** - [Installation guide](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html)
-- **Docker** - Required for local testing - [Get Docker](https://docs.docker.com/get-docker/)
 
 Configure AWS credentials:
 
@@ -174,10 +173,6 @@ Remove local artifacts:
 ```bash
 make clean
 ```
-
-## Development
-
-See [Local Development Guide](docs/LOCAL_DEVELOPMENT.md) for detailed setup and development workflow.
 
 ## Common Issues
 
