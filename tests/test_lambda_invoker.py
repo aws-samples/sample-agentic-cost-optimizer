@@ -68,6 +68,7 @@ class TestAgentInvokerHandler:
         call_args = mock_boto3_client.invoke_agent_runtime.call_args[1]
         assert call_args["agentRuntimeArn"] == "mock-agent-runtime-arn"
         assert call_args["runtimeSessionId"] == "test-session-123"
+        # Payload should be empty - session_id is passed via runtimeSessionId
         payload = json.loads(call_args["payload"])
         assert payload == {}
 
