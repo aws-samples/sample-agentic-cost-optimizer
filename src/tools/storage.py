@@ -10,7 +10,6 @@ Environment Variables:
 """
 
 import logging
-import os
 from datetime import datetime, timezone
 from typing import Any, Dict
 
@@ -18,7 +17,12 @@ import boto3
 from botocore.exceptions import ClientError
 from strands import ToolContext, tool
 
-s3 = boto3.resource("s3", region_name=os.environ.get("AWS_REGION", "us-east-1"))
+from src.shared import get_config
+
+# Get configuration instance
+config = get_config()
+
+s3 = boto3.resource("s3", region_name=config.aws_region)
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -48,11 +52,7 @@ def _read_from_s3(filename: str, tool_context: ToolContext) -> Dict[str, Any]:
         logger.error(f"--> Storage configuration error - {error_msg}")
         return {"success": False, "error": error_msg, "timestamp": timestamp}
 
-    bucket_name = os.environ.get("S3_BUCKET_NAME")
-    if not bucket_name:
-        error_msg = "S3_BUCKET_NAME environment variable not set"
-        logger.error(f"--> Storage configuration error - {error_msg}")
-        return {"success": False, "error": error_msg, "timestamp": timestamp}
+    bucket_name = config.s3_bucket_name
 
     key = f"{session_id}/{filename}"
     logger.debug(f"--> Reading from S3 key: {key}")
@@ -134,11 +134,7 @@ def _write_to_s3(filename: str, content: str, tool_context: ToolContext) -> Dict
         logger.error(f"--> Storage configuration error - {error_msg}")
         return {"success": False, "error": error_msg, "timestamp": timestamp}
 
-    bucket_name = os.environ.get("S3_BUCKET_NAME")
-    if not bucket_name:
-        error_msg = "S3_BUCKET_NAME environment variable not set"
-        logger.error(f"--> Storage configuration error - {error_msg}")
-        return {"success": False, "error": error_msg, "timestamp": timestamp}
+    bucket_name = config.s3_bucket_name
 
     logger.info(f"--> Storage tool invoked - Session: {session_id}, File: {filename}")
 

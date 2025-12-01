@@ -11,20 +11,13 @@ from strands import Agent
 from strands.models import BedrockModel
 from strands_tools import calculator, use_aws
 
-from src.shared import EventStatus, record_event
+from src.shared import EventStatus, get_config, record_event
 from src.tools import journal, storage
 
-s3_bucket_name = os.environ.get("S3_BUCKET_NAME")
-if not s3_bucket_name:
-    raise ValueError("S3_BUCKET_NAME environment variable is required")
+# Load configuration from environment variables
+config = get_config()
 
-journal_table_name = os.environ.get("JOURNAL_TABLE_NAME")
-if not journal_table_name:
-    raise ValueError("JOURNAL_TABLE_NAME environment variable is required")
-
-aws_region = os.environ.get("AWS_REGION", "us-east-1")
-model_id = os.environ.get("MODEL_ID", "us.anthropic.claude-sonnet-4-5-20250929-v1:0")
-ttl_days = int(os.environ.get("TTL_DAYS", "90"))
+# Timestamp values for prompt replacement
 current_timestamp = int(time.time())
 current_datetime = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
 
@@ -87,8 +80,8 @@ def create_agent(
         tools = []
 
     bedrock_model = BedrockModel(
-        model_id=model_id,
-        region_name=aws_region,
+        model_id=config.model_id,
+        region_name=config.aws_region,
         boto_client_config=boto_config,
     )
 
@@ -142,9 +135,9 @@ async def background_task(user_message: str, session_id: str):
         record_event(
             session_id=session_id,
             status=EventStatus.AGENT_BACKGROUND_TASK_COMPLETED,
-            table_name=journal_table_name,
-            ttl_days=ttl_days,
-            region_name=aws_region,
+            table_name=config.journal_table_name,
+            ttl_days=config.ttl_days,
+            region_name=config.aws_region,
         )
         return response
 
@@ -154,10 +147,10 @@ async def background_task(user_message: str, session_id: str):
         record_event(
             session_id=session_id,
             status=EventStatus.AGENT_BACKGROUND_TASK_FAILED,
-            table_name=journal_table_name,
-            ttl_days=ttl_days,
+            table_name=config.journal_table_name,
+            ttl_days=config.ttl_days,
             error_message=f"NoCredentialsError - {str(e)}",
-            region_name=aws_region,
+            region_name=config.aws_region,
         )
         return {
             "error": "NoCredentialsError",
@@ -175,10 +168,10 @@ async def background_task(user_message: str, session_id: str):
         record_event(
             session_id=session_id,
             status=EventStatus.AGENT_BACKGROUND_TASK_FAILED,
-            table_name=journal_table_name,
-            ttl_days=ttl_days,
+            table_name=config.journal_table_name,
+            ttl_days=config.ttl_days,
             error_message=f"{error_code} - {error_message}",
-            region_name=aws_region,
+            region_name=config.aws_region,
         )
         return {
             "error": "ClientError",
@@ -196,10 +189,10 @@ async def background_task(user_message: str, session_id: str):
         record_event(
             session_id=session_id,
             status=EventStatus.AGENT_BACKGROUND_TASK_FAILED,
-            table_name=journal_table_name,
-            ttl_days=ttl_days,
+            table_name=config.journal_table_name,
+            ttl_days=config.ttl_days,
             error_message=f"{type(e).__name__} - {str(e)}",
-            region_name=aws_region,
+            region_name=config.aws_region,
         )
         return {
             "error": "Exception",
@@ -228,9 +221,9 @@ async def invoke(payload, context: RequestContext):
     record_event(
         session_id=session_id,
         status=EventStatus.AGENT_RUNTIME_INVOKE_STARTED,
-        table_name=journal_table_name,
-        ttl_days=ttl_days,
-        region_name=aws_region,
+        table_name=config.journal_table_name,
+        ttl_days=config.ttl_days,
+        region_name=config.aws_region,
     )
 
     try:
@@ -239,9 +232,9 @@ async def invoke(payload, context: RequestContext):
         record_event(
             session_id=session_id,
             status=EventStatus.AGENT_BACKGROUND_TASK_STARTED,
-            table_name=journal_table_name,
-            ttl_days=ttl_days,
-            region_name=aws_region,
+            table_name=config.journal_table_name,
+            ttl_days=config.ttl_days,
+            region_name=config.aws_region,
         )
         return {
             "message": f"Started processing request for session {session_id}. Processing will continue in background.",
@@ -253,10 +246,10 @@ async def invoke(payload, context: RequestContext):
         record_event(
             session_id=session_id,
             status=EventStatus.AGENT_RUNTIME_INVOKE_FAILED,
-            table_name=journal_table_name,
-            ttl_days=ttl_days,
+            table_name=config.journal_table_name,
+            ttl_days=config.ttl_days,
             error_message=str(e),
-            region_name=aws_region,
+            region_name=config.aws_region,
         )
         return {
             "error": f"Error starting background processing: {str(e)}",
