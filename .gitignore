@@ -2,11 +2,13 @@
 .venv/
 __pycache__/
 *.pyc
+.coverage
 
 # Node/CDK
 infra/node_modules/
 infra/dist/
 infra/cdk.out/
+infra/coverage
 
 # Local Config
 .idea

@@ -1,6 +1,6 @@
 export UV_PROJECT_ENVIRONMENT := .venv
 
-.PHONY: help setup init pre-commit-install check test run cdk-bootstrap cdk-deploy cdk-hotswap cdk-watch cdk-destroy clean
+.PHONY: help setup init pre-commit-install check test run-agent-local invoke-agent-local cdk-bootstrap cdk-deploy cdk-hotswap cdk-watch cdk-destroy trigger-workflow clean
 
 help:
 	@echo "Development Workflow:"
@@ -12,9 +12,9 @@ help:
 	@echo "  make check        - Run all code quality checks (pre-commit)"
 	@echo "  make test         - Run all tests"
 	@echo ""
-	@echo "Development:"
-	@echo "  make run          - Run the sample local agent"
-	@echo "  make trigger-workflow - Trigger Step Function workflow via EventBridge"
+	@echo "Local Development:"
+	@echo "  make run-agent-local   - Run agent locally with reload"
+	@echo "  make invoke-agent-local - Invoke local agent (run in separate terminal)"
 	@echo ""
 	@echo "AWS Deployment:"
 	@echo "  make cdk-bootstrap - Bootstrap CDK (run once per AWS account/region)"
@@ -22,6 +22,7 @@ help:
 	@echo "  make cdk-hotswap  - Fast deploy Lambda changes only"
 	@echo "  make cdk-watch    - Watch for changes and auto-deploy"
 	@echo "  make cdk-destroy  - Destroy CDK stack from AWS"
+	@echo "  make trigger-workflow - Trigger Step Function workflow via EventBridge"
 	@echo ""
 	@echo "Maintenance:"
 	@echo "  make clean        - Remove venv and build artifacts"
@@ -49,8 +50,15 @@ test:
 	cd infra && npm test
 	@echo "✓ All tests completed!"
 
-run:
-	PYTHONPATH=src uv run python -m agents.main
+run-agent-local:
+	./scripts/run-agent-locally.sh
+
+invoke-agent-local:
+	@echo "Invoking local agent..."
+	@curl -X POST http://localhost:8080/invocations \
+		-H 'Content-Type: application/json' \
+		-H 'X-Amzn-Bedrock-AgentCore-Runtime-Session-Id: local-dev-'$$(uuidgen) \
+		-d '{}'
 
 
 cdk-bootstrap: 
