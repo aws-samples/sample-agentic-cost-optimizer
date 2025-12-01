@@ -64,6 +64,7 @@ export class InfraStack extends Stack {
     this.agent = new Agent(this, 'AgentCore', {
       agentRuntimeName: `agentRuntime_${environment}_${version}`,
       description: `Agent runtime for ${environment} environment`,
+      modelId,
       environmentVariables: {
         BYPASS_TOOL_CONSENT: 'true',
         S3_BUCKET_NAME: agentDataBucket.bucketName,

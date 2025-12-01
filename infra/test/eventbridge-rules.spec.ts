@@ -1,14 +1,9 @@
-import { App } from 'aws-cdk-lib';
 import { describe, expect, it } from 'vitest';
 
-import { Template } from 'aws-cdk-lib/assertions';
-
-import { InfraStack } from '../lib/infra-stack';
+import { createTestStack } from './setup';
 
 describe('EventBridge Rules', () => {
-  const app = new App();
-  const stack = new InfraStack(app, 'TestStack');
-  const template = Template.fromStack(stack);
+  const { template } = createTestStack();
 
   describe('Manual Trigger Rule', () => {
     it('should be configured with correct event pattern', () => {

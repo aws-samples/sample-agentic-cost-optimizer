@@ -1,14 +1,9 @@
-import { App } from 'aws-cdk-lib';
 import { describe, expect, it } from 'vitest';
 
-import { Template } from 'aws-cdk-lib/assertions';
-
-import { InfraStack } from '../lib/infra-stack';
+import { createTestStack } from './setup';
 
 describe('Agent IAM Policies', () => {
-  const app = new App();
-  const stack = new InfraStack(app, 'TestStack');
-  const template = Template.fromStack(stack);
+  const { template } = createTestStack();
 
   describe('CloudWatch Metrics Policy', () => {
     it('should allow CloudWatch Metrics read access', () => {
