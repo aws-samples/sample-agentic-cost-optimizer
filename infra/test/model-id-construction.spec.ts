@@ -22,7 +22,6 @@ describe('Model ID Construction Logic', () => {
     const actualModelId = modelIdPart.split(':inference-profile/')[1];
 
     expect(actualModelId).toBe('us.anthropic.claude-sonnet-4-20250514-v1:0');
-    expect(actualModelId).not.toBe('eu.anthropic.claude-sonnet-4-20250514-v1:0');
   });
 
   it('should use base modelId without prefix in foundation model ARN', () => {
