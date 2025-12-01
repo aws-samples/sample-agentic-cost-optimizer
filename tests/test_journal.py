@@ -5,12 +5,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-# Import the journal functions - @tool decorator is mocked in conftest.py
-from src.tools.journal import (
-    _complete_task,
-    _start_task,
-    journal,
-)
+# Import the journal tool function - @tool decorator is mocked in conftest.py
+from src.tools.journal import journal
 
 
 class TestJournalValidation:
@@ -105,8 +101,8 @@ class TestJournalStartTask:
 
     @patch("src.tools.journal.record_event")
     def test_start_task_success(self, mock_record_event, mock_tool_context):
-        """Test successful task start."""
-        result = _start_task(phase_name="Discovery", tool_context=mock_tool_context)
+        """Test journal starts task successfully."""
+        result = journal(action="start_task", phase_name="Discovery", tool_context=mock_tool_context)
 
         assert result["success"] is True
         assert result["session_id"] == "test-session-123"
@@ -115,18 +111,18 @@ class TestJournalStartTask:
         mock_record_event.assert_called_once()
 
     def test_start_task_missing_phase_name(self, mock_tool_context):
-        """Test start_task without phase_name."""
-        result = _start_task(phase_name="", tool_context=mock_tool_context)
+        """Test journal start_task fails without phase_name."""
+        result = journal(action="start_task", tool_context=mock_tool_context)
 
         assert result["success"] is False
         assert "phase_name is required" in result["error"]
 
     def test_start_task_no_session(self):
-        """Test start_task without active session."""
+        """Test journal start_task fails without active session."""
         context = MagicMock()
         context.invocation_state = {}
 
-        result = _start_task(phase_name="Discovery", tool_context=context)
+        result = journal(action="start_task", phase_name="Discovery", tool_context=context)
 
         assert result["success"] is False
         assert "No active session" in result["error"]
@@ -137,11 +133,12 @@ class TestJournalCompleteTask:
 
     @patch("src.tools.journal.record_event")
     def test_complete_task_success(self, mock_record_event, mock_tool_context):
-        """Test successful task completion."""
-        result = _complete_task(
+        """Test journal completes task successfully."""
+        result = journal(
+            action="complete_task",
             phase_name="Discovery",
-            tool_context=mock_tool_context,
             status="COMPLETED",
+            tool_context=mock_tool_context,
         )
 
         assert result["success"] is True
@@ -151,8 +148,86 @@ class TestJournalCompleteTask:
         mock_record_event.assert_called_once()
 
     def test_complete_task_missing_phase_name(self, mock_tool_context):
-        """Test complete_task without phase_name."""
-        result = _complete_task(phase_name="", tool_context=mock_tool_context)
+        """Test journal complete_task fails without phase_name."""
+        result = journal(action="complete_task", tool_context=mock_tool_context)
 
         assert result["success"] is False
         assert "phase_name is required" in result["error"]
+
+    @patch("src.tools.journal.record_event")
+    def test_complete_task_with_default_status(self, mock_record_event, mock_tool_context):
+        """Test journal complete_task uses default COMPLETED status."""
+        result = journal(
+            action="complete_task",
+            phase_name="Analysis",
+            tool_context=mock_tool_context,
+        )
+
+        assert result["success"] is True
+        assert result["status"] == "COMPLETED"
+        mock_record_event.assert_called_once()
+
+    @patch("src.tools.journal.record_event")
+    def test_complete_task_with_failed_status(self, mock_record_event, mock_tool_context):
+        """Test journal complete_task with FAILED status."""
+        result = journal(
+            action="complete_task",
+            phase_name="Processing",
+            status="FAILED",
+            error_message="Processing error",
+            tool_context=mock_tool_context,
+        )
+
+        assert result["success"] is True
+        assert result["status"] == "FAILED"
+        mock_record_event.assert_called_once()
+        call_args = mock_record_event.call_args[1]
+        assert call_args["error_message"] == "Processing error"
+
+    def test_complete_task_no_session(self):
+        """Test journal complete_task fails without active session."""
+        context = MagicMock()
+        context.invocation_state = {}
+
+        result = journal(action="complete_task", phase_name="Discovery", tool_context=context)
+
+        assert result["success"] is False
+        assert "No active session" in result["error"]
+
+    def test_complete_task_missing_table_name(self, mock_tool_context):
+        """Test journal complete_task fails with missing table name."""
+        # Temporarily remove the env var
+        original_table_name = os.environ.get("JOURNAL_TABLE_NAME")
+        if "JOURNAL_TABLE_NAME" in os.environ:
+            del os.environ["JOURNAL_TABLE_NAME"]
+
+        try:
+            result = journal(action="complete_task", phase_name="Discovery", tool_context=mock_tool_context)
+
+            assert result["success"] is False
+            assert "JOURNAL_TABLE_NAME not set" in result["error"]
+        finally:
+            if original_table_name:
+                os.environ["JOURNAL_TABLE_NAME"] = original_table_name
+
+    @patch("src.tools.journal.record_event")
+    def test_start_task_exception_handling(self, mock_record_event, mock_tool_context):
+        """Test journal start_task handles unexpected exceptions."""
+        mock_record_event.side_effect = Exception("Database connection error")
+
+        result = journal(action="start_task", phase_name="Discovery", tool_context=mock_tool_context)
+
+        assert result["success"] is False
+        assert "Unexpected error" in result["error"]
+        assert "Database connection error" in result["error"]
+
+    @patch("src.tools.journal.record_event")
+    def test_complete_task_exception_handling(self, mock_record_event, mock_tool_context):
+        """Test journal complete_task handles unexpected exceptions."""
+        mock_record_event.side_effect = Exception("Network timeout")
+
+        result = journal(action="complete_task", phase_name="Analysis", tool_context=mock_tool_context)
+
+        assert result["success"] is False
+        assert "Unexpected error" in result["error"]
+        assert "Network timeout" in result["error"]

@@ -25,13 +25,8 @@ class TestRecordMetadata:
             region_name="us-west-2",
         )
 
-        # Verify boto3 resource was created with correct region
         mock_boto3.resource.assert_called_once_with("dynamodb", region_name="us-west-2")
-
-        # Verify table was accessed
         mock_boto3.resource.return_value.Table.assert_called_once_with("test-table")
-
-        # Verify put_item was called
         assert mock_table.put_item.called
         call_args = mock_table.put_item.call_args[1]
         assert call_args["Item"]["PK"] == "SESSION#session-123"
@@ -115,7 +110,6 @@ class TestRecordMetadata:
         call_args = mock_table.put_item.call_args[1]
         assert call_args["Item"]["SK"].startswith("METADATA#")
         assert call_args["Item"]["PK"] == "SESSION#session-456"
-        # Verify timestamp format in SK (should be ISO format)
         assert "T" in call_args["Item"]["SK"]
         assert "Z" in call_args["Item"]["SK"]
 
