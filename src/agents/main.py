@@ -34,8 +34,8 @@ if "BYPASS_TOOL_CONSENT" not in os.environ:
 
 DEFAULT_MAX_ATTEMPTS = 5  # Increased from default 3 for better resilience with Bedrock
 DEFAULT_RETRY_MODE = "standard"  # AWS recommended mode with exponential backoff + jitter
-DEFAULT_CONNECT_TIMEOUT = 60  # Bedrock connection establishment typically completes within 10s
-DEFAULT_READ_TIMEOUT = 120  # Bedrock streaming responses can take 60-90s for complex queries
+DEFAULT_CONNECT_TIMEOUT = 60  # Time allowed for establishing connection to Bedrock
+DEFAULT_READ_TIMEOUT = 600  # Time allowed for streaming responses from model
 DEFAULT_MAX_POOL_CONNECTIONS = 10
 
 

@@ -111,7 +111,23 @@ make cdk-hotswap         # Fast AWS Lambda-only updates
 make cdk-watch           # Auto-deploy on file changes
 ```
 
-## Triggering the Agent
+## Local Development
+
+Run the agent locally for testing:
+
+**Terminal 1** - Start the agent:
+```bash
+make run-agent-local
+```
+
+**Terminal 2** - Invoke the agent:
+```bash
+make invoke-agent-local
+```
+
+The agent runs on `http://localhost:8080` with reload. Logs appear in Terminal 1.
+
+## Triggering the Agent (AWS)
 
 **Scheduled**: Runs daily at 6am UTC (configured in EventBridge)
 
