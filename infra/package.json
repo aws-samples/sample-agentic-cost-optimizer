@@ -13,7 +13,7 @@
     "deploy": "npm run build && cdk deploy --require-approval never",
     "destroy": "cdk destroy",
     "prettier": "prettier . --write",
-    "test": "npm run build && vitest run",
+    "test": "npm run build && vitest run --coverage",
     "test:watch": "npm run build && vitest"
   },
   "dependencies": {
@@ -26,6 +26,7 @@
   "devDependencies": {
     "@trivago/prettier-plugin-sort-imports": "^6.0.0",
     "@types/node": "^24.10.1",
+    "@vitest/coverage-v8": "^4.0.14",
     "aws-cdk": "^2.1033.0",
     "cdk-nag": "^2.28.195",
     "prettier": "^3.3.3",
