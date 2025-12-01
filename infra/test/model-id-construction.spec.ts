@@ -1,20 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import { createTestStack } from './setup';
+import { createTestStack, getBedrockPolicyStatements } from './setup';
 
 describe('Model ID Construction Logic', () => {
   const { template } = createTestStack();
 
   it('should construct modelId with region prefix when inferenceProfileRegion is set', () => {
-    const policies = template.findResources('AWS::IAM::Policy', {
-      Properties: {
-        PolicyName: 'BedrockModelInvocation',
-      },
-    });
-
-    const policyKey = Object.keys(policies)[0];
-    const policy = policies[policyKey];
-    const statements = policy.Properties.PolicyDocument.Statement;
+    const statements = getBedrockPolicyStatements(template);
     const invokeStatement = statements.find((stmt: any) => stmt.Sid === 'InvokeBedrockModel');
 
     const inferenceProfileResource = invokeStatement.Resource.find((r: any) => {
@@ -34,15 +26,7 @@ describe('Model ID Construction Logic', () => {
   });
 
   it('should use base modelId without prefix in foundation model ARN', () => {
-    const policies = template.findResources('AWS::IAM::Policy', {
-      Properties: {
-        PolicyName: 'BedrockModelInvocation',
-      },
-    });
-
-    const policyKey = Object.keys(policies)[0];
-    const policy = policies[policyKey];
-    const statements = policy.Properties.PolicyDocument.Statement;
+    const statements = getBedrockPolicyStatements(template);
     const invokeStatement = statements.find((stmt: any) => stmt.Sid === 'InvokeBedrockModel');
 
     const foundationModelResource = invokeStatement.Resource.find((r: any) => {

@@ -14,3 +14,16 @@ export function createTestStack() {
 
   return { app, stack, template };
 }
+
+/**
+ * Gets the Bedrock IAM policy statements from a template
+ */
+export function getBedrockPolicyStatements(template: Template) {
+  const policies = template.findResources('AWS::IAM::Policy', {
+    Properties: {
+      PolicyName: 'BedrockModelInvocation',
+    },
+  });
+  const policy = Object.values(policies)[0] as any;
+  return policy.Properties.PolicyDocument.Statement;
+}

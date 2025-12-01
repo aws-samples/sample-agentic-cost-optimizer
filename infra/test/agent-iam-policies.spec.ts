@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { createTestStack } from './setup';
+import { createTestStack, getBedrockPolicyStatements } from './setup';
 
 describe('Agent IAM Policies', () => {
   const { template } = createTestStack();
@@ -13,8 +13,7 @@ describe('Agent IAM Policies', () => {
         },
       });
 
-      const policyKey = Object.keys(policies)[0];
-      const policy = policies[policyKey];
+      const policy = Object.values(policies)[0] as any;
       const statements = policy.Properties.PolicyDocument.Statement;
 
       const metricsStatement = statements.find((stmt: any) => stmt.Sid === 'CloudWatchMetricsAccess');
@@ -35,8 +34,7 @@ describe('Agent IAM Policies', () => {
         },
       });
 
-      const policyKey = Object.keys(policies)[0];
-      const policy = policies[policyKey];
+      const policy = Object.values(policies)[0] as any;
       const statements = policy.Properties.PolicyDocument.Statement;
 
       const logsAccessStatement = statements.find((stmt: any) => stmt.Sid === 'CloudWatchLogsAccess');
@@ -59,8 +57,7 @@ describe('Agent IAM Policies', () => {
         },
       });
 
-      const policyKey = Object.keys(policies)[0];
-      const policy = policies[policyKey];
+      const policy = Object.values(policies)[0] as any;
       const statements = policy.Properties.PolicyDocument.Statement;
 
       const queryResultsStatement = statements.find((stmt: any) => stmt.Sid === 'CloudWatchLogsQueryAccess');
@@ -79,8 +76,7 @@ describe('Agent IAM Policies', () => {
         },
       });
 
-      const policyKey = Object.keys(policies)[0];
-      const policy = policies[policyKey];
+      const policy = Object.values(policies)[0] as any;
       const statements = policy.Properties.PolicyDocument.Statement;
 
       const logsStatements = statements.filter(
@@ -103,8 +99,7 @@ describe('Agent IAM Policies', () => {
         },
       });
 
-      const policyKey = Object.keys(policies)[0];
-      const policy = policies[policyKey];
+      const policy = Object.values(policies)[0] as any;
       const statements = policy.Properties.PolicyDocument.Statement;
 
       const lambdaStatement = statements.find((stmt: any) => stmt.Sid === 'LambdaMonitoring');
