@@ -17,10 +17,7 @@ import boto3
 from botocore.exceptions import ClientError
 from strands import ToolContext, tool
 
-from src.shared import get_config
-
-# Get configuration instance
-config = get_config()
+from src.shared import config
 
 s3 = boto3.resource("s3", region_name=config.aws_region)
 

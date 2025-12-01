@@ -5,11 +5,11 @@ from unittest.mock import patch
 
 import pytest
 
-from src.shared.config import AppConfig, get_config
+from src.shared.config import AppConfig, load_config
 
 
 class TestAppConfigFromEnv:
-    """Tests for AppConfig.from_env() class method."""
+    """Tests for load_config() function."""
 
     def test_loads_all_required_env_vars(self):
         """Test that all required environment variables are loaded."""
@@ -23,7 +23,7 @@ class TestAppConfigFromEnv:
                 "TTL_DAYS": "30",
             },
         ):
-            config = AppConfig.from_env()
+            config = load_config()
 
             assert config.s3_bucket_name == "test-bucket"
             assert config.journal_table_name == "test-table"
@@ -41,7 +41,7 @@ class TestAppConfigFromEnv:
             },
             clear=True,
         ):
-            config = AppConfig.from_env()
+            config = load_config()
 
             assert config.s3_bucket_name == "test-bucket"
             assert config.journal_table_name == "test-table"
@@ -59,7 +59,7 @@ class TestAppConfigFromEnv:
             clear=True,
         ):
             with pytest.raises(ValueError, match="S3_BUCKET_NAME environment variable is required"):
-                AppConfig.from_env()
+                load_config()
 
     def test_raises_error_when_journal_table_name_missing(self):
         """Test that ValueError is raised when JOURNAL_TABLE_NAME is missing."""
@@ -71,13 +71,13 @@ class TestAppConfigFromEnv:
             clear=True,
         ):
             with pytest.raises(ValueError, match="JOURNAL_TABLE_NAME environment variable is required"):
-                AppConfig.from_env()
+                load_config()
 
     def test_raises_error_when_both_required_vars_missing(self):
         """Test that ValueError is raised when both required vars are missing."""
         with patch.dict(os.environ, {}, clear=True):
             with pytest.raises(ValueError, match="S3_BUCKET_NAME environment variable is required"):
-                AppConfig.from_env()
+                load_config()
 
     def test_converts_ttl_days_to_int(self):
         """Test that TTL_DAYS is properly converted to integer."""
@@ -89,7 +89,7 @@ class TestAppConfigFromEnv:
                 "TTL_DAYS": "365",
             },
         ):
-            config = AppConfig.from_env()
+            config = load_config()
 
             assert config.ttl_days == 365
             assert isinstance(config.ttl_days, int)
@@ -104,7 +104,7 @@ class TestAppConfigFromEnv:
                 "AWS_REGION": "eu-central-1",
             },
         ):
-            config = AppConfig.from_env()
+            config = load_config()
 
             assert config.aws_region == "eu-central-1"
 
@@ -118,7 +118,7 @@ class TestAppConfigFromEnv:
                 "MODEL_ID": "custom-model-v2",
             },
         ):
-            config = AppConfig.from_env()
+            config = load_config()
 
             assert config.model_id == "custom-model-v2"
 
@@ -142,24 +142,30 @@ class TestAppConfigDataclass:
         assert config.model_id == "my-model"
         assert config.ttl_days == 180
 
-    def test_creates_instance_with_defaults(self):
-        """Test that AppConfig uses default values for optional fields."""
+    def test_creates_instance_with_all_required_fields(self):
+        """Test that AppConfig requires all fields."""
         config = AppConfig(
             s3_bucket_name="my-bucket",
             journal_table_name="my-table",
+            aws_region="ap-southeast-1",
+            model_id="my-model",
+            ttl_days=180,
         )
 
         assert config.s3_bucket_name == "my-bucket"
         assert config.journal_table_name == "my-table"
-        assert config.aws_region == "us-east-1"
-        assert config.model_id == "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
-        assert config.ttl_days == 90
+        assert config.aws_region == "ap-southeast-1"
+        assert config.model_id == "my-model"
+        assert config.ttl_days == 180
 
-    def test_is_immutable_after_creation(self):
+    def test_is_mutable_after_creation(self):
         """Test that AppConfig fields can be modified (dataclass is not frozen)."""
         config = AppConfig(
             s3_bucket_name="my-bucket",
             journal_table_name="my-table",
+            aws_region="us-east-1",
+            model_id="test-model",
+            ttl_days=90,
         )
 
         # Dataclass is not frozen, so this should work
@@ -167,11 +173,11 @@ class TestAppConfigDataclass:
         assert config.ttl_days == 120
 
 
-class TestGetConfig:
-    """Tests for get_config() function."""
+class TestLoadConfig:
+    """Tests for load_config() function."""
 
     def test_returns_config_instance(self):
-        """Test that get_config returns an AppConfig instance."""
+        """Test that load_config returns an AppConfig instance."""
         with patch.dict(
             os.environ,
             {
@@ -179,68 +185,17 @@ class TestGetConfig:
                 "JOURNAL_TABLE_NAME": "test-table",
             },
         ):
-            # Reset the global config
-            import src.shared.config as config_module
-
-            config_module.config = None
-
-            config = get_config()
+            config = load_config()
 
             assert isinstance(config, AppConfig)
             assert config.s3_bucket_name == "test-bucket"
             assert config.journal_table_name == "test-table"
 
-    def test_caches_config_instance(self):
-        """Test that get_config returns the same instance on subsequent calls."""
-        with patch.dict(
-            os.environ,
-            {
-                "S3_BUCKET_NAME": "test-bucket",
-                "JOURNAL_TABLE_NAME": "test-table",
-            },
-        ):
-            # Reset the global config
-            import src.shared.config as config_module
-
-            config_module.config = None
-
-            config1 = get_config()
-            config2 = get_config()
-
-            assert config1 is config2  # Same instance
-
-    def test_lazy_loads_on_first_call(self):
-        """Test that config is only loaded on first call to get_config."""
-        with patch.dict(
-            os.environ,
-            {
-                "S3_BUCKET_NAME": "test-bucket",
-                "JOURNAL_TABLE_NAME": "test-table",
-            },
-        ):
-            # Reset the global config
-            import src.shared.config as config_module
-
-            config_module.config = None
-
-            # Config should be None before first call
-            assert config_module.config is None
-
-            # First call should load config
-            config = get_config()
-            assert config_module.config is not None
-            assert config_module.config is config
-
     def test_propagates_validation_errors(self):
-        """Test that get_config propagates validation errors from AppConfig.from_env."""
+        """Test that load_config propagates validation errors."""
         with patch.dict(os.environ, {}, clear=True):
-            # Reset the global config
-            import src.shared.config as config_module
-
-            config_module.config = None
-
             with pytest.raises(ValueError, match="S3_BUCKET_NAME environment variable is required"):
-                get_config()
+                load_config()
 
 
 class TestAppConfigIntegration:
@@ -259,7 +214,7 @@ class TestAppConfigIntegration:
                 "TTL_DAYS": "60",
             },
         ):
-            config = AppConfig.from_env()
+            config = load_config()
 
             # Verify all values are accessible
             assert config.s3_bucket_name
@@ -270,31 +225,11 @@ class TestAppConfigIntegration:
 
     def test_config_can_be_used_across_modules(self):
         """Test that config can be imported and used in different modules."""
-        with patch.dict(
-            os.environ,
-            {
-                "S3_BUCKET_NAME": "shared-bucket",
-                "JOURNAL_TABLE_NAME": "shared-table",
-            },
-        ):
-            # Reset the global config
-            import src.shared.config as config_module
+        from src.shared import config
 
-            config_module.config = None
-
-            # Import and use in one "module"
-            from src.shared import get_config as get_config1
-
-            config1 = get_config1()
-
-            # Import and use in another "module"
-            from src.shared import get_config as get_config2
-
-            config2 = get_config2()
-
-            # Should be the same instance
-            assert config1 is config2
-            assert config1.s3_bucket_name == config2.s3_bucket_name
+        assert isinstance(config, AppConfig)
+        assert config.s3_bucket_name
+        assert config.journal_table_name
 
 
 class TestAppConfigEdgeCases:
@@ -310,7 +245,7 @@ class TestAppConfigEdgeCases:
             },
         ):
             with pytest.raises(ValueError, match="S3_BUCKET_NAME environment variable is required"):
-                AppConfig.from_env()
+                load_config()
 
     def test_handles_whitespace_in_env_vars(self):
         """Test that whitespace in env vars is preserved."""
@@ -321,7 +256,7 @@ class TestAppConfigEdgeCases:
                 "JOURNAL_TABLE_NAME": "  test-table  ",
             },
         ):
-            config = AppConfig.from_env()
+            config = load_config()
 
             # Environment variables preserve whitespace
             assert config.s3_bucket_name == "  test-bucket  "
@@ -338,7 +273,7 @@ class TestAppConfigEdgeCases:
             },
         ):
             with pytest.raises(ValueError):
-                AppConfig.from_env()
+                load_config()
 
     def test_handles_negative_ttl_days(self):
         """Test that negative TTL_DAYS is accepted (validation could be added later)."""
@@ -350,7 +285,7 @@ class TestAppConfigEdgeCases:
                 "TTL_DAYS": "-1",
             },
         ):
-            config = AppConfig.from_env()
+            config = load_config()
 
             # Currently accepts negative values (could add validation if needed)
             assert config.ttl_days == -1
@@ -365,6 +300,6 @@ class TestAppConfigEdgeCases:
                 "TTL_DAYS": "0",
             },
         ):
-            config = AppConfig.from_env()
+            config = load_config()
 
             assert config.ttl_days == 0

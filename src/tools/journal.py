@@ -10,10 +10,7 @@ from typing import Any, Dict, Optional
 
 from strands import ToolContext, tool
 
-from src.shared import EventStatus, get_config, record_event
-
-# Get configuration instance
-config = get_config()
+from src.shared import EventStatus, config, record_event
 
 
 def _create_error_response(

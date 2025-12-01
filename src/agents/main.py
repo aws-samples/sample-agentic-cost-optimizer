@@ -11,11 +11,17 @@ from strands import Agent
 from strands.models import BedrockModel
 from strands_tools import calculator, use_aws
 
-from src.shared import EventStatus, get_config, record_event
+from src.shared import (
+    DEFAULT_CONNECT_TIMEOUT,
+    DEFAULT_MAX_ATTEMPTS,
+    DEFAULT_MAX_POOL_CONNECTIONS,
+    DEFAULT_READ_TIMEOUT,
+    DEFAULT_RETRY_MODE,
+    EventStatus,
+    config,
+    record_event,
+)
 from src.tools import journal, storage
-
-# Load configuration from environment variables
-config = get_config()
 
 # Timestamp values for prompt replacement
 current_timestamp = int(time.time())
@@ -24,12 +30,6 @@ current_datetime = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
 # Required for local development - CDK sets this in deployed environments
 if "BYPASS_TOOL_CONSENT" not in os.environ:
     os.environ["BYPASS_TOOL_CONSENT"] = "true"
-
-DEFAULT_MAX_ATTEMPTS = 5  # Increased from default 3 for better resilience with Bedrock
-DEFAULT_RETRY_MODE = "standard"  # AWS recommended mode with exponential backoff + jitter
-DEFAULT_CONNECT_TIMEOUT = 60  # Time allowed for establishing connection to Bedrock
-DEFAULT_READ_TIMEOUT = 600  # Time allowed for streaming responses from model
-DEFAULT_MAX_POOL_CONNECTIONS = 10
 
 
 def create_boto_config(
@@ -92,13 +92,29 @@ def create_agent(
     )
 
 
-REPORT_PROMPT, ANALYSIS_PROMPT = "", ""
-# Read prompts
-ANALYSIS_PROMPT = open(os.path.join(os.path.dirname(__file__), "analysis_prompt.md")).read()
-REPORT_PROMPT = open(os.path.join(os.path.dirname(__file__), "report_prompt.md")).read()
+def load_prompts() -> tuple[str, str]:
+    """Load and prepare analysis and report prompts from markdown files.
 
-ANALYSIS_PROMPT = ANALYSIS_PROMPT.replace("{current_timestamp}", str(current_timestamp))
-ANALYSIS_PROMPT = ANALYSIS_PROMPT.replace("{current_datetime}", current_datetime)
+    Reads prompt templates from markdown files and replaces placeholders
+    with current timestamp values for context-aware agent behavior.
+
+    Returns:
+        tuple[str, str]: (analysis_prompt, report_prompt) with placeholders replaced
+    """
+    prompt_dir = os.path.dirname(__file__)
+
+    analysis_prompt = open(os.path.join(prompt_dir, "analysis_prompt.md")).read()
+    report_prompt = open(os.path.join(prompt_dir, "report_prompt.md")).read()
+
+    # Replace timestamp placeholders in analysis prompt
+    analysis_prompt = analysis_prompt.replace("{current_timestamp}", str(current_timestamp))
+    analysis_prompt = analysis_prompt.replace("{current_datetime}", current_datetime)
+
+    return analysis_prompt, report_prompt
+
+
+# Load prompts at module level for Lambda container reuse
+ANALYSIS_PROMPT, REPORT_PROMPT = load_prompts()
 
 
 # Initialize at module level for Lambda container reuse across invocations
