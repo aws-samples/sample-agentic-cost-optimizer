@@ -219,6 +219,70 @@ class TestStorageValidation:
         assert result["success"] is False
         assert "Missing required parameter: content" in result["error"]
 
+    def test_invalid_file_extension_write(self, mock_tool_context):
+        """Test write with invalid file extension (HTML injection prevention)."""
+        result = storage(
+            action="write",
+            filename="malicious.html",
+            content="<script>alert('xss')</script>",
+            tool_context=mock_tool_context,
+        )
+
+        assert result["success"] is False
+        assert "Invalid file extension" in result["error"]
+        assert "Only .txt files are allowed" in result["error"]
+
+    def test_invalid_file_extension_read(self, mock_tool_context):
+        """Test read with invalid file extension (HTML injection prevention)."""
+        result = storage(
+            action="read",
+            filename="malicious.html",
+            tool_context=mock_tool_context,
+        )
+
+        assert result["success"] is False
+        assert "Invalid file extension" in result["error"]
+        assert "Only .txt files are allowed" in result["error"]
+
+    def test_invalid_file_extension_js(self, mock_tool_context):
+        """Test write with .js file extension."""
+        result = storage(
+            action="write",
+            filename="script.js",
+            content="console.log('test')",
+            tool_context=mock_tool_context,
+        )
+
+        assert result["success"] is False
+        assert "Invalid file extension" in result["error"]
+
+    def test_invalid_file_extension_py(self, mock_tool_context):
+        """Test write with .py file extension."""
+        result = storage(
+            action="write",
+            filename="code.py",
+            content="import os",
+            tool_context=mock_tool_context,
+        )
+
+        assert result["success"] is False
+        assert "Invalid file extension" in result["error"]
+
+    def test_valid_txt_extension(self, mock_tool_context):
+        """Test that .txt extension is accepted."""
+        with patch("src.tools.storage.s3") as mock_s3:
+            mock_bucket = MagicMock()
+            mock_s3.Bucket.return_value = mock_bucket
+
+            result = storage(
+                action="write",
+                filename="report.txt",
+                content="Valid content",
+                tool_context=mock_tool_context,
+            )
+
+            assert result["success"] is True
+
 
 class TestStorageWriteErrors:
     """Tests for S3 write error handling."""

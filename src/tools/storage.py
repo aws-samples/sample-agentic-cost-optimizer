@@ -43,6 +43,12 @@ def _read_from_s3(filename: str, tool_context: ToolContext) -> Dict[str, Any]:
         logger.error(f"--> Storage validation failed - {error_msg}")
         return {"success": False, "error": error_msg, "timestamp": timestamp}
 
+    # Validate file extension to prevent code injection
+    if not filename.endswith(".txt"):
+        error_msg = "Invalid file extension. Only .txt files are allowed"
+        logger.error(f"--> Storage validation failed - {error_msg} - Filename: {filename}")
+        return {"success": False, "error": error_msg, "timestamp": timestamp}
+
     session_id = tool_context.invocation_state.get("session_id")
     if not session_id:
         error_msg = "Session ID not found in invocation state"
@@ -117,6 +123,12 @@ def _write_to_s3(filename: str, content: str, tool_context: ToolContext) -> Dict
     if not filename:
         error_msg = "Missing required parameter: filename"
         logger.error(f"--> Storage validation failed - {error_msg}")
+        return {"success": False, "error": error_msg, "timestamp": timestamp}
+
+    # Validate file extension to prevent code injection
+    if not filename.endswith(".txt"):
+        error_msg = "Invalid file extension. Only .txt files are allowed"
+        logger.error(f"--> Storage validation failed - {error_msg} - Filename: {filename}")
         return {"success": False, "error": error_msg, "timestamp": timestamp}
 
     if not content:
