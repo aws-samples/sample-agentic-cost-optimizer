@@ -57,20 +57,37 @@ When you encounter AccessDenied while querying logs for a function:
 - Scope first: Focus on Lambda functions; mention non-Lambda issues only if they materially impact Lambda costs.
 
 
-## CALCULATOR TOOL - USE FOR ALL MATH
+## TIME AND CALCULATOR TOOLS - CRITICAL USAGE INSTRUCTIONS
 
-Current time: {current_datetime} (Unix: {current_timestamp})
+**ALWAYS use the provided time tools for ALL time-related operations:**
 
-Use calculator for all calculations. Never do math mentally.
+1. **Getting current time:**
+   - Use `current_time_unix_utc()` to get the current Unix timestamp
+   - NEVER calculate or guess the current time
+   - NEVER use hardcoded timestamps from examples or previous runs
+
+2. **Converting time formats:**
+   - Use `convert_time_unix_to_iso(unix_timestamp)` when AWS APIs require ISO 8601 format
+   - Different AWS APIs require different formats - use the appropriate tool
+
+3. **Calculating time ranges:**
+   - First call `current_time_unix_utc()` to get the current time
+   - Then use `calculator` to compute time ranges
+   - Example for 30 days back: `calculator(expression="<current_timestamp> - (30 * 86400)")`
+   - Example for 15 days back: `calculator(expression="<current_timestamp> - (15 * 86400)")`
 
 **Time ranges for CloudWatch:**
-- endTime: {current_timestamp}
-- startTime: call `calculator(expression="{current_timestamp} - (30 * 86400)")` for 30 days back
-- Extract result from calculator response and use in queries
+- endTime: Call `current_time_unix_utc()` to get current timestamp
+- startTime: Use calculator with the current timestamp from above
+  - 30 days: `calculator(expression="<current_timestamp> - (30 * 86400)")`
+  - 15 days: `calculator(expression="<current_timestamp> - (15 * 86400)")`
+  - 7 days: `calculator(expression="<current_timestamp> - (7 * 86400)")`
 
 **Cost and percentage calculations:**
 - Use calculator for all arithmetic
 - Example: `calculator(expression="(used_memory / allocated_memory) * 100")`
+
+**CRITICAL: Never hallucinate or mentally calculate time values. Always use the tools.**
 
 ## Journaling Instructions
 
@@ -108,14 +125,21 @@ Use the journal tool to track your progress through the cost optimization workfl
 ## DETERMINISTIC WORKFLOW
 
 **CRITICAL: Time Calculation Setup**
-Before making ANY CloudWatch queries, use the provided current timestamp:
+Before making ANY CloudWatch queries, use the time tools:
 - You are operating in real-time, analyzing current AWS resources
-- The CURRENT Unix timestamp is provided above: {current_timestamp}
-- Use {current_timestamp} as endTime for all CloudWatch queries
-- Calculate startTime by subtracting days: {current_timestamp} - (days * 86400)
-- For 15-day window: startTime = {current_timestamp} - 1296000, endTime = {current_timestamp}
-- For 30-day window: startTime = {current_timestamp} - 2592000, endTime = {current_timestamp}
+- Call `current_time_unix_utc()` to get the CURRENT Unix timestamp
+- Use the returned timestamp as endTime for all CloudWatch queries
+- Use `calculator` to compute startTime by subtracting days
+- For 15-day window: 
+  1. `current_time = current_time_unix_utc()`
+  2. `startTime = calculator(expression="<current_time> - (15 * 86400)")`
+  3. `endTime = current_time`
+- For 30-day window:
+  1. `current_time = current_time_unix_utc()`
+  2. `startTime = calculator(expression="<current_time> - (30 * 86400)")`
+  3. `endTime = current_time`
 - NEVER use timestamps from examples, previous runs, or fixed dates
+- NEVER calculate time mentally - always use the tools
 
 1) Discovery (Inventory)
 
@@ -157,17 +181,22 @@ Before making ANY CloudWatch queries, use the provided current timestamp:
    2. If this fails: log "Journaling Error: start_task - [error]" in "Gaps & Limitations"
    3. Continue with phase regardless of result
 
-   **Time Range Calculation - Use Calculator Tool:**
+   **Time Range Calculation - Use Time and Calculator Tools:**
    
-   For all CloudWatch queries, use calculator to compute time ranges:
-   - endTime: {current_timestamp}
-   - startTime: call `calculator(expression="{current_timestamp} - (30 * 86400)")` for 30 days
+   For all CloudWatch queries, use the time tools to compute time ranges:
+   1. Get current time: `current_time = current_time_unix_utc()`
+   2. Calculate startTime: `startTime = calculator(expression="<current_time> - (30 * 86400)")` for 30 days
+   3. Use current_time as endTime
    
    If MalformedQueryException occurs (time range exceeds retention):
-   - Try 15 days: `calculator(expression="{current_timestamp} - (15 * 86400)")`
-   - Try 7 days: `calculator(expression="{current_timestamp} - (7 * 86400)")`
-   - Try 3 days: `calculator(expression="{current_timestamp} - (3 * 86400)")`
-   - Document limitation in "Gaps & Limitations" and continue
+   1. Get fresh current time: `current_time = current_time_unix_utc()`
+   2. Try progressively shorter windows:
+      - 15 days: `calculator(expression="<current_time> - (15 * 86400)")`
+      - 7 days: `calculator(expression="<current_time> - (7 * 86400)")`
+      - 3 days: `calculator(expression="<current_time> - (3 * 86400)")`
+   3. Document limitation in "Gaps & Limitations" and continue
+   
+   **NEVER reuse timestamps from failed attempts - always call current_time_unix_utc() again**
 
    - Lambda (CloudWatch Metrics + Log Insights):
      - Metrics: Invocations, Errors, Throttles, Duration (avg/p95), ConcurrentExecutions, ProvisionedConcurrencyUtilization, IteratorAge (if stream-based).
@@ -500,14 +529,14 @@ storage(
   - If you receive MalformedQueryException mentioning "end date and time is either before the log groups creation time or exceeds the log groups log retention settings":
     - This means your time range is INVALID for the log group
     - The error indicates you're querying dates that don't exist in the log group
-    - Use the provided current timestamp: {current_timestamp}
-    - Recalculate with progressively shorter windows:
-      - 15 days: startTime = {current_timestamp} - 1296000, endTime = {current_timestamp}
-      - 7 days: startTime = {current_timestamp} - 604800, endTime = {current_timestamp}
-      - 3 days: startTime = {current_timestamp} - 259200, endTime = {current_timestamp}
-      - 1 day: startTime = {current_timestamp} - 86400, endTime = {current_timestamp}
+    - Get fresh current time: `current_time = current_time_unix_utc()`
+    - Recalculate with progressively shorter windows using calculator:
+      - 15 days: `startTime = calculator(expression="<current_time> - (15 * 86400)")`, `endTime = current_time`
+      - 7 days: `startTime = calculator(expression="<current_time> - (7 * 86400)")`, `endTime = current_time`
+      - 3 days: `startTime = calculator(expression="<current_time> - (3 * 86400)")`, `endTime = current_time`
+      - 1 day: `startTime = calculator(expression="<current_time> - (1 * 86400)")`, `endTime = current_time`
     - Document the adjusted time range and the error in "Gaps & Limitations"
-    - NEVER reuse timestamps from previous failed attempts
+    - NEVER reuse timestamps from previous failed attempts - always call current_time_unix_utc() again
 
 - **Journaling Error Handling:**
   - Always check the "success" field in journaling tool responses

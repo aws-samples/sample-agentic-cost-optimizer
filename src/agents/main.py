@@ -1,7 +1,5 @@
 import asyncio
 import os
-import time
-from datetime import datetime, timezone
 from typing import Optional
 
 from bedrock_agentcore.runtime import BedrockAgentCoreApp, RequestContext
@@ -21,11 +19,7 @@ from src.shared import (
     record_event,
 )
 from src.shared.config import config
-from src.tools import journal, storage
-
-# Timestamp values for prompt replacement
-current_timestamp = int(time.time())
-current_datetime = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+from src.tools import convert_time_unix_to_iso, current_time_unix_utc, journal, storage
 
 app = BedrockAgentCoreApp()
 logger = app.logger
@@ -93,13 +87,14 @@ def create_agent(
 
 
 def load_prompts() -> tuple[str, str]:
-    """Load and prepare analysis and report prompts from markdown files.
+    """Load analysis and report prompts from markdown files.
 
-    Reads prompt templates from markdown files and replaces placeholders
-    with current timestamp values for context-aware agent behavior.
+    Reads prompt templates from markdown files. The prompts instruct agents
+    to use time tools (current_time_unix_utc, convert_time_unix_to_iso) for
+    all time-related operations instead of hardcoded timestamps.
 
     Returns:
-        tuple[str, str]: (analysis_prompt, report_prompt) with placeholders replaced
+        tuple[str, str]: (analysis_prompt, report_prompt)
     """
     prompt_dir = os.path.dirname(__file__)
 
@@ -108,10 +103,6 @@ def load_prompts() -> tuple[str, str]:
 
     with open(os.path.join(prompt_dir, "report_prompt.md")) as f:
         report_prompt = f.read()
-
-    # Replace timestamp placeholders in analysis prompt
-    analysis_prompt = analysis_prompt.replace("{current_timestamp}", str(current_timestamp))
-    analysis_prompt = analysis_prompt.replace("{current_datetime}", current_datetime)
 
     return analysis_prompt, report_prompt
 
@@ -187,7 +178,10 @@ async def background_task(user_message: str, session_id: str):
     ANALYSIS_PROMPT, REPORT_PROMPT = load_prompts()
 
     # Initialize at module level for Lambda container reuse across invocations
-    analysis_agent = create_agent(system_prompt=ANALYSIS_PROMPT, tools=[use_aws, journal, calculator, storage])
+    analysis_agent = create_agent(
+        system_prompt=ANALYSIS_PROMPT,
+        tools=[use_aws, journal, calculator, storage, current_time_unix_utc, convert_time_unix_to_iso],
+    )
     report_agent = create_agent(
         system_prompt=REPORT_PROMPT,
         tools=[storage, journal],
