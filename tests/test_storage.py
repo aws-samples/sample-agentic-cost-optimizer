@@ -115,19 +115,6 @@ class TestStorageTool:
         assert result["success"] is False
         assert "Session ID not found" in result["error"]
 
-    def test_read_missing_bucket_name(self, mock_tool_context):
-        """Test storage tool read fails with missing bucket name."""
-        del os.environ["S3_BUCKET_NAME"]
-
-        result = storage(
-            action="read",
-            filename="test.txt",
-            tool_context=mock_tool_context,
-        )
-
-        assert result["success"] is False
-        assert "S3_BUCKET_NAME environment variable not set" in result["error"]
-
     @patch("src.tools.storage.s3")
     def test_read_file_not_found(self, mock_s3, mock_tool_context):
         """Test storage tool read fails when file doesn't exist."""
@@ -202,21 +189,6 @@ class TestStorageMissingConfiguration:
 
         assert result["success"] is False
         assert "Session ID not found" in result["error"]
-        assert "timestamp" in result
-
-    def test_missing_bucket_name(self, mock_tool_context):
-        """Test with missing S3_BUCKET_NAME environment variable."""
-        del os.environ["S3_BUCKET_NAME"]
-
-        result = storage(
-            action="write",
-            filename="test.txt",
-            content="content",
-            tool_context=mock_tool_context,
-        )
-
-        assert result["success"] is False
-        assert "S3_BUCKET_NAME environment variable not set" in result["error"]
         assert "timestamp" in result
 
 

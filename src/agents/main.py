@@ -11,32 +11,25 @@ from strands import Agent
 from strands.models import BedrockModel
 from strands_tools import calculator, use_aws
 
-from src.shared import EventStatus, record_event
+from src.shared import (
+    DEFAULT_CONNECT_TIMEOUT,
+    DEFAULT_MAX_ATTEMPTS,
+    DEFAULT_MAX_POOL_CONNECTIONS,
+    DEFAULT_READ_TIMEOUT,
+    DEFAULT_RETRY_MODE,
+    EventStatus,
+    record_event,
+)
+from src.shared.config import config
 from src.tools import journal, storage
 
-s3_bucket_name = os.environ.get("S3_BUCKET_NAME")
-if not s3_bucket_name:
-    raise ValueError("S3_BUCKET_NAME environment variable is required")
-
-journal_table_name = os.environ.get("JOURNAL_TABLE_NAME")
-if not journal_table_name:
-    raise ValueError("JOURNAL_TABLE_NAME environment variable is required")
-
-aws_region = os.environ.get("AWS_REGION", "us-east-1")
-model_id = os.environ.get("MODEL_ID", "us.anthropic.claude-sonnet-4-5-20250929-v1:0")
-ttl_days = int(os.environ.get("TTL_DAYS", "90"))
+# Timestamp values for prompt replacement
 current_timestamp = int(time.time())
 current_datetime = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
 
-# Required for local development - CDK sets this in deployed environments
-if "BYPASS_TOOL_CONSENT" not in os.environ:
-    os.environ["BYPASS_TOOL_CONSENT"] = "true"
-
-DEFAULT_MAX_ATTEMPTS = 5  # Increased from default 3 for better resilience with Bedrock
-DEFAULT_RETRY_MODE = "standard"  # AWS recommended mode with exponential backoff + jitter
-DEFAULT_CONNECT_TIMEOUT = 60  # Time allowed for establishing connection to Bedrock
-DEFAULT_READ_TIMEOUT = 600  # Time allowed for streaming responses from model
-DEFAULT_MAX_POOL_CONNECTIONS = 10
+app = BedrockAgentCoreApp()
+logger = app.logger
+logger.info("Agent and AgentCore app initialized successfully")
 
 
 def create_boto_config(
@@ -87,8 +80,8 @@ def create_agent(
         tools = []
 
     bedrock_model = BedrockModel(
-        model_id=model_id,
-        region_name=aws_region,
+        model_id=config.model_id,
+        region_name=config.aws_region,
         boto_client_config=boto_config,
     )
 
@@ -99,26 +92,89 @@ def create_agent(
     )
 
 
-REPORT_PROMPT, ANALYSIS_PROMPT = "", ""
-# Read prompts
-ANALYSIS_PROMPT = open(os.path.join(os.path.dirname(__file__), "analysis_prompt.md")).read()
-REPORT_PROMPT = open(os.path.join(os.path.dirname(__file__), "report_prompt.md")).read()
+def load_prompts() -> tuple[str, str]:
+    """Load and prepare analysis and report prompts from markdown files.
 
-ANALYSIS_PROMPT = ANALYSIS_PROMPT.replace("{current_timestamp}", str(current_timestamp))
-ANALYSIS_PROMPT = ANALYSIS_PROMPT.replace("{current_datetime}", current_datetime)
+    Reads prompt templates from markdown files and replaces placeholders
+    with current timestamp values for context-aware agent behavior.
+
+    Returns:
+        tuple[str, str]: (analysis_prompt, report_prompt) with placeholders replaced
+    """
+    prompt_dir = os.path.dirname(__file__)
+
+    with open(os.path.join(prompt_dir, "analysis_prompt.md")) as f:
+        analysis_prompt = f.read()
+
+    with open(os.path.join(prompt_dir, "report_prompt.md")) as f:
+        report_prompt = f.read()
+
+    # Replace timestamp placeholders in analysis prompt
+    analysis_prompt = analysis_prompt.replace("{current_timestamp}", str(current_timestamp))
+    analysis_prompt = analysis_prompt.replace("{current_datetime}", current_datetime)
+
+    return analysis_prompt, report_prompt
 
 
-# Initialize at module level for Lambda container reuse across invocations
-analysis_agent = create_agent(system_prompt=ANALYSIS_PROMPT, tools=[use_aws, journal, calculator, storage])
-report_agent = create_agent(
-    system_prompt=REPORT_PROMPT,
-    tools=[storage, journal],
-)
+def _handle_background_task_error(
+    session_id: str,
+    exception: Exception,
+) -> dict:
+    """Centralized error handling for background task failures.
 
+    Args:
+        session_id: The session ID for the workflow
+        exception: The exception that was raised
 
-app = BedrockAgentCoreApp()
-logger = app.logger
-logger.info("Agent and AgentCore app initialized successfully")
+    Returns:
+        Standardized error dictionary for structured logging
+    """
+    # Determine error type and extract details
+    if isinstance(exception, NoCredentialsError):
+        error_type = "NoCredentialsError"
+        error_code = "NoCredentialsError"
+        error_message = str(exception)
+        exc_info = False
+    elif isinstance(exception, ClientError):
+        error_type = "ClientError"
+        error_code = exception.response.get("Error", {}).get("Code", "")
+        error_message = exception.response.get("Error", {}).get("Message", "")
+        exc_info = False
+    else:
+        error_type = "Exception"
+        error_code = None
+        error_message = str(exception)
+        exc_info = True
+
+    # Log and record
+    logger.error(
+        f"Background task failed - Session: {session_id}: {error_type} - {error_message}",
+        exc_info=exc_info,
+    )
+
+    record_event(
+        session_id=session_id,
+        status=EventStatus.AGENT_BACKGROUND_TASK_FAILED,
+        table_name=config.journal_table_name,
+        ttl_days=config.ttl_days,
+        error_message=f"{error_type} - {error_message}",
+        region_name=config.aws_region,
+    )
+
+    # Build response
+    error_dict = {
+        "error": error_type,
+        "error_message": error_message,
+        "session_id": session_id,
+        "status": "failed",
+    }
+
+    if error_code:
+        error_dict["error_code"] = error_code
+    if error_type == "Exception":
+        error_dict["error_type"] = type(exception).__name__
+
+    return error_dict
 
 
 # Decorator automatically manages AgentCore status: HEALTHY_BUSY while running, HEALTHY when complete
@@ -126,6 +182,16 @@ logger.info("Agent and AgentCore app initialized successfully")
 async def background_task(user_message: str, session_id: str):
     """Background task using workflow pattern"""
     logger.info(f"Background task started - Session: {session_id}")
+
+    # Load prompts at module level for Lambda container reuse
+    ANALYSIS_PROMPT, REPORT_PROMPT = load_prompts()
+
+    # Initialize at module level for Lambda container reuse across invocations
+    analysis_agent = create_agent(system_prompt=ANALYSIS_PROMPT, tools=[use_aws, journal, calculator, storage])
+    report_agent = create_agent(
+        system_prompt=REPORT_PROMPT,
+        tools=[storage, journal],
+    )
 
     try:
         await analysis_agent.invoke_async(
@@ -142,72 +208,20 @@ async def background_task(user_message: str, session_id: str):
         record_event(
             session_id=session_id,
             status=EventStatus.AGENT_BACKGROUND_TASK_COMPLETED,
-            table_name=journal_table_name,
-            ttl_days=ttl_days,
-            region_name=aws_region,
+            table_name=config.journal_table_name,
+            ttl_days=config.ttl_days,
+            region_name=config.aws_region,
         )
         return response
 
-    # Return error dicts for structured logging - decorator handles status management
     except NoCredentialsError as e:
-        logger.error(f"Background task failed - Session: {session_id}: NoCredentialsError - {str(e)}")
-        record_event(
-            session_id=session_id,
-            status=EventStatus.AGENT_BACKGROUND_TASK_FAILED,
-            table_name=journal_table_name,
-            ttl_days=ttl_days,
-            error_message=f"NoCredentialsError - {str(e)}",
-            region_name=aws_region,
-        )
-        return {
-            "error": "NoCredentialsError",
-            "error_code": "NoCredentialsError",
-            "error_message": str(e),
-            "session_id": session_id,
-            "status": "failed",
-        }
+        return _handle_background_task_error(session_id, e)
 
     except ClientError as e:
-        error_code = e.response.get("Error", {}).get("Code", "")
-        error_message = e.response.get("Error", {}).get("Message", "")
-
-        logger.error(f"Background task failed - Session: {session_id}: {error_code} - {error_message}")
-        record_event(
-            session_id=session_id,
-            status=EventStatus.AGENT_BACKGROUND_TASK_FAILED,
-            table_name=journal_table_name,
-            ttl_days=ttl_days,
-            error_message=f"{error_code} - {error_message}",
-            region_name=aws_region,
-        )
-        return {
-            "error": "ClientError",
-            "error_code": error_code,
-            "error_message": error_message,
-            "session_id": session_id,
-            "status": "failed",
-        }
+        return _handle_background_task_error(session_id, e)
 
     except Exception as e:
-        logger.error(
-            f"Background task failed - Session: {session_id}: {type(e).__name__} - {str(e)}",
-            exc_info=True,
-        )
-        record_event(
-            session_id=session_id,
-            status=EventStatus.AGENT_BACKGROUND_TASK_FAILED,
-            table_name=journal_table_name,
-            ttl_days=ttl_days,
-            error_message=f"{type(e).__name__} - {str(e)}",
-            region_name=aws_region,
-        )
-        return {
-            "error": "Exception",
-            "error_type": type(e).__name__,
-            "error_message": str(e),
-            "session_id": session_id,
-            "status": "failed",
-        }
+        return _handle_background_task_error(session_id, e)
 
 
 @app.entrypoint
@@ -228,9 +242,9 @@ async def invoke(payload, context: RequestContext):
     record_event(
         session_id=session_id,
         status=EventStatus.AGENT_RUNTIME_INVOKE_STARTED,
-        table_name=journal_table_name,
-        ttl_days=ttl_days,
-        region_name=aws_region,
+        table_name=config.journal_table_name,
+        ttl_days=config.ttl_days,
+        region_name=config.aws_region,
     )
 
     try:
@@ -239,9 +253,9 @@ async def invoke(payload, context: RequestContext):
         record_event(
             session_id=session_id,
             status=EventStatus.AGENT_BACKGROUND_TASK_STARTED,
-            table_name=journal_table_name,
-            ttl_days=ttl_days,
-            region_name=aws_region,
+            table_name=config.journal_table_name,
+            ttl_days=config.ttl_days,
+            region_name=config.aws_region,
         )
         return {
             "message": f"Started processing request for session {session_id}. Processing will continue in background.",
@@ -253,10 +267,10 @@ async def invoke(payload, context: RequestContext):
         record_event(
             session_id=session_id,
             status=EventStatus.AGENT_RUNTIME_INVOKE_FAILED,
-            table_name=journal_table_name,
-            ttl_days=ttl_days,
+            table_name=config.journal_table_name,
+            ttl_days=config.ttl_days,
             error_message=str(e),
-            region_name=aws_region,
+            region_name=config.aws_region,
         )
         return {
             "error": f"Error starting background processing: {str(e)}",
