@@ -352,9 +352,39 @@ Use the journal tool to track your progress through the cost optimization workfl
    2. If this fails: log "Journaling Error: start_task - [error]" in "Gaps & Limitations"
    3. Continue with phase regardless of result
 
-   - Use 30-day usage to project monthly costs and savings.
-   - Use AWS public pricing via price list APIs if available through use_aws; otherwise, infer from known rates for region us-east-1 and clearly state assumptions.
-   - Round impacts to the nearest €0,01 and show your calculation inputs.
+   **CRITICAL: Fetch Current AWS Lambda Pricing**
+
+   You MUST fetch current AWS Lambda pricing using the use_aws tool with the AWS Pricing API. DO NOT use hardcoded or assumed pricing values.
+
+   1. Call use_aws with:
+      - service_name: "pricing"
+      - operation_name: "get_products"
+      - parameters:
+        - ServiceCode: "AWSLambda"
+        - Filters:
+          - Type: "TERM_MATCH"
+          - Field: "regionCode"
+          - Value: "us-east-1"
+
+   2. Extract the following pricing information from the response:
+      - Lambda compute pricing per GB-second
+      - Lambda request pricing per 1M requests
+      - Provisioned concurrency pricing (if applicable)
+
+   3. If the pricing API call fails:
+      - Document the error in "Gaps & Limitations" with full error details
+      - Mark the Cost Estimation phase as FAILED
+      - DO NOT provide cost estimates without real pricing data
+      - DO NOT use hardcoded or assumed pricing values
+      - State clearly: "Cost estimation skipped - unable to fetch current AWS pricing"
+      - Continue with saving analysis results (without cost estimates)
+
+   **Cost Calculation Requirements:**
+   - Use 30-day usage to project monthly costs and savings
+   - Use ONLY the pricing data fetched from the AWS Pricing API
+   - Round impacts to the nearest $0.01 and show your calculation inputs
+   - Document the pricing source (AWS Pricing API) and timestamp in your cost estimates
+   - If pricing data is unavailable, skip cost estimation entirely
 
    **COST ESTIMATION METHOD PHASE - Task Tracking Completion:**
    After completing cost estimation:
@@ -427,7 +457,8 @@ Action: Reduce Lambda memory from 1024 MB to 640 MB
 
 Impact:
 - Estimated Monthly Savings: $45.67 USD
-- Calculation: (1024 MB - 640 MB) × 1,234,567 invocations × $0.0000166667 per GB-second × 0.450 seconds
+- Calculation: (1024 MB - 640 MB) × 1,234,567 invocations × $0.0000166667 per GB-second (from AWS Pricing API) × 0.450 seconds
+- Pricing fetched: 2024-01-30 15:23:45 UTC
 
 Risk/Trade-offs:
 - Minimal risk: 640 MB provides 10% headroom above P95 usage
@@ -455,8 +486,13 @@ Breakdown:
 
 Calculation Method:
 - Used 30-day usage data
-- AWS Lambda pricing for us-east-1: $0.0000166667 per GB-second
-- Request pricing: $0.20 per 1M requests
+- Pricing Source: AWS Pricing API (fetched via use_aws on 2024-01-30 15:23:45 UTC)
+- AWS Lambda pricing for us-east-1 (from API response):
+  - Compute: $0.0000166667 per GB-second
+  - Requests: $0.20 per 1M requests
+
+Note: If pricing API fails, this section should state:
+"Cost estimation skipped - unable to fetch current AWS pricing. See Gaps & Limitations for details."
 ...
 
 === EVIDENCE ===
