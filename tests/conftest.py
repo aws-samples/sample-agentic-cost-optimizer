@@ -7,12 +7,27 @@ from unittest.mock import MagicMock
 
 
 def mock_tool_decorator(*args, **kwargs):
-    """Mock @tool decorator by doing nothing."""
+    """Mock @tool decorator that handles both @tool and @tool(context=True).
 
+    This decorator supports two usage patterns:
+    1. @tool - Direct decoration without arguments (e.g., time tools)
+    2. @tool(context=True) - Decoration with arguments (e.g., journal, storage)
+    """
+    # Case 1: @tool (direct decoration, first arg is the function)
+    if len(args) == 1 and callable(args[0]) and not kwargs:
+        f = args[0]
+
+        @wraps(f)
+        def decorated_function(*func_args, **func_kwargs):
+            return f(*func_args, **func_kwargs)
+
+        return decorated_function
+
+    # Case 2: @tool(context=True) (decorator with arguments)
     def decorator(f):
         @wraps(f)
-        def decorated_function(*args, **kwargs):
-            return f(*args, **kwargs)
+        def decorated_function(*func_args, **func_kwargs):
+            return f(*func_args, **func_kwargs)
 
         return decorated_function
 
