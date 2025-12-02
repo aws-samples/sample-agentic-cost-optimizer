@@ -12,6 +12,7 @@ export interface AgentProps {
   agentRuntimeName: string;
   description?: string;
   environmentVariables?: { [key: string]: string };
+  modelId: string;
 }
 
 export class Agent extends Construct {
@@ -21,7 +22,7 @@ export class Agent extends Construct {
   constructor(scope: Construct, id: string, props: AgentProps) {
     super(scope, id);
 
-    const { agentRuntimeName, description, environmentVariables = {} } = props;
+    const { agentRuntimeName, description, environmentVariables = {}, modelId } = props;
 
     const environment = this.node.tryGetContext('env') || 'dev';
     const stack = Stack.of(this);
@@ -52,10 +53,6 @@ export class Agent extends Construct {
     });
 
     deploymentPackage.grantRead(this.runtime.role);
-
-    const modelId = InfraConfig.inferenceProfileRegion
-      ? `${InfraConfig.inferenceProfileRegion}.${InfraConfig.modelId}`
-      : InfraConfig.modelId;
 
     const bedrockPolicy = new Policy(this, 'BedrockModelInvocationPolicy', {
       policyName: 'BedrockModelInvocation',
