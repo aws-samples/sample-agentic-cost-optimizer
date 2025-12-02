@@ -57,7 +57,11 @@ class TestValidateEventStatusPredefined:
 
     def test_valid_predefined_status_passes(self):
         """Test that valid predefined statuses pass validation."""
-        valid_statuses = {"SESSION_INITIATED", "AGENT_INVOCATION_STARTED", "AGENT_INVOCATION_COMPLETED"}
+        valid_statuses = {
+            "SESSION_INITIATED",
+            "AGENT_INVOCATION_STARTED",
+            "AGENT_INVOCATION_COMPLETED",
+        }
 
         # Should not raise any exception
         validate_event_status("SESSION_INITIATED", valid_statuses)
@@ -169,7 +173,8 @@ class TestValidateEventStatusInvalidDynamic:
         status = f"TASK_{phase_name}_STARTED"
 
         with pytest.raises(
-            ValueError, match=f"Phase name '{phase_name}' exceeds maximum length of {MAX_PHASE_NAME_LENGTH} characters"
+            ValueError,
+            match=f"Phase name '{phase_name}' exceeds maximum length of {MAX_PHASE_NAME_LENGTH} characters",
         ):
             validate_event_status(status, valid_statuses)
 
@@ -258,6 +263,17 @@ class TestValidateEventStatusEdgeCases:
 
         # Should not raise any exception
         validate_event_status("TASK_---_STARTED", valid_statuses)
+
+    def test_phase_name_pattern_explicit_validation(self):
+        """Test explicit phase name pattern validation (line 52 coverage)."""
+        valid_statuses = {"SESSION_INITIATED"}
+
+        # This should pass - valid characters
+        validate_event_status("TASK_Valid-Phase_123_STARTED", valid_statuses)
+
+        # This should fail - invalid characters
+        with pytest.raises(ValueError, match="Invalid status"):
+            validate_event_status("TASK_phase!name_STARTED", valid_statuses)
 
 
 class TestValidateEventStatusSecurityCases:

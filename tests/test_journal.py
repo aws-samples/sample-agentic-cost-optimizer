@@ -29,39 +29,32 @@ class TestJournalValidation:
         mock_context.invocation_state = {"session_id": "test-session-123"}
 
         result = journal(
-            action="complete_task", tool_context=mock_context, phase_name="Discovery", status="INVALID_STATUS"
+            action="complete_task",
+            tool_context=mock_context,
+            phase_name="Discovery",
+            status="INVALID_STATUS",
         )
 
         assert result["success"] is False
         assert "Invalid status 'INVALID_STATUS'" in result["error"]
         assert "COMPLETED, FAILED" in result["error"]
 
-    def test_missing_table_name(self):
-        """Test journal with missing JOURNAL_TABLE_NAME environment variable."""
-        # Temporarily remove the env var
-        original_table_name = os.environ.get("JOURNAL_TABLE_NAME")
-        if "JOURNAL_TABLE_NAME" in os.environ:
-            del os.environ["JOURNAL_TABLE_NAME"]
-
-        try:
-            mock_context = MagicMock()
-            mock_context.invocation_state = {"session_id": "test-session-123"}
-
-            result = journal(action="start_task", tool_context=mock_context, phase_name="Discovery")
-
-            assert result["success"] is False
-            assert "JOURNAL_TABLE_NAME not set" in result["error"]
-        finally:
-            if original_table_name:
-                os.environ["JOURNAL_TABLE_NAME"] = original_table_name
-
     @patch("src.tools.journal.record_event")
-    def test_phase_name_special_characters(self, mock_record_event):
+    @patch("src.tools.journal.config")
+    def test_phase_name_special_characters(self, mock_config, mock_record_event):
         """Test journal with phase names containing special characters."""
+        mock_config.journal_table_name = "test-journal-table"
+        mock_config.ttl_days = 90
+        mock_config.aws_region = "us-east-1"
+
         mock_context = MagicMock()
         mock_context.invocation_state = {"session_id": "test-session-123"}
 
-        result = journal(action="start_task", tool_context=mock_context, phase_name="Data Analysis & Cleanup")
+        result = journal(
+            action="start_task",
+            tool_context=mock_context,
+            phase_name="Data Analysis & Cleanup",
+        )
 
         assert result["success"] is True
         mock_record_event.assert_called_once()
@@ -100,8 +93,13 @@ class TestJournalStartTask:
     """Tests for start_task action."""
 
     @patch("src.tools.journal.record_event")
-    def test_start_task_success(self, mock_record_event, mock_tool_context):
+    @patch("src.tools.journal.config")
+    def test_start_task_success(self, mock_config, mock_record_event, mock_tool_context):
         """Test journal starts task successfully."""
+        mock_config.journal_table_name = "test-journal-table"
+        mock_config.ttl_days = 90
+        mock_config.aws_region = "us-east-1"
+
         result = journal(action="start_task", phase_name="Discovery", tool_context=mock_tool_context)
 
         assert result["success"] is True
@@ -132,8 +130,13 @@ class TestJournalCompleteTask:
     """Tests for complete_task action."""
 
     @patch("src.tools.journal.record_event")
-    def test_complete_task_success(self, mock_record_event, mock_tool_context):
+    @patch("src.tools.journal.config")
+    def test_complete_task_success(self, mock_config, mock_record_event, mock_tool_context):
         """Test journal completes task successfully."""
+        mock_config.journal_table_name = "test-journal-table"
+        mock_config.ttl_days = 90
+        mock_config.aws_region = "us-east-1"
+
         result = journal(
             action="complete_task",
             phase_name="Discovery",
@@ -155,8 +158,13 @@ class TestJournalCompleteTask:
         assert "phase_name is required" in result["error"]
 
     @patch("src.tools.journal.record_event")
-    def test_complete_task_with_default_status(self, mock_record_event, mock_tool_context):
+    @patch("src.tools.journal.config")
+    def test_complete_task_with_default_status(self, mock_config, mock_record_event, mock_tool_context):
         """Test journal complete_task uses default COMPLETED status."""
+        mock_config.journal_table_name = "test-journal-table"
+        mock_config.ttl_days = 90
+        mock_config.aws_region = "us-east-1"
+
         result = journal(
             action="complete_task",
             phase_name="Analysis",
@@ -168,8 +176,13 @@ class TestJournalCompleteTask:
         mock_record_event.assert_called_once()
 
     @patch("src.tools.journal.record_event")
-    def test_complete_task_with_failed_status(self, mock_record_event, mock_tool_context):
+    @patch("src.tools.journal.config")
+    def test_complete_task_with_failed_status(self, mock_config, mock_record_event, mock_tool_context):
         """Test journal complete_task with FAILED status."""
+        mock_config.journal_table_name = "test-journal-table"
+        mock_config.ttl_days = 90
+        mock_config.aws_region = "us-east-1"
+
         result = journal(
             action="complete_task",
             phase_name="Processing",
@@ -194,22 +207,6 @@ class TestJournalCompleteTask:
         assert result["success"] is False
         assert "No active session" in result["error"]
 
-    def test_complete_task_missing_table_name(self, mock_tool_context):
-        """Test journal complete_task fails with missing table name."""
-        # Temporarily remove the env var
-        original_table_name = os.environ.get("JOURNAL_TABLE_NAME")
-        if "JOURNAL_TABLE_NAME" in os.environ:
-            del os.environ["JOURNAL_TABLE_NAME"]
-
-        try:
-            result = journal(action="complete_task", phase_name="Discovery", tool_context=mock_tool_context)
-
-            assert result["success"] is False
-            assert "JOURNAL_TABLE_NAME not set" in result["error"]
-        finally:
-            if original_table_name:
-                os.environ["JOURNAL_TABLE_NAME"] = original_table_name
-
     @patch("src.tools.journal.record_event")
     def test_start_task_exception_handling(self, mock_record_event, mock_tool_context):
         """Test journal start_task handles unexpected exceptions."""
@@ -226,7 +223,11 @@ class TestJournalCompleteTask:
         """Test journal complete_task handles unexpected exceptions."""
         mock_record_event.side_effect = Exception("Network timeout")
 
-        result = journal(action="complete_task", phase_name="Analysis", tool_context=mock_tool_context)
+        result = journal(
+            action="complete_task",
+            phase_name="Analysis",
+            tool_context=mock_tool_context,
+        )
 
         assert result["success"] is False
         assert "Unexpected error" in result["error"]

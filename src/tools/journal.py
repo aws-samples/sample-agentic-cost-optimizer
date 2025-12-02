@@ -5,16 +5,13 @@ Provides stateful session and task tracking with automatic ID management
 through a single tool interface.
 """
 
-import os
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 from strands import ToolContext, tool
 
 from src.shared import EventStatus, record_event
-
-aws_region = os.environ.get("AWS_REGION", "us-east-1")
-ttl_days = int(os.environ.get("TTL_DAYS", "90"))
+from src.shared.config import config
 
 
 def _create_error_response(
@@ -36,9 +33,13 @@ def _get_session_id(tool_context: ToolContext) -> Optional[str]:
     return tool_context.invocation_state.get("session_id")
 
 
-def _get_table_name() -> Optional[str]:
-    """Get table name from environment."""
-    return os.environ.get("JOURNAL_TABLE_NAME", "")
+def _get_table_name() -> str:
+    """Get table name from configuration.
+
+    Returns:
+        Journal table name from configuration
+    """
+    return config.journal_table_name
 
 
 def _start_task(phase_name: str, tool_context: ToolContext) -> Dict[str, Any]:
@@ -55,8 +56,6 @@ def _start_task(phase_name: str, tool_context: ToolContext) -> Dict[str, Any]:
             )
 
         table_name = _get_table_name()
-        if not table_name:
-            return _create_error_response("JOURNAL_TABLE_NAME not set")
 
         # Build event status dynamically with format TASK_<PHASE>_STARTED
         phase_normalized = phase_name.upper().replace(" ", "_")
@@ -66,8 +65,8 @@ def _start_task(phase_name: str, tool_context: ToolContext) -> Dict[str, Any]:
             session_id=session_id,
             status=event_status,
             table_name=table_name,
-            ttl_days=ttl_days,
-            region_name=aws_region,
+            ttl_days=config.ttl_days,
+            region_name=config.aws_region,
         )
 
         return {
@@ -75,7 +74,7 @@ def _start_task(phase_name: str, tool_context: ToolContext) -> Dict[str, Any]:
             "session_id": session_id,
             "phase_name": phase_name,
             "status": "IN_PROGRESS",
-            "timestamp": ttl_days,
+            "timestamp": config.ttl_days,
         }
     except Exception as e:
         return _create_error_response(f"Unexpected error: {str(e)}")
@@ -100,8 +99,6 @@ def _complete_task(
             )
 
         table_name = _get_table_name()
-        if not table_name:
-            return _create_error_response("JOURNAL_TABLE_NAME not set")
 
         # Build event status dynamically with format TASK_<PHASE>_<STATUS>
         phase_normalized = phase_name.upper().replace(" ", "_")
@@ -111,9 +108,9 @@ def _complete_task(
             session_id=session_id,
             status=event_status,
             table_name=table_name,
-            ttl_days=ttl_days,
+            ttl_days=config.ttl_days,
             error_message=error_message,
-            region_name=aws_region,
+            region_name=config.aws_region,
         )
 
         return {
@@ -121,7 +118,7 @@ def _complete_task(
             "session_id": session_id,
             "phase_name": phase_name,
             "status": status,
-            "timestamp": ttl_days,
+            "timestamp": config.ttl_days,
         }
     except Exception as e:
         return _create_error_response(f"Unexpected error: {str(e)}")
@@ -168,6 +165,11 @@ def journal(
         if status and status not in valid_statuses:
             return _create_error_response(f"Invalid status '{status}'. Must be one of: {', '.join(valid_statuses)}")
 
-        return _complete_task(phase_name, tool_context, status or EventStatus.TASK_COMPLETED, error_message)
+        return _complete_task(
+            phase_name,
+            tool_context,
+            status or EventStatus.TASK_COMPLETED,
+            error_message,
+        )
     else:
         return _create_error_response(f"Unknown action: {action}")
