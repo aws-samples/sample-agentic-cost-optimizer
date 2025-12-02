@@ -1,8 +1,23 @@
 import { App } from 'aws-cdk-lib';
 
 import { Template } from 'aws-cdk-lib/assertions';
+import { PolicyStatement } from 'aws-cdk-lib/aws-iam';
 
 import { InfraStack } from '../lib/infra-stack';
+
+export type PolicyStatementJson = ReturnType<PolicyStatement['toJSON']>;
+
+export interface PolicyResource {
+  Properties: {
+    PolicyDocument: {
+      Statement: PolicyStatementJson[];
+    };
+  };
+}
+
+export interface CfnJoin {
+  'Fn::Join': [string, unknown[]];
+}
 
 /**
  * Creates a test stack and template for testing
@@ -13,17 +28,4 @@ export function createTestStack() {
   const template = Template.fromStack(stack);
 
   return { app, stack, template };
-}
-
-/**
- * Gets the Bedrock IAM policy statements from a template
- */
-export function getBedrockPolicyStatements(template: Template) {
-  const policies = template.findResources('AWS::IAM::Policy', {
-    Properties: {
-      PolicyName: 'BedrockModelInvocation',
-    },
-  });
-  const policy = Object.values(policies)[0] as any;
-  return policy.Properties.PolicyDocument.Statement;
 }
