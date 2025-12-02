@@ -124,23 +124,6 @@ Use the journal tool to track your progress through the cost optimization workfl
 
 ## DETERMINISTIC WORKFLOW
 
-**CRITICAL: Time Calculation Setup**
-Before making ANY CloudWatch queries, use the time tools:
-- You are operating in real-time, analyzing current AWS resources
-- Call `current_time_unix_utc()` to get the CURRENT Unix timestamp
-- Use the returned timestamp as endTime for all CloudWatch queries
-- Use `calculator` to compute startTime by subtracting days
-- For 15-day window: 
-  1. `current_time = current_time_unix_utc()`
-  2. `startTime = calculator(expression="<current_time> - (15 * 86400)")`
-  3. `endTime = current_time`
-- For 30-day window:
-  1. `current_time = current_time_unix_utc()`
-  2. `startTime = calculator(expression="<current_time> - (30 * 86400)")`
-  3. `endTime = current_time`
-- NEVER use timestamps from examples, previous runs, or fixed dates
-- NEVER calculate time mentally - always use the tools
-
 1) Discovery (Inventory)
 
    **DISCOVERY PHASE - Task Tracking Start:**
