@@ -49,8 +49,8 @@ class TestAppConfigFromEnv:
             assert config.model_id == "us.anthropic.claude-sonnet-4-5-20250929-v1:0"  # default
             assert config.ttl_days == 90  # default
 
-    def test_allows_missing_s3_bucket_name(self):
-        """Test that S3_BUCKET_NAME is optional at config load time (for session_initializer)."""
+    def test_raises_error_when_s3_bucket_name_missing(self):
+        """Test that ValueError is raised when S3_BUCKET_NAME is missing."""
         with patch.dict(
             os.environ,
             {
@@ -58,9 +58,8 @@ class TestAppConfigFromEnv:
             },
             clear=True,
         ):
-            config = load_config()
-            assert config.s3_bucket_name == ""
-            assert config.journal_table_name == "test-table"
+            with pytest.raises(ValueError, match="S3_BUCKET_NAME environment variable is required"):
+                load_config()
 
     def test_raises_error_when_journal_table_name_missing(self):
         """Test that ValueError is raised when JOURNAL_TABLE_NAME is missing."""
@@ -77,7 +76,7 @@ class TestAppConfigFromEnv:
     def test_raises_error_when_all_required_vars_missing(self):
         """Test that ValueError is raised when all required vars are missing."""
         with patch.dict(os.environ, {}, clear=True):
-            with pytest.raises(ValueError, match="JOURNAL_TABLE_NAME environment variable is required"):
+            with pytest.raises(ValueError, match="S3_BUCKET_NAME environment variable is required"):
                 load_config()
 
     def test_converts_ttl_days_to_int(self):
@@ -195,7 +194,7 @@ class TestLoadConfig:
     def test_propagates_validation_errors(self):
         """Test that load_config propagates validation errors."""
         with patch.dict(os.environ, {}, clear=True):
-            with pytest.raises(ValueError, match="JOURNAL_TABLE_NAME environment variable is required"):
+            with pytest.raises(ValueError, match="S3_BUCKET_NAME environment variable is required"):
                 load_config()
 
 
@@ -226,7 +225,7 @@ class TestAppConfigIntegration:
 
     def test_config_can_be_used_across_modules(self):
         """Test that config can be imported and used in different modules."""
-        from src.shared import config
+        from src.shared.config import config
 
         assert isinstance(config, AppConfig)
         assert config.s3_bucket_name
@@ -236,16 +235,16 @@ class TestAppConfigIntegration:
 class TestAppConfigEdgeCases:
     """Tests for edge cases and error conditions."""
 
-    def test_handles_empty_string_for_journal_table_name(self):
-        """Test that empty string for JOURNAL_TABLE_NAME is treated as missing."""
+    def test_handles_empty_string_for_s3_bucket_name(self):
+        """Test that empty string for S3_BUCKET_NAME is treated as missing."""
         with patch.dict(
             os.environ,
             {
-                "S3_BUCKET_NAME": "test-bucket",
-                "JOURNAL_TABLE_NAME": "",
+                "S3_BUCKET_NAME": "",
+                "JOURNAL_TABLE_NAME": "test-table",
             },
         ):
-            with pytest.raises(ValueError, match="JOURNAL_TABLE_NAME environment variable is required"):
+            with pytest.raises(ValueError, match="S3_BUCKET_NAME environment variable is required"):
                 load_config()
 
     def test_handles_whitespace_in_env_vars(self):

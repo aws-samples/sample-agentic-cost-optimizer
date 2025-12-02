@@ -10,7 +10,8 @@ from typing import Any, Dict, Optional
 
 from strands import ToolContext, tool
 
-from src.shared import EventStatus, config, record_event
+from src.shared import EventStatus, record_event
+from src.shared.config import config
 
 
 def _create_error_response(

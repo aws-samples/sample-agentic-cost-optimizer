@@ -2,7 +2,6 @@
 Shared utilities for Lambda functions and agent
 """
 
-from .config import AppConfig, config
 from .constants import (
     DEFAULT_AWS_REGION,
     DEFAULT_CONNECT_TIMEOUT,
@@ -19,8 +18,6 @@ from .event_validation import validate_event_status
 from .record_metadata import record_metadata
 
 __all__ = [
-    "AppConfig",
-    "config",
     "DEFAULT_AWS_REGION",
     "DEFAULT_CONNECT_TIMEOUT",
     "DEFAULT_MAX_ATTEMPTS",

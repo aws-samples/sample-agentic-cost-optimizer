@@ -18,9 +18,9 @@ from src.shared import (
     DEFAULT_READ_TIMEOUT,
     DEFAULT_RETRY_MODE,
     EventStatus,
-    config,
     record_event,
 )
+from src.shared.config import config
 from src.tools import journal, storage
 
 # Timestamp values for prompt replacement
@@ -103,8 +103,11 @@ def load_prompts() -> tuple[str, str]:
     """
     prompt_dir = os.path.dirname(__file__)
 
-    analysis_prompt = open(os.path.join(prompt_dir, "analysis_prompt.md")).read()
-    report_prompt = open(os.path.join(prompt_dir, "report_prompt.md")).read()
+    with open(os.path.join(prompt_dir, "analysis_prompt.md")) as f:
+        analysis_prompt = f.read()
+
+    with open(os.path.join(prompt_dir, "report_prompt.md")) as f:
+        report_prompt = f.read()
 
     # Replace timestamp placeholders in analysis prompt
     analysis_prompt = analysis_prompt.replace("{current_timestamp}", str(current_timestamp))
@@ -115,27 +118,37 @@ def load_prompts() -> tuple[str, str]:
 
 def _handle_background_task_error(
     session_id: str,
-    error_type: str,
-    error_message: str,
-    error_code: str = None,
-    error_type_name: str = None,
-    exc_info: bool = False,
+    exception: Exception,
 ) -> dict:
     """Centralized error handling for background task failures.
 
     Args:
         session_id: The session ID for the workflow
-        error_type: Type of error (e.g., "NoCredentialsError", "ClientError")
-        error_message: Detailed error message
-        error_code: Optional error code (for ClientError and NoCredentialsError)
-        error_type_name: Optional error type name (for generic Exception)
-        exc_info: Whether to include exception info in log
+        exception: The exception that was raised
 
     Returns:
         Standardized error dictionary for structured logging
     """
+    # Determine error type and extract details
+    if isinstance(exception, NoCredentialsError):
+        error_type = "NoCredentialsError"
+        error_code = "NoCredentialsError"
+        error_message = str(exception)
+        exc_info = False
+    elif isinstance(exception, ClientError):
+        error_type = "ClientError"
+        error_code = exception.response.get("Error", {}).get("Code", "")
+        error_message = exception.response.get("Error", {}).get("Message", "")
+        exc_info = False
+    else:
+        error_type = "Exception"
+        error_code = None
+        error_message = str(exception)
+        exc_info = True
+
+    # Log and record
     logger.error(
-        f"Background task failed - Session: {session_id}: {error_message}",
+        f"Background task failed - Session: {session_id}: {error_type} - {error_message}",
         exc_info=exc_info,
     )
 
@@ -144,27 +157,22 @@ def _handle_background_task_error(
         status=EventStatus.AGENT_BACKGROUND_TASK_FAILED,
         table_name=config.journal_table_name,
         ttl_days=config.ttl_days,
-        error_message=error_message,
+        error_message=f"{error_type} - {error_message}",
         region_name=config.aws_region,
     )
 
+    # Build response
     error_dict = {
         "error": error_type,
+        "error_message": error_message,
         "session_id": session_id,
         "status": "failed",
     }
 
     if error_code:
         error_dict["error_code"] = error_code
-
-    if error_type_name:
-        error_dict["error_type"] = error_type_name
-
-    # Extract just the message part for ClientError and Exception
-    if (error_type in ["ClientError", "Exception"]) and " - " in error_message:
-        error_dict["error_message"] = error_message.split(" - ", 1)[1]
-    else:
-        error_dict["error_message"] = error_message
+    if error_type == "Exception":
+        error_dict["error_type"] = type(exception).__name__
 
     return error_dict
 
@@ -206,33 +214,14 @@ async def background_task(user_message: str, session_id: str):
         )
         return response
 
-    # Return error dicts for structured logging - decorator handles status management
     except NoCredentialsError as e:
-        return _handle_background_task_error(
-            session_id=session_id,
-            error_type="NoCredentialsError",
-            error_message=f"NoCredentialsError - {str(e)}",
-            error_code="NoCredentialsError",
-        )
+        return _handle_background_task_error(session_id, e)
 
     except ClientError as e:
-        error_code = e.response.get("Error", {}).get("Code", "")
-        error_message = e.response.get("Error", {}).get("Message", "")
-        return _handle_background_task_error(
-            session_id=session_id,
-            error_type="ClientError",
-            error_message=f"{error_code} - {error_message}",
-            error_code=error_code,
-        )
+        return _handle_background_task_error(session_id, e)
 
     except Exception as e:
-        return _handle_background_task_error(
-            session_id=session_id,
-            error_type="Exception",
-            error_message=f"{type(e).__name__} - {str(e)}",
-            error_type_name=type(e).__name__,
-            exc_info=True,
-        )
+        return _handle_background_task_error(session_id, e)
 
 
 @app.entrypoint

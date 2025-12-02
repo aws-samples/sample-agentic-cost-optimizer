@@ -191,35 +191,6 @@ class TestStorageMissingConfiguration:
         assert "Session ID not found" in result["error"]
         assert "timestamp" in result
 
-    @patch("src.tools.storage.config")
-    def test_missing_s3_bucket_name_for_write(self, mock_config, mock_tool_context):
-        """Test write fails when S3_BUCKET_NAME is not configured."""
-        mock_config.s3_bucket_name = ""
-
-        result = storage(
-            action="write",
-            filename="test.txt",
-            content="content",
-            tool_context=mock_tool_context,
-        )
-
-        assert result["success"] is False
-        assert "S3_BUCKET_NAME" in result["error"]
-
-    @patch("src.tools.storage.config")
-    def test_missing_s3_bucket_name_for_read(self, mock_config, mock_tool_context):
-        """Test read fails when S3_BUCKET_NAME is not configured."""
-        mock_config.s3_bucket_name = ""
-
-        result = storage(
-            action="read",
-            filename="test.txt",
-            tool_context=mock_tool_context,
-        )
-
-        assert result["success"] is False
-        assert "S3_BUCKET_NAME" in result["error"]
-
 
 class TestStorageValidation:
     """Tests for parameter validation."""

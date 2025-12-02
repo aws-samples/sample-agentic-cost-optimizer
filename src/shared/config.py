@@ -42,9 +42,11 @@ def load_config() -> AppConfig:
     if "BYPASS_TOOL_CONSENT" not in os.environ:
         os.environ["BYPASS_TOOL_CONSENT"] = "true"
 
-    s3_bucket_name = os.environ.get("S3_BUCKET_NAME", "")
-    journal_table_name = os.environ.get("JOURNAL_TABLE_NAME", "")
+    s3_bucket_name = os.environ.get("S3_BUCKET_NAME")
+    if not s3_bucket_name:
+        raise ValueError("S3_BUCKET_NAME environment variable is required")
 
+    journal_table_name = os.environ.get("JOURNAL_TABLE_NAME")
     if not journal_table_name:
         raise ValueError("JOURNAL_TABLE_NAME environment variable is required")
 

@@ -17,7 +17,7 @@ import boto3
 from botocore.exceptions import ClientError
 from strands import ToolContext, tool
 
-from src.shared import config
+from src.shared.config import config
 
 s3 = boto3.resource("s3", region_name=config.aws_region)
 
@@ -50,11 +50,6 @@ def _read_from_s3(filename: str, tool_context: ToolContext) -> Dict[str, Any]:
         return {"success": False, "error": error_msg, "timestamp": timestamp}
 
     bucket_name = config.s3_bucket_name
-    if not bucket_name:
-        error_msg = "S3_BUCKET_NAME environment variable is required"
-        logger.error(f"--> Storage configuration error - {error_msg}")
-        return {"success": False, "error": error_msg, "timestamp": timestamp}
-
     key = f"{session_id}/{filename}"
     logger.debug(f"--> Reading from S3 key: {key}")
 
@@ -136,10 +131,6 @@ def _write_to_s3(filename: str, content: str, tool_context: ToolContext) -> Dict
         return {"success": False, "error": error_msg, "timestamp": timestamp}
 
     bucket_name = config.s3_bucket_name
-    if not bucket_name:
-        error_msg = "S3_BUCKET_NAME environment variable is required"
-        logger.error(f"--> Storage configuration error - {error_msg}")
-        return {"success": False, "error": error_msg, "timestamp": timestamp}
 
     logger.info(f"--> Storage tool invoked - Session: {session_id}, File: {filename}")
 
