@@ -27,20 +27,29 @@ EventBridge → Step Function → Lambda → AgentCore → Agent (Background Pro
 
 ### Issue 1: Understanding Agent Log Streams
 
-**Observation**: The agent creates multiple log streams (typically 12) during execution.
+**Observation**: The agent creates multiple log streams during execution.
 
-**Initial Concern**: We initially thought this indicated multiple parallel executions when we saw 21 log streams during early testing.
+**Initial Concern**: We initially thought this indicated multiple parallel executions when we saw many log streams during early testing.
 
 **Root Cause Analysis**: 
-- The multiple log streams (12) appear to be related to the agent's internal operations
-- **Note**: This behavior needs verification with the AgentCore service team to understand if this is expected or indicates an issue
-- Possible causes could include: Strands agent reasoning loops, tool calls, AWS service interactions, or AgentCore runtime behavior
+- Runtime log streams are created **per execution environment**, not per session
+- Log stream format: `YYYY/MM/DD/[runtime-logs-{SESSION_ID}]{EXECUTION_ENVIRONMENT_UUID}`
+  - `SESSION_ID`: The session identifier
+  - `EXECUTION_ENVIRONMENT_UUID`: The execution environment instance
+- **Key Behaviors**:
+  - Multiple requests for the same session can use different execution environments
+  - Multiple requests for the same session can be handled concurrently by the same environment
+  - Same session ID can appear in multiple log streams (different execution environment UUIDs)
+- **Implication**: Similar to AWS Lambda, "global state" is not reliable across invocations
+  - Same session can be routed to different execution environments
+  - Concurrent requests for same session can use different environments
+  - **External storage required** for state persistence (e.g., DynamoDB for journaling, S3 for data passing between agents)
 
 **Resolution**: 
 - EventBridge configuration was correct from the start using `EventField.fromPath('$.id')`
 - Multiple log streams did not prevent the fire-and-forget pattern from working
 - The real issue was the connection management pattern, not session ID generation
-- **Action Item**: Verify with AgentCore service team whether 12 log streams per execution is expected behavior
+- Understanding execution environment behavior explains why we use DynamoDB and S3 for state management
 
 ### Issue 2: AgentCore Connection Management
 
