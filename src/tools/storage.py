@@ -25,6 +25,30 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 
+def _validate_filename(filename: str, timestamp: str) -> Dict[str, Any] | None:
+    """
+    Validate filename for security requirements.
+
+    Args:
+        filename: Name of the file to validate
+        timestamp: ISO timestamp for error response
+
+    Returns:
+        Error dictionary if validation fails, None if valid
+    """
+    if not filename:
+        error_msg = "Missing required parameter: filename"
+        logger.error(f"--> Storage validation failed - {error_msg}")
+        return {"success": False, "error": error_msg, "timestamp": timestamp}
+
+    if not filename.endswith(".txt"):
+        error_msg = "Invalid file extension. Only .txt files are allowed"
+        logger.error(f"--> Storage validation failed - {error_msg} - Filename: {filename}")
+        return {"success": False, "error": error_msg, "timestamp": timestamp}
+
+    return None
+
+
 def _read_from_s3(filename: str, tool_context: ToolContext) -> Dict[str, Any]:
     """
     Internal function to read text content from S3 with session-based path management.
@@ -38,16 +62,10 @@ def _read_from_s3(filename: str, tool_context: ToolContext) -> Dict[str, Any]:
     """
     timestamp = datetime.now(timezone.utc).isoformat()
 
-    if not filename:
-        error_msg = "Missing required parameter: filename"
-        logger.error(f"--> Storage validation failed - {error_msg}")
-        return {"success": False, "error": error_msg, "timestamp": timestamp}
-
-    # Validate file extension to prevent code injection
-    if not filename.endswith(".txt"):
-        error_msg = "Invalid file extension. Only .txt files are allowed"
-        logger.error(f"--> Storage validation failed - {error_msg} - Filename: {filename}")
-        return {"success": False, "error": error_msg, "timestamp": timestamp}
+    # Validate filename
+    validation_error = _validate_filename(filename, timestamp)
+    if validation_error:
+        return validation_error
 
     session_id = tool_context.invocation_state.get("session_id")
     if not session_id:
@@ -120,16 +138,10 @@ def _write_to_s3(filename: str, content: str, tool_context: ToolContext) -> Dict
     """
     timestamp = datetime.now(timezone.utc).isoformat()
 
-    if not filename:
-        error_msg = "Missing required parameter: filename"
-        logger.error(f"--> Storage validation failed - {error_msg}")
-        return {"success": False, "error": error_msg, "timestamp": timestamp}
-
-    # Validate file extension to prevent code injection
-    if not filename.endswith(".txt"):
-        error_msg = "Invalid file extension. Only .txt files are allowed"
-        logger.error(f"--> Storage validation failed - {error_msg} - Filename: {filename}")
-        return {"success": False, "error": error_msg, "timestamp": timestamp}
+    # Validate filename
+    validation_error = _validate_filename(filename, timestamp)
+    if validation_error:
+        return validation_error
 
     if not content:
         error_msg = "Missing required parameter: content"
