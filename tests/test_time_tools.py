@@ -1,13 +1,8 @@
-"""
-Tests for time tools
-
-These tests verify the time tools work correctly through their public interface.
-"""
+"""Tests for time tools"""
 
 import time
 from datetime import datetime, timezone
 
-# Import the time tool functions - @tool decorator is mocked in conftest.py
 from src.tools.time_tools import convert_time_unix_to_iso, current_time_unix_utc
 
 
@@ -15,7 +10,6 @@ def test_current_time_unix_utc():
     """Test current_time_unix_utc returns valid Unix timestamp."""
     result = current_time_unix_utc()
 
-    # Verify it's an integer
     assert isinstance(result, int)
 
     # Verify it's a reasonable timestamp (after 2024-01-01)
@@ -32,7 +26,6 @@ def test_convert_time_unix_to_iso():
     unix_timestamp = 1733152725
     result = convert_time_unix_to_iso(unix_timestamp)
 
-    # Verify format
     assert isinstance(result, str)
     assert result == "2024-12-02T15:18:45Z"
 
@@ -44,13 +37,10 @@ def test_convert_time_unix_to_iso():
 
 def test_convert_time_unix_to_iso_with_current_time():
     """Test conversion with current time to ensure consistency."""
-    # Get current timestamp
     unix_timestamp = current_time_unix_utc()
 
-    # Convert to ISO
     iso_time = convert_time_unix_to_iso(unix_timestamp)
 
-    # Parse back and verify it matches
     parsed_time = datetime.strptime(iso_time, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
     parsed_unix = int(parsed_time.timestamp())
 
@@ -95,17 +85,14 @@ def test_time_range_calculation_pattern():
 
 def test_iso_format_consistency():
     """Test that ISO format is consistent and parseable."""
-    # Test various timestamps
     test_timestamps = [0, 1704067200, 1733152725, 1735689600]
 
     for ts in test_timestamps:
         iso_str = convert_time_unix_to_iso(ts)
 
-        # Verify format
         assert iso_str.endswith("Z")
         assert "T" in iso_str
         assert len(iso_str) == 20
 
-        # Verify it can be parsed back
         parsed = datetime.strptime(iso_str, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
         assert int(parsed.timestamp()) == ts

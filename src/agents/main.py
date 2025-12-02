@@ -166,12 +166,7 @@ def _handle_background_task_error(
 # Decorator automatically manages AgentCore status: HEALTHY_BUSY while running, HEALTHY when complete
 @app.async_task
 async def background_task(user_message: str, session_id: str):
-    """Background task using workflow pattern.
-
-    Args:
-        user_message: User message from payload (passed but currently unused in predefined workflow)
-        session_id: Session ID for tracking and journaling
-    """
+    """Background task using workflow pattern."""
     logger.info(f"Background task started - Session: {session_id}")
 
     analysis_prompt, report_prompt = load_prompts()
