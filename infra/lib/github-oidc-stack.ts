@@ -62,8 +62,8 @@ export class GitHubOidcStack extends cdk.Stack {
             // For PRs, GitHub uses: repo:<owner>/<repo>:pull_request
             'token.actions.githubusercontent.com:sub': [
               `repo:${githubOrg}/${githubRepo}:ref:refs/heads/${allowedBranch}`,
-              // TODO: Remove after testing - temporary branch for PR testing
-              `repo:${githubOrg}/${githubRepo}:ref:refs/heads/rezabekf/configure-deployment-to-aws`,
+              // TODO: Remove after testing - temporary for PR testing
+              `repo:${githubOrg}/${githubRepo}:pull_request`,
             ],
           },
         },
