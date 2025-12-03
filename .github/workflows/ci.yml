@@ -109,9 +109,7 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     needs: [python-tests, typescript-tests, cdk-nag-test]
-    # TODO: Restore after testing: if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    if: github.ref == 'refs/heads/main' || github.head_ref == 'rezabekf/configure-deployment-to-aws'
-
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     environment: dev
     concurrency:
       group: deploy-dev
