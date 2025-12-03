@@ -11,14 +11,28 @@ import { InfraConfig } from '../constants/infra-config';
 import { Agent } from './agent';
 import { Workflow } from './workflow';
 
+export interface InfraStackProps extends StackProps {
+  /**
+   * Environment name
+   */
+  environment: string;
+  /**
+   * Version suffix for runtime naming (bump on breaking changes)
+   */
+  runtimeVersion: string;
+  /**
+   * Enable manual trigger rule for testing
+   */
+  enableManualTrigger: boolean;
+}
+
 export class InfraStack extends Stack {
   public readonly agent: Agent;
 
-  constructor(scope: Construct, id: string, props?: StackProps) {
+  constructor(scope: Construct, id: string, props: InfraStackProps) {
     super(scope, id, props);
 
-    const environment = process.env.ENVIRONMENT || this.node.tryGetContext('env') || 'dev';
-    const version = process.env.VERSION || this.node.tryGetContext('version') || 'v2';
+    const { environment, runtimeVersion, enableManualTrigger } = props;
 
     const agentsTable = new Table(this, 'AgentsTable', {
       tableName: `agents-table-${environment}`,
@@ -57,20 +71,17 @@ export class InfraStack extends Stack {
       serverAccessLogsPrefix: 'agent-data-logs/',
     });
 
-    const modelId = InfraConfig.inferenceProfileRegion
-      ? `${InfraConfig.inferenceProfileRegion}.${InfraConfig.modelId}`
-      : InfraConfig.modelId;
-
     this.agent = new Agent(this, 'AgentCore', {
-      agentRuntimeName: `agentRuntime_${environment}_${version}`,
+      agentRuntimeName: `agentRuntime_${environment}_${runtimeVersion}`,
       description: `Agent runtime for ${environment} environment`,
-      modelId,
+      environment,
+      modelId: InfraConfig.modelId,
+      inferenceProfileRegion: InfraConfig.inferenceProfileRegion,
       environmentVariables: {
         BYPASS_TOOL_CONSENT: 'true',
         S3_BUCKET_NAME: agentDataBucket.bucketName,
         JOURNAL_TABLE_NAME: agentsTable.tableName,
         AWS_REGION: this.region,
-        MODEL_ID: modelId,
         TTL_DAYS: InfraConfig.ttlDays.toString(),
       },
     });
@@ -147,22 +158,29 @@ export class InfraStack extends Stack {
       }),
     );
 
-    const manualTriggerRule = new Rule(this, 'ManualTriggerRule', {
-      eventPattern: {
-        source: ['manual-trigger'],
-        detailType: ['execute-agent'],
-      } as EventPattern,
-      description: 'Rule to trigger agent workflow via manual EventBridge events',
-    });
+    // Manual trigger rule is only deployed when explicitly enabled (dev only)
+    if (enableManualTrigger) {
+      const manualTriggerRule = new Rule(this, 'ManualTriggerRule', {
+        eventPattern: {
+          source: ['manual-trigger'],
+          detailType: ['execute-agent'],
+        } as EventPattern,
+        description: 'Rule to trigger agent workflow via manual EventBridge events',
+      });
 
-    manualTriggerRule.addTarget(
-      new SfnStateMachine(workflow.stateMachine, {
-        input: RuleTargetInput.fromObject({
-          // Use EventBridge event-id (UUID format, 36 chars) to meet AgentCore's 33+ character requirement
-          session_id: EventField.fromPath('$.id'),
+      manualTriggerRule.addTarget(
+        new SfnStateMachine(workflow.stateMachine, {
+          input: RuleTargetInput.fromObject({
+            session_id: EventField.fromPath('$.id'),
+          }),
         }),
-      }),
-    );
+      );
+
+      new CfnOutput(this, 'ManualTriggerRuleArn', {
+        value: manualTriggerRule.ruleArn,
+        description: 'ARN of the EventBridge rule for manual workflow triggers',
+      });
+    }
 
     new CfnOutput(this, 'AgentsTableName', {
       value: agentsTable.tableName,
@@ -192,11 +210,6 @@ export class InfraStack extends Stack {
     new CfnOutput(this, 'WorkflowStateMachineArn', {
       value: workflow.stateMachine.stateMachineArn,
       description: 'ARN of the Step Function state machine for agent workflow',
-    });
-
-    new CfnOutput(this, 'ManualTriggerRuleArn', {
-      value: manualTriggerRule.ruleArn,
-      description: 'ARN of the EventBridge rule for manual workflow triggers',
     });
 
     new CfnOutput(this, 'ScheduledTriggerRuleArn', {

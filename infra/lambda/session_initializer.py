@@ -32,7 +32,7 @@ def handler(event, context):
         table_name = os.environ.get("JOURNAL_TABLE_NAME")
         if not table_name:
             raise ValueError("JOURNAL_TABLE_NAME environment variable is required")
-        ttl_days = int(os.environ.get("TTL_DAYS", "90"))
+        ttl_days = int(os.environ.get("TTL_DAYS", "30"))
 
         logger.info(f"Recording SESSION_INITIATED event for session: {session_id}")
 

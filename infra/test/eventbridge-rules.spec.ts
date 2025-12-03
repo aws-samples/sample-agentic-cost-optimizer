@@ -83,9 +83,27 @@ describe('EventBridge Rules', () => {
   });
 
   describe('EventBridge Rules Count', () => {
-    it('should have exactly 2 EventBridge rules', () => {
+    it('should have exactly 2 EventBridge rules when enableManualTrigger is true', () => {
       const rules = template.findResources('AWS::Events::Rule');
       expect(Object.keys(rules)).toHaveLength(2);
+    });
+
+    it('should have exactly 1 EventBridge rule when enableManualTrigger is false', () => {
+      const { template: prodTemplate } = createTestStack(false);
+      const rules = prodTemplate.findResources('AWS::Events::Rule');
+      expect(Object.keys(rules)).toHaveLength(1);
+    });
+
+    it('should not create manual trigger rule when enableManualTrigger is false', () => {
+      const { template: prodTemplate } = createTestStack(false);
+      const manualRules = prodTemplate.findResources('AWS::Events::Rule', {
+        Properties: {
+          EventPattern: {
+            source: ['manual-trigger'],
+          },
+        },
+      });
+      expect(Object.keys(manualRules)).toHaveLength(0);
     });
   });
 });

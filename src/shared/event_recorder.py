@@ -16,7 +16,7 @@ def record_event(
     session_id: str,
     status: str,
     table_name: str,
-    ttl_days: int = 90,
+    ttl_days: int = 30,
     error_message: Optional[str] = None,
     region_name: Optional[str] = None,
 ) -> None:
@@ -26,7 +26,7 @@ def record_event(
         session_id: The session ID for the workflow
         status: The event status type (use EventStatus constants or dynamic TASK_{phase}_{suffix} pattern)
         table_name: DynamoDB table name for journaling
-        ttl_days: Number of days before event expires (default: 90)
+        ttl_days: Number of days before event expires
         error_message: Optional error message for failure events
         region_name: AWS region for DynamoDB (default: from AWS_REGION env var or us-east-1)
 
