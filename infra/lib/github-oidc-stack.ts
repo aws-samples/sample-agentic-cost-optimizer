@@ -22,7 +22,6 @@ export interface GitHubOidcStackProps extends cdk.StackProps {
 
 /**
  * Stack that creates GitHub OIDC provider and IAM role for GitHub Actions deployments.
- * This is a one-time setup similar to CDK bootstrap.
  *
  * Security recommendations followed:
  * - OIDC provider with thumbprint validation
@@ -39,8 +38,6 @@ export class GitHubOidcStack extends cdk.Stack {
 
     const { githubOrg, githubRepo, allowedBranch = 'main' } = props;
 
-    // Step 1: Create OIDC Provider for GitHub
-    // GitHub's OIDC provider URL is fixed
     const githubOidcProvider = new iam.OpenIdConnectProvider(this, 'GitHubOidcProvider', {
       url: 'https://token.actions.githubusercontent.com',
       clientIds: ['sts.amazonaws.com'],
@@ -49,8 +46,6 @@ export class GitHubOidcStack extends cdk.Stack {
       thumbprints: ['ffffffffffffffffffffffffffffffffffffffff'],
     });
 
-    // Step 2: Create IAM Role that trusts the OIDC provider
-    // Scoped down following security recommendations
     this.role = new iam.Role(this, 'GitHubActionsRole', {
       roleName: `GitHubActions-${githubRepo}`,
       description: `Role for GitHub Actions deployments from ${githubOrg}/${githubRepo}`,
@@ -64,7 +59,12 @@ export class GitHubOidcStack extends cdk.Stack {
           StringLike: {
             // Scope to specific repo and branch
             // Format: repo:<owner>/<repo>:ref:refs/heads/<branch>
-            'token.actions.githubusercontent.com:sub': `repo:${githubOrg}/${githubRepo}:ref:refs/heads/${allowedBranch}`,
+            // For PRs, GitHub uses: repo:<owner>/<repo>:pull_request
+            'token.actions.githubusercontent.com:sub': [
+              `repo:${githubOrg}/${githubRepo}:ref:refs/heads/${allowedBranch}`,
+              // TODO: Remove after testing - temporary branch for PR testing
+              `repo:${githubOrg}/${githubRepo}:ref:refs/heads/rezabekf/configure-deployment-to-aws`,
+            ],
           },
         },
         'sts:AssumeRoleWithWebIdentity',
@@ -99,7 +99,6 @@ export class GitHubOidcStack extends cdk.Stack {
 
     this.roleArn = this.role.roleArn;
 
-    // Outputs
     new cdk.CfnOutput(this, 'RoleArn', {
       value: this.role.roleArn,
       description: 'ARN of the IAM role for GitHub Actions. Store this as a GitHub secret.',
