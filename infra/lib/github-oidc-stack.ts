@@ -1,4 +1,5 @@
 import * as cdk from 'aws-cdk-lib';
+import { NagSuppressions } from 'cdk-nag';
 import { Construct } from 'constructs';
 
 import * as iam from 'aws-cdk-lib/aws-iam';
@@ -97,5 +98,25 @@ export class GitHubOidcStack extends cdk.Stack {
       description: 'ARN of the GitHub OIDC provider',
       exportName: 'GitHubOidcProviderArn',
     });
+
+    // CDK Nag suppressions
+    // NOTE: This is a sample for demonstration purposes. Review and adjust for production use.
+    NagSuppressions.addResourceSuppressions(
+      this.role,
+      [
+        {
+          id: 'AwsSolutions-IAM5',
+          reason:
+            'Sample code: Wildcard in CDK bootstrap role names is required because the qualifier varies per bootstrap. Roles are scoped to specific account/region. See: https://docs.aws.amazon.com/cdk/v2/guide/bootstrapping.html',
+          appliesTo: [
+            'Resource::arn:aws:iam::<AWS::AccountId>:role/cdk-*-deploy-role-<AWS::AccountId>-<AWS::Region>',
+            'Resource::arn:aws:iam::<AWS::AccountId>:role/cdk-*-file-publishing-role-<AWS::AccountId>-<AWS::Region>',
+            'Resource::arn:aws:iam::<AWS::AccountId>:role/cdk-*-image-publishing-role-<AWS::AccountId>-<AWS::Region>',
+            'Resource::arn:aws:iam::<AWS::AccountId>:role/cdk-*-lookup-role-<AWS::AccountId>-<AWS::Region>',
+          ],
+        },
+      ],
+      true,
+    );
   }
 }

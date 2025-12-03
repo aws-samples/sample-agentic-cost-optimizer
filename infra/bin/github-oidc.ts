@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import * as cdk from 'aws-cdk-lib';
+import { AwsSolutionsChecks } from 'cdk-nag';
 
 import { GitHubOidcStack } from '../lib/github-oidc-stack';
 
@@ -29,3 +30,5 @@ new GitHubOidcStack(app, 'GitHubOidcStack', {
     region: process.env.CDK_DEFAULT_REGION,
   },
 });
+
+cdk.Aspects.of(app).add(new AwsSolutionsChecks({ verbose: true }));
