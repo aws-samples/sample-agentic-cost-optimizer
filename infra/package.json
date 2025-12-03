@@ -12,6 +12,8 @@
     "cdk": "cdk",
     "deploy": "npm run build && cdk deploy --require-approval never",
     "destroy": "cdk destroy",
+    "deploy:oidc": "tsc -p tsconfig.json && cdk deploy --app 'npx ts-node bin/github-oidc.ts' --require-approval never",
+    "synth:oidc": "tsc -p tsconfig.json && cdk synth --app 'npx ts-node bin/github-oidc.ts'",
     "prettier": "prettier . --write",
     "test": "npm run build && vitest run --coverage",
     "test:watch": "npm run build && vitest"
