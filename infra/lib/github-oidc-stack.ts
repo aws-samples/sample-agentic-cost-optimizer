@@ -57,14 +57,8 @@ export class GitHubOidcStack extends cdk.Stack {
             'token.actions.githubusercontent.com:aud': 'sts.amazonaws.com',
           },
           StringLike: {
-            // Scope to specific repo and branch
-            // Format: repo:<owner>/<repo>:ref:refs/heads/<branch>
-            // For PRs, GitHub uses: repo:<owner>/<repo>:pull_request
-            'token.actions.githubusercontent.com:sub': [
-              `repo:${githubOrg}/${githubRepo}:ref:refs/heads/${allowedBranch}`,
-              // TODO: Remove after testing - temporary for PR testing
-              `repo:${githubOrg}/${githubRepo}:pull_request`,
-            ],
+            // With GitHub Environments, subject format is: repo:<owner>/<repo>:environment:<name>
+            'token.actions.githubusercontent.com:sub': `repo:${githubOrg}/${githubRepo}:environment:dev`,
           },
         },
         'sts:AssumeRoleWithWebIdentity',
