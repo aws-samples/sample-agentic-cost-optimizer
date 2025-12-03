@@ -109,7 +109,8 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     needs: [python-tests, typescript-tests, cdk-nag-test]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # TODO: Restore after testing: if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push'
     environment: dev
     concurrency:
       group: deploy-dev

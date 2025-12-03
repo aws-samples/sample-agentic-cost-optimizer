@@ -15,9 +15,9 @@ export interface GitHubOidcStackProps extends cdk.StackProps {
   readonly githubRepo: string;
 
   /**
-   * Branch to allow deployments from (default: 'main')
+   * GitHub environment name for OIDC subject claim (e.g., 'dev', 'prod')
    */
-  readonly allowedBranch?: string;
+  readonly environment: string;
 }
 
 /**
@@ -36,7 +36,7 @@ export class GitHubOidcStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: GitHubOidcStackProps) {
     super(scope, id, props);
 
-    const { githubOrg, githubRepo, allowedBranch = 'main' } = props;
+    const { githubOrg, githubRepo, environment } = props;
 
     const githubOidcProvider = new iam.OpenIdConnectProvider(this, 'GitHubOidcProvider', {
       url: 'https://token.actions.githubusercontent.com',
@@ -58,36 +58,29 @@ export class GitHubOidcStack extends cdk.Stack {
           },
           StringLike: {
             // With GitHub Environments, subject format is: repo:<owner>/<repo>:environment:<name>
-            'token.actions.githubusercontent.com:sub': `repo:${githubOrg}/${githubRepo}:environment:dev`,
+            'token.actions.githubusercontent.com:sub': `repo:${githubOrg}/${githubRepo}:environment:${environment}`,
           },
         },
         'sts:AssumeRoleWithWebIdentity',
       ),
     });
 
-    // Permissions for CDK deployment
-    // This is a starting point - scope down further based on your needs
+    // CDK v2 bootstrap roles have all necessary permissions for deployment:
+    // - deploy-role: CloudFormation operations
+    // - file-publishing-role: S3 asset uploads
+    // - image-publishing-role: ECR image publishing
+    // - lookup-role: SSM lookups and context queries
     this.role.addToPolicy(
       new iam.PolicyStatement({
-        sid: 'CDKDeploymentPermissions',
+        sid: 'AssumeBootstrapRoles',
         effect: iam.Effect.ALLOW,
-        actions: [
-          // CloudFormation permissions
-          'cloudformation:*',
-          // S3 for CDK assets
-          's3:*',
-          // SSM for CDK context lookups
-          'ssm:GetParameter',
-          // IAM for creating roles (CDK needs this)
-          'iam:*',
-          // Lambda for deploying functions
-          'lambda:*',
-          // Logs for Lambda
-          'logs:*',
-          // STS for assuming CDK roles
-          'sts:AssumeRole',
+        actions: ['sts:AssumeRole'],
+        resources: [
+          `arn:aws:iam::${cdk.Aws.ACCOUNT_ID}:role/cdk-*-deploy-role-${cdk.Aws.ACCOUNT_ID}-${cdk.Aws.REGION}`,
+          `arn:aws:iam::${cdk.Aws.ACCOUNT_ID}:role/cdk-*-file-publishing-role-${cdk.Aws.ACCOUNT_ID}-${cdk.Aws.REGION}`,
+          `arn:aws:iam::${cdk.Aws.ACCOUNT_ID}:role/cdk-*-image-publishing-role-${cdk.Aws.ACCOUNT_ID}-${cdk.Aws.REGION}`,
+          `arn:aws:iam::${cdk.Aws.ACCOUNT_ID}:role/cdk-*-lookup-role-${cdk.Aws.ACCOUNT_ID}-${cdk.Aws.REGION}`,
         ],
-        resources: ['*'],
       }),
     );
 

@@ -23,7 +23,7 @@ new GitHubOidcStack(app, 'GitHubOidcStack', {
   description: 'GitHub OIDC provider and IAM role for GitHub Actions deployments',
   githubOrg: 'aws-samples',
   githubRepo: 'sample-agentic-cost-optimizer',
-  allowedBranch: 'main',
+  environment: 'dev',
   env: {
     account: process.env.CDK_DEFAULT_ACCOUNT,
     region: process.env.CDK_DEFAULT_REGION,
