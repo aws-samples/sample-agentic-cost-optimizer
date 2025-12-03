@@ -27,7 +27,7 @@ def lambda_context():
 def mock_env(monkeypatch):
     """Set up environment variables."""
     monkeypatch.setenv("JOURNAL_TABLE_NAME", "test-table")
-    monkeypatch.setenv("TTL_DAYS", "90")
+    monkeypatch.setenv("TTL_DAYS", "30")
     monkeypatch.setenv("POWERTOOLS_SERVICE_NAME", "session-initializer")
 
 
@@ -45,7 +45,7 @@ def test_handler_success(mock_env, lambda_context):
 
         assert result["statusCode"] == 200
         assert result["session_id"] == "test-session-123"
-        mock_metadata.assert_called_once_with(session_id="test-session-123", table_name="test-table", ttl_days=90)
+        mock_metadata.assert_called_once_with(session_id="test-session-123", table_name="test-table", ttl_days=30)
         mock_event.assert_called_once()
 
 

@@ -11,7 +11,7 @@ import pytest
 # Set environment variables BEFORE any imports
 os.environ["AGENT_CORE_RUNTIME_ARN"] = "mock-agent-runtime-arn"
 os.environ["JOURNAL_TABLE_NAME"] = "mock-journal-table"
-os.environ["TTL_DAYS"] = "90"
+os.environ["TTL_DAYS"] = "30"
 os.environ["AWS_REGION"] = "us-east-1"
 
 # Mock aws_lambda_powertools before importing agent_invoker

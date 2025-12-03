@@ -45,9 +45,9 @@ class TestAppConfigFromEnv:
 
             assert config.s3_bucket_name == "test-bucket"
             assert config.journal_table_name == "test-table"
-            assert config.aws_region == "us-east-1"  # default
-            assert config.model_id == "us.anthropic.claude-sonnet-4-5-20250929-v1:0"  # default
-            assert config.ttl_days == 90  # default
+            assert config.aws_region == "us-east-1"
+            assert config.model_id == "us.anthropic.claude-sonnet-4-20250514-v1:0"
+            assert config.ttl_days == 30
 
     def test_raises_error_when_s3_bucket_name_missing(self):
         """Test that ValueError is raised when S3_BUCKET_NAME is missing."""

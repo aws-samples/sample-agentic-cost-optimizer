@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 def record_metadata(
     session_id: str,
     table_name: str,
-    ttl_days: int = 90,
+    ttl_days: int = 30,
     region_name: Optional[str] = None,
 ) -> None:
     """Record session metadata in DynamoDB for workflow tracking.
@@ -19,7 +19,7 @@ def record_metadata(
     Args:
         session_id: The session ID for the workflow
         table_name: DynamoDB table name for journaling
-        ttl_days: Number of days before metadata expires (default: 90)
+        ttl_days: Number of days before metadata expires
         region_name: AWS region for DynamoDB (default: from AWS_REGION env var or us-east-1)
 
     Raises:

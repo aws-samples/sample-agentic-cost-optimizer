@@ -6,13 +6,36 @@ import { Construct } from 'constructs';
 import { Effect, Policy, PolicyDocument, PolicyStatement } from 'aws-cdk-lib/aws-iam';
 import { Asset } from 'aws-cdk-lib/aws-s3-assets';
 
-import { InfraConfig } from '../constants/infra-config';
-
 export interface AgentProps {
+  /**
+   * Name for the AgentCore runtime
+   */
   agentRuntimeName: string;
+
+  /**
+   * Description for the AgentCore runtime
+   */
   description?: string;
+
+  /**
+   * Environment name
+   */
+  environment: string;
+
+  /**
+   * Additional environment variables for the runtime
+   */
   environmentVariables?: { [key: string]: string };
+
+  /**
+   * Bedrock model ID (e.g., 'anthropic.claude-sonnet-4-20250514-v1:0')
+   */
   modelId: string;
+
+  /**
+   * Cross-region inference profile prefix (e.g., 'us', 'eu', 'apac', 'global')
+   */
+  inferenceProfileRegion?: string | null;
 }
 
 export class Agent extends Construct {
@@ -22,10 +45,11 @@ export class Agent extends Construct {
   constructor(scope: Construct, id: string, props: AgentProps) {
     super(scope, id);
 
-    const { agentRuntimeName, description, environmentVariables = {}, modelId } = props;
-
-    const environment = this.node.tryGetContext('env') || 'dev';
+    const { agentRuntimeName, description, environment, environmentVariables = {}, modelId, inferenceProfileRegion } = props;
     const stack = Stack.of(this);
+
+    // Build full model ID with inference profile prefix if specified
+    const fullModelId = inferenceProfileRegion ? `${inferenceProfileRegion}.${modelId}` : modelId;
 
     // Reference pre-built AgentCore Runtime package (built by build-deployment-package script)
     const deploymentPackage = new Asset(this, 'AgentCoreRuntimePackage', {
@@ -48,6 +72,7 @@ export class Agent extends Construct {
       description,
       environmentVariables: {
         ENVIRONMENT: environment,
+        MODEL_ID: fullModelId,
         ...environmentVariables,
       },
     });
@@ -63,8 +88,8 @@ export class Agent extends Construct {
             effect: Effect.ALLOW,
             actions: ['bedrock:InvokeModel', 'bedrock:InvokeModelWithResponseStream'],
             resources: [
-              `arn:${stack.partition}:bedrock:${stack.region}:${stack.account}:inference-profile/${modelId}`,
-              `arn:${stack.partition}:bedrock:*::foundation-model/${InfraConfig.modelId}`,
+              `arn:${stack.partition}:bedrock:${stack.region}:${stack.account}:inference-profile/${fullModelId}`,
+              `arn:${stack.partition}:bedrock:*::foundation-model/${modelId}`,
             ],
           }),
         ],

@@ -42,8 +42,8 @@ fi
 
 # Set environment variables for the agent
 export AWS_REGION="$AWS_REGION"
-export MODEL_ID="${MODEL_ID:-us.anthropic.claude-sonnet-4-5-20250929-v1:0}"
-export TTL_DAYS="${TTL_DAYS:-90}"
+export MODEL_ID="${MODEL_ID:-us.anthropic.claude-sonnet-4-20250514-v1:0}"
+export TTL_DAYS="${TTL_DAYS:-30}"
 export BYPASS_TOOL_CONSENT="true"
 
 echo "Configuration loaded:"

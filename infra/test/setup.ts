@@ -22,9 +22,13 @@ export interface CfnJoin {
 /**
  * Creates a test stack and template for testing
  */
-export function createTestStack() {
+export function createTestStack(enableManualTrigger = true) {
   const app = new App();
-  const stack = new InfraStack(app, 'TestStack');
+  const stack = new InfraStack(app, 'TestStack', {
+    environment: 'dev',
+    runtimeVersion: 'v2',
+    enableManualTrigger,
+  });
   const template = Template.fromStack(stack);
 
   return { app, stack, template };
