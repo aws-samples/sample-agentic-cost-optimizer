@@ -14,7 +14,7 @@ on:
       - main
 
 jobs:
-  python-tests:
+  test-python:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -44,7 +44,7 @@ jobs:
           MINIMUM_GREEN: 90
           MINIMUM_ORANGE: 70
 
-  typescript-tests:
+  test-typescript:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -75,7 +75,7 @@ jobs:
         run: npm test
         working-directory: infra
 
-  cdk-nag-test:
+  test-cdk-nag:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -106,10 +106,9 @@ jobs:
         run: npm run synth > /dev/null
         working-directory: infra
 
-  # Deployment Pipeline: dev -> integ tests -> prod -> release
   deploy-dev:
     runs-on: ubuntu-latest
-    needs: [python-tests, typescript-tests, cdk-nag-test]
+    needs: [test-python, test-typescript, test-cdk-nag]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     environment: dev
     concurrency:
@@ -120,7 +119,7 @@ jobs:
       - name: Placeholder - Deploy to dev
         run: echo "Dev deployment placeholder - implement when dev account is ready"
 
-  integration-tests:
+  test-integration:
     runs-on: ubuntu-latest
     needs: [deploy-dev]
     steps:
@@ -130,7 +129,7 @@ jobs:
 
   deploy-prod:
     runs-on: ubuntu-latest
-    needs: [integration-tests]
+    needs: [test-integration]
     environment: prod
     concurrency:
       group: deploy-prod
