@@ -12,19 +12,28 @@ import { GitHubOidcStack } from '../lib/github-oidc-stack';
  * 2. IAM Role that GitHub Actions can assume
  *
  * Usage:
- *   npx cdk deploy --app "npx ts-node bin/github-oidc.ts"
+ *   ENVIRONMENT=prod/dev npm run deploy:oidc --prefix infra
  *
  * After deployment:
  * 1. Copy the RoleArn from the stack outputs
- * 2. Add it as a GitHub secret named AWS_ROLE_ARN
+ * 2. Add it as a GitHub secret named AWS_ROLE_ARN in the corresponding GitHub environment
  */
+
+const environment = process.env.ENVIRONMENT;
+if (!environment) {
+  console.error('\nENVIRONMENT is required.\n');
+  console.error('Usage: ENVIRONMENT=prod npm run deploy:oidc --prefix infra');
+  console.error('       ENVIRONMENT=dev npm run deploy:oidc --prefix infra\n');
+  process.exit(1);
+}
+
 const app = new cdk.App();
 
-new GitHubOidcStack(app, 'GitHubOidcStack', {
-  description: 'GitHub OIDC provider and IAM role for GitHub Actions deployments',
+new GitHubOidcStack(app, `GitHubOidcStack-${environment}`, {
+  description: `GitHub OIDC provider and IAM role for GitHub Actions deployments (${environment})`,
   githubOrg: 'aws-samples',
   githubRepo: 'sample-agentic-cost-optimizer',
-  environment: 'dev',
+  environment,
   env: {
     account: process.env.CDK_DEFAULT_ACCOUNT,
     region: process.env.CDK_DEFAULT_REGION,

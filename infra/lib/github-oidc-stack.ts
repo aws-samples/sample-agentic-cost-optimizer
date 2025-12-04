@@ -90,13 +90,11 @@ export class GitHubOidcStack extends cdk.Stack {
     new cdk.CfnOutput(this, 'RoleArn', {
       value: this.role.roleArn,
       description: 'ARN of the IAM role for GitHub Actions. Store this as a GitHub secret.',
-      exportName: 'GitHubActionsRoleArn',
     });
 
     new cdk.CfnOutput(this, 'OidcProviderArn', {
       value: githubOidcProvider.openIdConnectProviderArn,
       description: 'ARN of the GitHub OIDC provider',
-      exportName: 'GitHubOidcProviderArn',
     });
 
     // CDK Nag suppressions
