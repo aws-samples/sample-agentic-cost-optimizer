@@ -107,26 +107,26 @@ jobs:
         run: npm run synth > /dev/null
         working-directory: infra
 
-  deploy-dev:
+  deploy-staging:
     runs-on: ubuntu-latest
     needs: [test-python, test-typescript, test-cdk-nag]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    environment: dev
+    environment: staging
     concurrency:
-      group: deploy-dev
+      group: deploy-staging
       cancel-in-progress: false
     steps:
-      # TODO: Implement dev deployment when dev account is available
-      - name: Placeholder - Deploy to dev
-        run: echo "Dev deployment placeholder - implement when dev account is ready"
+      # TODO: Implement staging deployment when staging account is available
+      - name: Placeholder - Deploy to staging
+        run: echo "Staging deployment placeholder - implement when staging account is ready"
 
   test-integration:
     runs-on: ubuntu-latest
-    needs: [deploy-dev]
+    needs: [deploy-staging]
     steps:
-      # TODO: Implement integration tests against dev environment
+      # TODO: Implement integration tests against staging environment
       - name: Placeholder - Integration tests
-        run: echo "Integration tests placeholder - implement when dev environment is deployed"
+        run: echo "Integration tests placeholder - implement when staging environment is deployed"
 
   deploy-prod:
     runs-on: ubuntu-latest
