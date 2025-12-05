@@ -15,7 +15,6 @@ import { GitHubOidcStack } from '../lib/github-oidc-stack';
  *   ENVIRONMENT=staging npm run deploy:oidc --prefix infra
  *   ENVIRONMENT=prod npm run deploy:oidc --prefix infra
  *
- * Note: 'dev' environment is for local development and does not use OIDC.
  *
  * After deployment:
  * 1. Copy the RoleArn from the stack outputs

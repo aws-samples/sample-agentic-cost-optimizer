@@ -16,7 +16,7 @@ export interface GitHubOidcStackProps extends cdk.StackProps {
   readonly githubRepo: string;
 
   /**
-   * GitHub environment name for OIDC subject claim (e.g., 'dev', 'prod')
+   * GitHub environment name for OIDC subject claim (e.g., 'staging', 'prod')
    */
   readonly environment: string;
 }
@@ -27,7 +27,7 @@ export interface GitHubOidcStackProps extends cdk.StackProps {
  * Security recommendations followed:
  * - OIDC provider with thumbprint validation
  * - Role scoped to specific repository
- * - Role scoped to specific branch
+ * - Role scoped to specific GitHub environment
  * - Audience condition for sts.amazonaws.com
  */
 export class GitHubOidcStack extends cdk.Stack {

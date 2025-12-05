@@ -147,6 +147,10 @@ aws events put-events --entries '[{
 }]'
 ```
 
+## CI/CD Pipeline (Optional)
+
+The project includes GitHub Actions workflows for automated deployment using OIDC authentication (no stored credentials). See [CI/CD Pipeline Guide](docs/cicd_pipeline.md) for setup instructions.
+
 ## Monitoring
 
 Check the Step Functions console for workflow execution status. View reports in the Amazon S3 bucket (output in CDK deployment). Query Amazon DynamoDB for event history and audit trails.
