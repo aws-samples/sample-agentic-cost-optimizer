@@ -32,7 +32,7 @@ setup: init pre-commit-install
 
 init:
 	uv sync --group agents --group dev
-	cd infra && npm install
+	npm install --prefix infra
 	@echo "✓ Python deps installed in .venv/"
 	@echo "✓ Node deps installed in infra/"
 
@@ -47,7 +47,7 @@ test:
 	@echo "Running Python tests with coverage..."
 	uv run pytest tests/ --cov=src --cov-report=term-missing
 	@echo "Running TypeScript tests..."
-	cd infra && npm test
+	npm test --prefix infra
 	@echo "✓ All tests completed!"
 
 run-agent-local:
@@ -61,9 +61,9 @@ invoke-agent-local:
 		-d '{}'
 
 
-cdk-bootstrap: 
+cdk-bootstrap:
 	@echo "Bootstrapping CDK..."
-	cd infra && npm run build && npx cdk bootstrap
+	npm run cdk --prefix infra -- bootstrap
 	@echo "✓ CDK bootstrap completed"
 
 cdk-deploy:
@@ -72,16 +72,16 @@ cdk-deploy:
 	npm run deploy --prefix infra
 	@echo "✓ CDK deployment completed"
 
-cdk-hotswap: 
+cdk-hotswap:
 	@echo "Fast deploying Lambda changes..."
 	@echo "Environment: $(or $(ENVIRONMENT),dev), Version: $(or $(VERSION),v1)"
-	npx cdk deploy --hotswap --prefix infra
+	npm run deploy --prefix infra -- --hotswap
 	@echo "✓ CDK hotswap deployment completed"
 
-cdk-watch: 
+cdk-watch:
 	@echo "Starting CDK watch mode..."
 	@echo "Environment: $(or $(ENVIRONMENT),dev), Version: $(or $(VERSION),v1)"
-	npx cdk watch --prefix infra
+	npm run cdk --prefix infra -- watch
 
 cdk-destroy: 
 	@echo "Destroying CDK stack..."
