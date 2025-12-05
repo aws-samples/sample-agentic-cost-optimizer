@@ -112,13 +112,49 @@ jobs:
     needs: [test-python, test-typescript, test-cdk-nag]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     environment: staging
+    permissions:
+      contents: read
+      id-token: write
     concurrency:
       group: deploy-staging
       cancel-in-progress: false
     steps:
-      # TODO: Implement staging deployment when staging account is available
-      - name: Placeholder - Deploy to staging
-        run: echo "Staging deployment placeholder - implement when staging account is ready"
+      - name: Checkout code
+        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@ececac1a45f3b08a01d2dd070d28d111c5fe6722 # v4.1.0
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: us-east-1
+          audience: sts.amazonaws.com
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@1e862dfacbd1d6d858c55d9b792c756523627244 # v7.1.4
+        with:
+          python-version: "3.12"
+          enable-cache: true
+          prune-cache: false
+          cache-dependency-glob: |
+            uv.lock
+            pyproject.toml
+
+      - name: Setup Node.js
+        uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903 # v6.0.0
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: infra/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+        working-directory: infra
+
+      - name: Deploy to AWS
+        run: npm run deploy
+        working-directory: infra
+        env:
+          ENVIRONMENT: staging
 
   test-integration:
     runs-on: ubuntu-latest
