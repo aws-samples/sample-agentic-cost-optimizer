@@ -49,3 +49,15 @@ Two environments (`staging`, `prod`) provide isolation with separate secrets, pr
 - **Supply chain protection:** All GitHub Actions are pinned to SHA hashes
 - **Branch protection:** Deployments only trigger on push to `main` (requires PR merge)
 - **Concurrency control:** Prevents parallel deployments to the same environment
+
+### Fork PR Protection
+
+Fork PRs require manual approval before workflows run. This is controlled by a repo-level setting, not the workflow file itself.
+
+**Required setting:** Settings → Actions → General → "Require approval for all external contributors"
+
+This ensures:
+- Every push from a fork requires maintainer approval
+- Every new PR from a fork requires approval
+- Malicious workflow modifications in forks cannot execute without review
+- Maintainers can inspect the diff (including `.github/workflows/`) before approving
