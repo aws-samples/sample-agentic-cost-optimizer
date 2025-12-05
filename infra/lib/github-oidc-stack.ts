@@ -42,9 +42,6 @@ export class GitHubOidcStack extends cdk.Stack {
     const githubOidcProvider = new iam.OpenIdConnectProvider(this, 'GitHubOidcProvider', {
       url: 'https://token.actions.githubusercontent.com',
       clientIds: ['sts.amazonaws.com'],
-      // GitHub's thumbprint - this is stable and provided by GitHub
-      // See: https://github.blog/changelog/2023-06-27-github-actions-update-on-oidc-integration-with-aws/
-      thumbprints: ['ffffffffffffffffffffffffffffffffffffffff'],
     });
 
     this.role = new iam.Role(this, 'GitHubActionsRole', {
