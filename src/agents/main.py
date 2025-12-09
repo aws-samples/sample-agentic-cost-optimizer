@@ -7,7 +7,7 @@ from botocore.config import Config as BotocoreConfig
 from botocore.exceptions import ClientError, NoCredentialsError
 from strands import Agent
 from strands.models import BedrockModel
-from strands_tools import calculator, use_aws
+from strands_tools import calculator, use_aws, workflow
 
 from src.shared import (
     DEFAULT_CONNECT_TIMEOUT,
@@ -19,7 +19,7 @@ from src.shared import (
     record_event,
 )
 from src.shared.config import config
-from src.tools import convert_time_unix_to_iso, current_time_unix_utc, journal, storage
+from src.tools import Journal, Storage, convert_time_unix_to_iso, current_time_unix_utc
 
 app = BedrockAgentCoreApp()
 logger = app.logger
@@ -170,26 +170,70 @@ async def background_task(user_message: str, session_id: str):
     logger.info(f"Background task started - Session: {session_id}")
 
     analysis_prompt, report_prompt = load_prompts()
+    logger.info(f"Prompts loaded - Analysis: {len(analysis_prompt)} chars, Report: {len(report_prompt)} chars")
 
-    analysis_agent = create_agent(
-        system_prompt=analysis_prompt,
-        tools=[use_aws, journal, calculator, storage, current_time_unix_utc, convert_time_unix_to_iso],
+    journal_tool = Journal(session_id=session_id)
+    storage_tool = Storage(session_id=session_id)
+    logger.info(f"Tools initialized - Journal and Storage with session_id: {session_id}")
+
+    orchestrator_agent = create_agent(
+        system_prompt="You are a workflow orchestrator for AWS cost optimization. Use the workflow tool to coordinate analysis and reporting tasks.",
+        tools=[
+            workflow,
+            use_aws,
+            journal_tool.journal,
+            storage_tool.storage,
+            calculator,
+            current_time_unix_utc,
+            convert_time_unix_to_iso,
+        ],
     )
-    report_agent = create_agent(
-        system_prompt=report_prompt,
-        tools=[storage, journal],
-    )
+    logger.info("Orchestrator agent created with workflow, use_aws, journal, storage, calculator, and time tools")
+
+    workflow_id = f"cost_optimization_{session_id}"
+    logger.info(f"Workflow_Id: {workflow_id}")
 
     try:
-        await analysis_agent.invoke_async(
-            "Analyze AWS costs and identify optimization opportunities",
-            session_id=session_id,
+        logger.info("Creating workflow with 2 tasks: analysis and report")
+        orchestrator_agent.tool.workflow(
+            action="create",
+            workflow_id=workflow_id,
+            agent=orchestrator_agent,
+            tasks=[
+                {
+                    "task_id": "analysis",
+                    "description": "Analyze AWS Lambda costs and identify optimization opportunities. Use use_aws tool to discover Lambda functions, collect CloudWatch metrics, analyze usage patterns, and generate detailed recommendations with cost estimates. Save complete analysis results to S3 using storage tool.",
+                    "system_prompt": analysis_prompt,
+                    "tools": [
+                        "use_aws",
+                        "journal",
+                        "calculator",
+                        "storage",
+                        "current_time_unix_utc",
+                        "convert_time_unix_to_iso",
+                    ],
+                    "priority": 3,
+                },
+                {
+                    "task_id": "report",
+                    "description": "Generate cost optimization report based on analysis results. Load analysis data from S3 using storage tool, format into comprehensive plain text report with executive summary, findings, recommendations, and evidence. Save final reports to S3.",
+                    "system_prompt": report_prompt,
+                    "tools": ["storage", "journal"],
+                    "dependencies": ["analysis"],
+                    "priority": 3,
+                },
+            ],
         )
+        logger.info("Workflow created successfully")
 
-        response = await report_agent.invoke_async(
-            "Generate cost optimization report based on analysis results",
-            session_id=session_id,
+        logger.info("Starting workflow execution")
+        response = orchestrator_agent.tool.workflow(
+            action="start",
+            workflow_id=workflow_id,
+            agent=orchestrator_agent,
         )
+        logger.info(f"Workflow execution completed - Response type: {type(response)}")
+        logger.debug(f"Workflow response: {response}")
 
         logger.info(f"Background completed - Session: {session_id}")
         record_event(
