@@ -7,8 +7,8 @@ This package contains Strands tools for various operations:
 - time_tools: Time utilities for Unix/ISO timestamp conversions
 """
 
-from .journal import journal
-from .storage import storage
+from .journal import Journal
+from .storage import Storage
 from .time_tools import convert_time_unix_to_iso, current_time_unix_utc
 
-__all__ = ["journal", "storage", "current_time_unix_utc", "convert_time_unix_to_iso"]
+__all__ = ["Journal", "Storage", "current_time_unix_utc", "convert_time_unix_to_iso"]
