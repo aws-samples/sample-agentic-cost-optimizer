@@ -11,6 +11,7 @@ help:
 	@echo "Code Quality:"
 	@echo "  make check        - Run all code quality checks (pre-commit)"
 	@echo "  make test         - Run all tests"
+	@echo "  make eval         - Run DeepEval agent tests"
 	@echo ""
 	@echo "Local Development:"
 	@echo "  make run-agent-local   - Run agent locally with reload"
@@ -31,7 +32,7 @@ setup: init pre-commit-install
 	@echo "✓ Project setup complete!"
 
 init:
-	uv sync --group agents --group dev
+	uv sync --group agents --group dev --group eval
 	cd infra && npm install
 	@echo "✓ Python deps installed in .venv/"
 	@echo "✓ Node deps installed in infra/"
@@ -45,10 +46,15 @@ check:
 
 test:
 	@echo "Running Python tests with coverage..."
-	uv run pytest tests/ --cov=src --cov-report=term-missing
+	uv run pytest tests/ --ignore=tests/deepeval --cov=src --cov-report=term-missing
 	@echo "Running TypeScript tests..."
 	cd infra && npm test
 	@echo "✓ All tests completed!"
+
+eval:
+	@echo "Running DeepEval agent tests..."
+	uv run pytest tests/deepeval/ -v -s
+	@echo "✓ Eval tests completed!"
 
 run-agent-local:
 	./scripts/run-agent-locally.sh

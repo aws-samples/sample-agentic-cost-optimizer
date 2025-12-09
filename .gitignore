@@ -10,6 +10,10 @@ infra/dist/
 infra/cdk.out/
 infra/coverage
 
+
+# DeepEval
+.deepeval
+
 # Local Config
 .idea
 /.vscode/settings.json
