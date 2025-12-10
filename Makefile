@@ -62,6 +62,7 @@ else
 	@echo ""
 	@echo "Available phases:"
 	@echo "  discovery    - Discovery (Inventory) phase"
+	@echo "  metrics      - Usage and Metrics Collection phase"
 	@echo ""
 	@echo "Example: make eval PHASE=discovery"
 endif

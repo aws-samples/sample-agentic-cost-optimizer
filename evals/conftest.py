@@ -1,38 +1,25 @@
-"""Eval configuration and shared fixtures."""
+"""Eval fixtures and tool factories."""
 
+import json
 import os
 
 import pytest
 from deepeval.models import AmazonBedrockModel
 from deepeval.test_case import ToolCall
+from strands import tool
 
+from evals.mock_data import (
+    MOCK_CLOUDWATCH_GET_METRIC_DATA,
+    MOCK_CLOUDWATCH_METRIC_STATISTICS,
+    MOCK_LAMBDA_FUNCTIONS,
+    MOCK_LOGS_QUERY_RESULTS,
+    MOCK_LOGS_START_QUERY,
+)
 from src.shared.constants import DEFAULT_AWS_REGION, DEFAULT_MODEL_ID
 
 MODEL_ID = os.getenv("MODEL_ID", DEFAULT_MODEL_ID)
 AWS_REGION = os.getenv("AWS_REGION", DEFAULT_AWS_REGION)
-
-MOCK_LAMBDA_FUNCTIONS = {
-    "Functions": [
-        {
-            "FunctionName": "payment-processor",
-            "FunctionArn": "arn:aws:lambda:us-east-1:123456789012:function:payment-processor",
-            "Runtime": "python3.12",
-            "MemorySize": 1024,
-            "Timeout": 30,
-            "Architectures": ["x86_64"],
-            "LastModified": "2024-01-15T10:30:00.000+0000",
-        },
-        {
-            "FunctionName": "order-handler",
-            "FunctionArn": "arn:aws:lambda:us-east-1:123456789012:function:order-handler",
-            "Runtime": "python3.11",
-            "MemorySize": 512,
-            "Timeout": 15,
-            "Architectures": ["arm64"],
-            "LastModified": "2024-02-20T14:45:00.000+0000",
-        },
-    ]
-}
+FIXED_CURRENT_TIME = 1733011200  # 2024-12-01 00:00:00 UTC
 
 
 class ToolCapture:
@@ -50,6 +37,81 @@ class ToolCapture:
 
     def clear(self):
         self.calls = []
+
+
+def create_journal_tool(capture: ToolCapture):
+    """Create journal tool that captures invocations."""
+
+    @tool
+    def journal(action: str, phase_name: str = None, status: str = None, error_message: str = None) -> dict:
+        """Track workflow phases."""
+        capture.record("journal", action=action, phase_name=phase_name, status=status)
+        return {"success": True, "session_id": "eval-session"}
+
+    return journal
+
+
+def create_time_tool(capture: ToolCapture):
+    """Create current_time_unix_utc tool with fixed timestamp."""
+
+    @tool
+    def current_time_unix_utc() -> int:
+        """Get current Unix timestamp in UTC."""
+        capture.record("current_time_unix_utc")
+        return FIXED_CURRENT_TIME
+
+    return current_time_unix_utc
+
+
+def create_calculator_tool(capture: ToolCapture):
+    """Create calculator tool for arithmetic expressions."""
+
+    @tool
+    def calculator(expression: str) -> float:
+        """Evaluate arithmetic expressions."""
+        capture.record("calculator", expression=expression)
+        result = eval(expression, {"__builtins__": {}}, {})
+        return float(result)
+
+    return calculator
+
+
+def create_use_aws_tool(capture: ToolCapture):
+    """Create use_aws tool with mock responses."""
+
+    @tool
+    def use_aws(service: str, action: str, **kwargs) -> dict:
+        """Call AWS APIs."""
+        params = kwargs
+        if "kwargs" in kwargs and isinstance(kwargs["kwargs"], str):
+            params = json.loads(kwargs["kwargs"])
+
+        capture.record("use_aws", service=service, action=action, **params)
+
+        # Lambda API
+        if service == "lambda" and action == "list_functions":
+            return MOCK_LAMBDA_FUNCTIONS
+
+        # CloudWatch Metrics API
+        if service == "cloudwatch":
+            if action == "get_metric_data":
+                return MOCK_CLOUDWATCH_GET_METRIC_DATA
+            elif action == "get_metric_statistics":
+                metric_name = params.get("MetricName", "")
+                return MOCK_CLOUDWATCH_METRIC_STATISTICS.get(
+                    metric_name, MOCK_CLOUDWATCH_METRIC_STATISTICS["Invocations"]
+                )
+
+        # CloudWatch Logs API
+        if service == "logs":
+            if action == "start_query":
+                return MOCK_LOGS_START_QUERY
+            elif action == "get_query_results":
+                return MOCK_LOGS_QUERY_RESULTS
+
+        return {"error": f"Not implemented: {service}.{action}"}
+
+    return use_aws
 
 
 @pytest.fixture
