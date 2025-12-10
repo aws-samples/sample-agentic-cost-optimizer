@@ -172,3 +172,196 @@ MOCK_PRICING_LAMBDA_REQUESTS = {
         '{"product":{"productFamily":"Serverless","attributes":{"servicecode":"AWSLambda","location":"US East (N. Virginia)","usagetype":"Lambda-Request","group":"AWS-Lambda-Requests"}},"terms":{"OnDemand":{"XXXXXXXX.YYYYYYYY":{"priceDimensions":{"XXXXXXXX.YYYYYYYY.ZZZZZZZZ":{"unit":"Requests","endRange":"Inf","description":"$0.20 per 1M requests","appliesTo":[],"rateCode":"XXXXXXXX.YYYYYYYY.ZZZZZZZZ","beginRange":"0","pricePerUnit":{"USD":"0.0000002"}}}}}}}'
     ]
 }
+
+
+# =============================================================================
+# MOCK ANALYSIS RESULT (for Report Agent tests)
+# This represents the output from the Analysis Agent stored in S3
+# =============================================================================
+
+MOCK_ANALYSIS_RESULT = """
+# AWS Lambda Cost Optimization Analysis Complete
+
+## Executive Summary
+
+I analyzed your AWS Lambda environment and identified **$2.72 USD in monthly cost savings** (43% reduction) for your `payment-processor` function through three key optimizations:
+
+## Key Findings
+
+### Function Inventory
+- **1 Lambda function analyzed**: `payment-processor`
+- **High-usage function**: 1.5M invocations/month
+- **Current monthly cost**: $6.35 USD
+
+### Primary Optimization Opportunities
+
+1. **Memory Right-sizing** → **$1.51/month savings**
+   - Reduce from 1024 MB to 768 MB
+   - Function uses only 680 MB at P90, providing 33.6% headroom
+   - Low risk with 13% safety buffer maintained
+
+2. **Architecture Migration** → **$1.21/month savings**
+   - Migrate from x86_64 to ARM64 (Graviton2)
+   - Python 3.12 runtime is fully compatible
+   - ~20% better price-performance
+
+3. **Timeout Optimization** → **Risk reduction**
+   - Reduce from 30 seconds to 5 seconds
+   - Maximum observed duration: 890ms
+   - Prevents runaway execution costs
+
+## Immediate Action Items
+
+**Highest Impact, Lowest Risk:**
+1. **Reduce memory to 768 MB** - Test first in development
+2. **Optimize timeout to 5 seconds** - Monitor for 48 hours
+3. **Plan ARM64 migration** - Requires compatibility testing
+
+## Cost Impact
+- **Current**: $6.35/month
+- **Optimized**: $3.63/month
+- **Savings**: $2.72/month ($32.64/year)
+- **Reduction**: 43%
+
+## Data Quality
+- Analysis based on **actual CloudWatch metrics and logs**
+- **150,000 invocations** analyzed over 3-day period
+- Memory usage data from **CloudWatch Logs** with P90/P99 percentiles
+- Current **AWS Pricing API** data fetched for accurate calculations
+
+## Discovery Data
+
+### Lambda Functions Inventory
+| Function Name | Runtime | Memory (MB) | Timeout (s) | Architecture |
+|--------------|---------|-------------|-------------|--------------|
+| payment-processor | python3.12 | 1024 | 30 | x86_64 |
+
+Function ARN: arn:aws:lambda:us-east-1:123456789012:function:payment-processor
+Log Group: /aws/lambda/payment-processor
+
+## Metrics Data (Last 30 Days)
+
+### Invocation Metrics
+- Total Invocations: 150,000 (3-day sample)
+- Projected Monthly: ~1,500,000 invocations
+- Error Rate: 0.013% (~20 errors)
+- Throttles: 0
+
+### Duration Metrics
+- Average Duration: 242 ms
+- Maximum Duration: 890 ms
+
+### Memory Metrics (from CloudWatch Logs Insights)
+- Average Memory Used: 512.5 MB
+- P90 Memory Used: 680.2 MB
+- P99 Memory Used: 745.8 MB
+- Allocated Memory: 1024 MB
+- P90 Headroom: 33.6%
+
+### Concurrency
+- Average Concurrent Executions: 11
+- Maximum Concurrent Executions: 18
+
+## Detailed Recommendations
+
+### Recommendation 1: Memory Right-sizing (1024 MB → 768 MB)
+**Priority**: HIGH
+**Monthly Savings**: $1.51
+
+**Evidence**:
+- P90 memory usage: 680.2 MB
+- Headroom at P90: 33.6%
+- Proposed allocation: 768 MB (13% buffer above P90)
+
+**Cost Calculation**:
+- Current: 1.0 GB × 1,500,000 × 0.242s × $0.0000166667 = $6.05
+- Optimized: 0.75 GB × 1,500,000 × 0.242s × $0.0000166667 = $4.54
+- Savings: $1.51/month
+
+**Risk Assessment**: LOW
+- 13% safety buffer maintained above P90
+- Monitor P99 after change
+
+**Implementation Steps**:
+1. Update function memory configuration to 768 MB
+2. Deploy to development/staging first
+3. Monitor memory metrics for 48 hours
+4. Roll out to production with canary deployment
+
+### Recommendation 2: ARM64 Architecture Migration
+**Priority**: MEDIUM
+**Monthly Savings**: $1.21
+
+**Evidence**:
+- Current architecture: x86_64
+- Runtime: python3.12 (fully compatible with ARM64/Graviton2)
+- No native dependencies detected
+
+**Cost Calculation**:
+- x86_64 compute: $6.05/month
+- ARM64 compute: $4.84/month (20% reduction)
+- Savings: $1.21/month
+
+**Risk Assessment**: LOW
+- Python runtime is architecture-agnostic
+- No code changes required
+- Easy rollback via alias/version
+
+**Implementation Steps**:
+1. Update function configuration: Architectures = ["arm64"]
+2. Deploy and test with 10% traffic using aliases
+3. Monitor performance metrics for 24-48 hours
+4. Gradually shift traffic to 100%
+
+### Recommendation 3: Timeout Optimization (30s → 5s)
+**Priority**: LOW
+**Monthly Savings**: $0 (risk reduction)
+
+**Evidence**:
+- Maximum observed duration: 890ms
+- Current timeout: 30 seconds
+- Recommended timeout: 5 seconds (5.6x max duration)
+
+**Risk Assessment**: LOW
+- 5 second timeout provides 5.6x headroom above max observed
+- Prevents runaway executions from accumulating costs
+
+**Implementation Steps**:
+1. Update timeout to 5 seconds
+2. Monitor for timeout errors
+3. Adjust if legitimate long-running invocations occur
+
+## Evidence Appendix
+
+### CloudWatch Queries Used
+```
+# Memory Usage Query
+fields @timestamp, @requestId, @maxMemoryUsed, @memorySize, @billedDuration
+| filter @type = "REPORT"
+| stats count() as invocations,
+        avg(@maxMemoryUsed) as avgMemoryUsedMB,
+        pct(@maxMemoryUsed, 50) as p50MemoryUsedMB,
+        pct(@maxMemoryUsed, 90) as p90MemoryUsedMB,
+        pct(@maxMemoryUsed, 99) as p99MemoryUsedMB,
+        max(@maxMemoryUsed) as maxMemoryUsedMB,
+        avg(@memorySize) as allocatedMemoryMB
+
+# Cold Start Analysis Query
+filter @type = "REPORT"
+| fields @timestamp, @initDuration, @duration, @maxMemoryUsed
+| filter ispresent(@initDuration)
+| stats count() as coldStarts,
+        avg(@initDuration) as avgInitDurationMs,
+        pct(@initDuration, 50) as p50InitDurationMs,
+        pct(@initDuration, 95) as p95InitDurationMs,
+        pct(@initDuration, 99) as p99InitDurationMs,
+        max(@initDuration) as maxInitDurationMs
+```
+
+### Pricing Data Retrieved
+- Lambda GB-Second (x86): $0.0000166667
+- Lambda GB-Second (ARM): $0.0000133334
+- Lambda Requests: $0.20 per 1M ($0.0000002 per request)
+- Pricing Region: US East (N. Virginia)
+- Pricing Timestamp: 2024-12-01T00:00:00Z
+"""

@@ -135,11 +135,11 @@ class TestAnalysisAgent:
         )
 
         available_tools = [
-            ToolCall(name="journal"),
-            ToolCall(name="use_aws"),
-            ToolCall(name="current_time_unix_utc"),
-            ToolCall(name="calculator"),
-            ToolCall(name="storage"),
+            ToolCall(name="journal", description="Track workflow phases with start_task and complete_task actions"),
+            ToolCall(name="use_aws", description="Call AWS APIs for Lambda, CloudWatch, and Pricing services"),
+            ToolCall(name="current_time_unix_utc", description="Get current Unix timestamp in UTC"),
+            ToolCall(name="calculator", description="Evaluate arithmetic expressions for cost calculations"),
+            ToolCall(name="storage", description="Read and write analysis results to S3 storage"),
         ]
 
         # Metric 1: Tool Correctness (judged by Llama)

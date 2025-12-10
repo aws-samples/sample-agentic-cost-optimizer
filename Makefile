@@ -62,6 +62,7 @@ else
 	@echo ""
 	@echo "Available agents:"
 	@echo "  analysis     - Analysis agent (~3 min)"
+	@echo "  report       - Report agent (~1 min)"
 	@echo ""
 	@echo "Example: make eval AGENT=analysis"
 endif
