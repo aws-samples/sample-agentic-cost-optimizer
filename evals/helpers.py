@@ -7,14 +7,12 @@ from typing import Any
 
 def print_eval_results(
     phase_name: str,
-    prompt_chars: int,
     tool_score: float,
     tool_reason: str,
     task_score: float,
     task_reason: str,
     capture: Any,
     token_usage: dict,
-    metrics_summary: dict,
 ) -> None:
     """Print standardized evaluation results."""
     print(f"\n{'=' * 60}")
@@ -52,13 +50,4 @@ def print_eval_results(
     print(f"  Output Tokens: {token_usage.get('outputTokens', 'N/A')}")
     print(f"  Total Tokens:  {token_usage.get('totalTokens', 'N/A')}")
 
-    # Execution stats
-    print(f"\n{'-' * 40}")
-    print("EXECUTION STATS")
-    print(f"{'-' * 40}")
-    print(f"  System Prompt: {prompt_chars} chars")
-    total_duration = metrics_summary.get("total_duration")
-    avg_cycle = metrics_summary.get("average_cycle_time")
-    print(f"  Duration:      {total_duration:.2f}s" if total_duration else "  Duration:      N/A")
-    print(f"  Avg Cycle:     {avg_cycle:.2f}s" if avg_cycle else "  Avg Cycle:     N/A")
     print(f"\n{'=' * 60}")
