@@ -161,17 +161,14 @@ class TestAnalysisAgent:
         task_metric.measure(test_case)
 
         # Print results
-        metrics_summary = agent.event_loop_metrics.get_summary()
         print_eval_results(
             phase_name="Analysis Agent",
-            prompt_chars=len(prompt),
             tool_score=tool_metric.score,
             tool_reason=tool_metric.reason,
             task_score=task_metric.score,
             task_reason=task_metric.reason,
             capture=capture,
-            token_usage=metrics_summary.get("accumulated_usage", {}),
-            metrics_summary=metrics_summary,
+            token_usage=agent.event_loop_metrics.get_summary().get("accumulated_usage", {}),
         )
 
         assert tool_metric.score >= 0.7, f"Tool correctness failed: {tool_metric.reason}"
