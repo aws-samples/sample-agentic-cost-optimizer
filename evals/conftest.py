@@ -14,11 +14,18 @@ from evals.mock_data import (
     MOCK_LAMBDA_FUNCTIONS,
     MOCK_LOGS_QUERY_RESULTS,
     MOCK_LOGS_START_QUERY,
+    MOCK_PRICING_LAMBDA_COMPUTE,
+    MOCK_PRICING_LAMBDA_REQUESTS,
 )
 from src.shared.constants import DEFAULT_AWS_REGION, DEFAULT_MODEL_ID
 
-MODEL_ID = os.getenv("MODEL_ID", DEFAULT_MODEL_ID)
+# Agent model - runs the actual workflow
+AGENT_MODEL_ID = os.getenv("MODEL_ID", DEFAULT_MODEL_ID)
 AWS_REGION = os.getenv("AWS_REGION", DEFAULT_AWS_REGION)
+
+# Judge model - different family to avoid bias (Llama instead of Claude)
+JUDGE_MODEL_ID = os.getenv("JUDGE_MODEL_ID", "us.meta.llama3-3-70b-instruct-v1:0")
+
 FIXED_CURRENT_TIME = 1733011200  # 2024-12-01 00:00:00 UTC
 
 
@@ -76,6 +83,18 @@ def create_calculator_tool(capture: ToolCapture):
     return calculator
 
 
+def create_storage_tool(capture: ToolCapture):
+    """Create storage tool that captures write operations."""
+
+    @tool
+    def storage(action: str, filename: str = None, content: str = None) -> dict:
+        """Store analysis results."""
+        capture.record("storage", action=action, filename=filename)
+        return {"success": True, "message": f"Stored {filename}"}
+
+    return storage
+
+
 def create_use_aws_tool(capture: ToolCapture):
     """Create use_aws tool with mock responses."""
 
@@ -109,6 +128,15 @@ def create_use_aws_tool(capture: ToolCapture):
             elif action == "get_query_results":
                 return MOCK_LOGS_QUERY_RESULTS
 
+        # Pricing API
+        if service == "pricing":
+            if action == "get_products":
+                filters = params.get("Filters", [])
+                for f in filters:
+                    if f.get("Field") == "group" and "Requests" in f.get("Value", ""):
+                        return MOCK_PRICING_LAMBDA_REQUESTS
+                return MOCK_PRICING_LAMBDA_COMPUTE
+
         return {"error": f"Not implemented: {service}.{action}"}
 
     return use_aws
@@ -121,6 +149,6 @@ def capture():
 
 
 @pytest.fixture
-def deepeval_model():
-    """DeepEval model for metrics evaluation."""
-    return AmazonBedrockModel(model_id=MODEL_ID, region_name=AWS_REGION)
+def judge_model():
+    """Judge model for metrics evaluation (different family from agent)."""
+    return AmazonBedrockModel(model_id=JUDGE_MODEL_ID, region_name=AWS_REGION)
