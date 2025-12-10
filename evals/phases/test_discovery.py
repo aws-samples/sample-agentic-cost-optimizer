@@ -80,16 +80,22 @@ def mock_tools(capture):
 
 
 @pytest.fixture
-def agent(mock_tools):
+def discovery_prompt():
+    """Load and return the discovery prompt for inspection."""
+    return load_discovery_prompt()
+
+
+@pytest.fixture
+def agent(mock_tools, discovery_prompt):
     """Create Discovery agent with real prompt."""
     model = BedrockModel(model_id=MODEL_ID, region_name=AWS_REGION)
-    return Agent(model=model, system_prompt=load_discovery_prompt(), tools=mock_tools)
+    return Agent(model=model, system_prompt=discovery_prompt, tools=mock_tools)
 
 
 class TestDiscoveryPhase:
     """Discovery phase evaluation."""
 
-    def test_discovery_phase(self, agent, capture, deepeval_model):
+    def test_discovery_phase(self, agent, capture, deepeval_model, discovery_prompt):
         """
         Evaluate the complete Discovery phase.
 
@@ -146,10 +152,11 @@ class TestDiscoveryPhase:
         token_usage = metrics_summary.get("accumulated_usage", {})
 
         # Print evaluation results
-        print(f"\n{'-' * 60}")
+        print(f"\n{'-' * 40}")
         print("DISCOVERY PHASE EVALUATION")
-        print(f"{'-' * 60}")
-        print(f"\nScore: {metric.score}")
+        print(f"{'-' * 40}")
+        print(f"\nSystem Prompt: {len(discovery_prompt)} chars")
+        print(f"Score: {metric.score}")
         print(f"Reason: {metric.reason}")
         print(f"\nTool Calls: {capture.names}")
         for i, call in enumerate(capture.calls):
@@ -177,7 +184,7 @@ class TestDiscoveryPhase:
         print(f"  Cycles:        {cycle_count}")
         print(f"  Duration:      {total_duration:.2f}s" if total_duration else "  Duration:      N/A")
         print(f"  Avg Cycle:     {avg_cycle:.2f}s" if avg_cycle else "  Avg Cycle:     N/A")
-        print(f"\n{'=' * 60}")
+        print(f"\n{'-' * 40}")
 
         # Assertion
         assert metric.score >= 0.9, f"Tool correctness failed: {metric.reason}"

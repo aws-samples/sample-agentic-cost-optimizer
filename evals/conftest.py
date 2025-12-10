@@ -1,8 +1,4 @@
-"""
-Eval configuration and shared fixtures.
-
-Common fixtures for all evaluation tests.
-"""
+"""Eval configuration and shared fixtures."""
 
 import os
 
@@ -10,17 +6,10 @@ import pytest
 from deepeval.models import AmazonBedrockModel
 from deepeval.test_case import ToolCall
 
-# =============================================================================
-# CONFIG
-# =============================================================================
+from src.shared.constants import DEFAULT_AWS_REGION, DEFAULT_MODEL_ID
 
-MODEL_ID = os.getenv("MODEL_ID", "us.anthropic.claude-sonnet-4-20250514-v1:0")
-AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
-
-
-# =============================================================================
-# MOCK DATA
-# =============================================================================
+MODEL_ID = os.getenv("MODEL_ID", DEFAULT_MODEL_ID)
+AWS_REGION = os.getenv("AWS_REGION", DEFAULT_AWS_REGION)
 
 MOCK_LAMBDA_FUNCTIONS = {
     "Functions": [
@@ -46,11 +35,6 @@ MOCK_LAMBDA_FUNCTIONS = {
 }
 
 
-# =============================================================================
-# TOOL CAPTURE
-# =============================================================================
-
-
 class ToolCapture:
     """Captures tool calls for DeepEval evaluation."""
 
@@ -66,11 +50,6 @@ class ToolCapture:
 
     def clear(self):
         self.calls = []
-
-
-# =============================================================================
-# FIXTURES
-# =============================================================================
 
 
 @pytest.fixture
