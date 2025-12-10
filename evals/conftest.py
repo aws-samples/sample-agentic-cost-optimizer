@@ -1,19 +1,14 @@
 """
-DeepEval test configuration and shared fixtures.
+Eval configuration and shared fixtures.
 
-Common fixtures for all phase evaluation tests.
+Common fixtures for all evaluation tests.
 """
 
 import os
-import sys
 
 import pytest
 from deepeval.models import AmazonBedrockModel
 from deepeval.test_case import ToolCall
-
-# Remove mocked strands modules from tests/conftest.py BEFORE test files import strands
-for mod in [k for k in sys.modules.keys() if k.startswith("strands")]:
-    del sys.modules[mod]
 
 # =============================================================================
 # CONFIG

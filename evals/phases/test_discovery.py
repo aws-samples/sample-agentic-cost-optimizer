@@ -1,5 +1,5 @@
 """
-Discovery Phase Evaluation using DeepEval
+Discovery Phase Evaluation
 
 Tests the Discovery phase using:
 - Real Strands Agent with Bedrock LLM
@@ -15,7 +15,7 @@ from deepeval.test_case import LLMTestCase, ToolCall, ToolCallParams
 from strands import Agent, tool
 from strands.models import BedrockModel
 
-from .conftest import AWS_REGION, MOCK_LAMBDA_FUNCTIONS, MODEL_ID
+from evals.conftest import AWS_REGION, MOCK_LAMBDA_FUNCTIONS, MODEL_ID, ToolCapture
 
 
 def load_discovery_prompt() -> str:
@@ -52,9 +52,10 @@ Do NOT proceed to other phases. Report findings and end.
 """
 
 
-# =============================================================================
-# FIXTURES
-# =============================================================================
+@pytest.fixture
+def capture():
+    """Fresh tool capture for each test."""
+    return ToolCapture()
 
 
 @pytest.fixture
@@ -85,14 +86,8 @@ def agent(mock_tools):
     return Agent(model=model, system_prompt=load_discovery_prompt(), tools=mock_tools)
 
 
-# =============================================================================
-# TESTS
-# =============================================================================
-
-
 class TestDiscoveryPhase:
-    """
-    Discovery phase evaluation."""
+    """Discovery phase evaluation."""
 
     def test_discovery_phase(self, agent, capture, deepeval_model):
         """
@@ -113,7 +108,7 @@ class TestDiscoveryPhase:
                 input_parameters={
                     "action": "start_task",
                     "phase_name": "Discovery",
-                    "status": None,  # Not used for start_task
+                    "status": None,
                 },
             ),
             ToolCall(
@@ -146,20 +141,42 @@ class TestDiscoveryPhase:
         )
         metric.measure(test_case)
 
-        # Print evaluation results
-        print(f"\n{'=' * 60}")
-        print("DISCOVERY PHASE EVALUATION")
-        print(f"{'=' * 60}")
+        # Get metrics from agent
+        metrics_summary = agent.event_loop_metrics.get_summary()
+        token_usage = metrics_summary.get("accumulated_usage", {})
 
-        # DeepEval metric results
+        # Print evaluation results
+        print(f"\n{'-' * 60}")
+        print("DISCOVERY PHASE EVALUATION")
+        print(f"{'-' * 60}")
         print(f"\nScore: {metric.score}")
         print(f"Reason: {metric.reason}")
-
-        # Tool calls captured
         print(f"\nTool Calls: {capture.names}")
         for i, call in enumerate(capture.calls):
             print(f"  {i + 1}. {call.name}({call.input_parameters})")
 
+        # Token usage stats
+        print(f"\n{'-' * 40}")
+        print("TOKEN USAGE")
+        print(f"{'-' * 40}")
+        print(f"  Input Tokens:  {token_usage.get('inputTokens', 'N/A')}")
+        print(f"  Output Tokens: {token_usage.get('outputTokens', 'N/A')}")
+        print(f"  Total Tokens:  {token_usage.get('totalTokens', 'N/A')}")
+        if token_usage.get("cacheReadInputTokens"):
+            print(f"  Cache Read:    {token_usage.get('cacheReadInputTokens')}")
+        if token_usage.get("cacheWriteInputTokens"):
+            print(f"  Cache Write:   {token_usage.get('cacheWriteInputTokens')}")
+
+        # Execution stats
+        print(f"\n{'-' * 40}")
+        print("TEST EXECUTION STATS")
+        print(f"{'-' * 40}")
+        cycle_count = metrics_summary.get("cycle_count") or metrics_summary.get("cycles", "N/A")
+        total_duration = metrics_summary.get("total_duration")
+        avg_cycle = metrics_summary.get("average_cycle_time")
+        print(f"  Cycles:        {cycle_count}")
+        print(f"  Duration:      {total_duration:.2f}s" if total_duration else "  Duration:      N/A")
+        print(f"  Avg Cycle:     {avg_cycle:.2f}s" if avg_cycle else "  Avg Cycle:     N/A")
         print(f"\n{'=' * 60}")
 
         # Assertion
