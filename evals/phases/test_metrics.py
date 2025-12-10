@@ -55,9 +55,8 @@ Use these tools for time calculations:
 
 ## IMPORTANT
 
-After collecting CloudWatch metrics for the function, STOP immediately.
+After collecting CloudWatch metrics and Logs Insights data for the function, STOP immediately.
 Do NOT proceed to Analysis phase. Report metrics findings and end.
-Skip CloudWatch Logs Insights queries (assume AccessDenied).
 """
 
 
