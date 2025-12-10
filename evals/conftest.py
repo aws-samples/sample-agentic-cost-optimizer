@@ -34,6 +34,7 @@ class ToolCapture:
 
     def __init__(self):
         self.calls: list[ToolCall] = []
+        self.written_files: dict[str, str] = {}  # For report agent to capture file contents
 
     def record(self, name: str, **kwargs):
         self.calls.append(ToolCall(name=name, input_parameters=kwargs))
@@ -44,6 +45,7 @@ class ToolCapture:
 
     def clear(self):
         self.calls = []
+        self.written_files = {}
 
 
 def create_journal_tool(capture: ToolCapture):
@@ -83,14 +85,28 @@ def create_calculator_tool(capture: ToolCapture):
     return calculator
 
 
-def create_storage_tool(capture: ToolCapture):
-    """Create storage tool that captures write operations."""
+def create_storage_tool(capture: ToolCapture, mock_read_content: str = None):
+    """Create storage tool that captures read/write operations.
+
+    Args:
+        capture: ToolCapture instance to record calls
+        mock_read_content: If provided, returns this content for read operations (for report agent)
+    """
 
     @tool
     def storage(action: str, filename: str = None, content: str = None) -> dict:
-        """Store analysis results."""
+        """Read/write files to S3 storage."""
         capture.record("storage", action=action, filename=filename)
-        return {"success": True, "message": f"Stored {filename}"}
+
+        if action == "read":
+            if mock_read_content and filename == "analysis.txt":
+                return {"success": True, "content": mock_read_content}
+            return {"success": False, "error": f"File not found: {filename}"}
+        elif action == "write":
+            capture.written_files[filename] = content
+            return {"success": True, "s3_uri": f"s3://bucket/eval-session/{filename}"}
+        else:
+            return {"success": False, "error": f"Unknown action: {action}"}
 
     return storage
 
