@@ -154,3 +154,21 @@ MOCK_LOGS_QUERY_RESULTS = {
         ]
     ],
 }
+
+
+# =============================================================================
+# PRICING API RESPONSES
+# https://docs.aws.amazon.com/awsaccountbilling/latest/aboutv2/price-list-api.html
+# =============================================================================
+
+MOCK_PRICING_LAMBDA_COMPUTE = {
+    "PriceList": [
+        '{"product":{"productFamily":"Serverless","attributes":{"servicecode":"AWSLambda","location":"US East (N. Virginia)","usagetype":"Lambda-GB-Second","group":"AWS-Lambda-Duration"}},"terms":{"OnDemand":{"XXXXXXXX.YYYYYYYY":{"priceDimensions":{"XXXXXXXX.YYYYYYYY.ZZZZZZZZ":{"unit":"Lambda-GB-Second","endRange":"Inf","description":"$0.0000166667 per GB-second","appliesTo":[],"rateCode":"XXXXXXXX.YYYYYYYY.ZZZZZZZZ","beginRange":"0","pricePerUnit":{"USD":"0.0000166667"}}}}}}}'
+    ]
+}
+
+MOCK_PRICING_LAMBDA_REQUESTS = {
+    "PriceList": [
+        '{"product":{"productFamily":"Serverless","attributes":{"servicecode":"AWSLambda","location":"US East (N. Virginia)","usagetype":"Lambda-Request","group":"AWS-Lambda-Requests"}},"terms":{"OnDemand":{"XXXXXXXX.YYYYYYYY":{"priceDimensions":{"XXXXXXXX.YYYYYYYY.ZZZZZZZZ":{"unit":"Requests","endRange":"Inf","description":"$0.20 per 1M requests","appliesTo":[],"rateCode":"XXXXXXXX.YYYYYYYY.ZZZZZZZZ","beginRange":"0","pricePerUnit":{"USD":"0.0000002"}}}}}}}'
+    ]
+}

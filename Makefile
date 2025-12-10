@@ -13,7 +13,7 @@ help:
 	@echo "  make test         - Run all tests"
 	@echo ""
 	@echo "Agent Evaluations:"
-	@echo "  make eval PHASE=<name>  - Run specific phase eval (e.g., discovery)"
+	@echo "  make eval AGENT=<name>  - Run agent E2E eval (e.g., analysis)"
 	@echo ""
 	@echo "Local Development:"
 	@echo "  make run-agent-local   - Run agent locally with reload"
@@ -54,17 +54,16 @@ test:
 	@echo "✓ All tests completed!"
 
 eval:
-ifdef PHASE
-	@echo "Running $(PHASE) phase evaluation..."
-	uv run pytest evals/phases/test_$(PHASE).py -v -s
+ifdef AGENT
+	@echo "Running $(AGENT) agent evaluation..."
+	uv run pytest evals/test_$(AGENT).py -v -s
 else
-	@echo "Usage: make eval PHASE=<phase_name>"
+	@echo "Usage: make eval AGENT=<agent_name>"
 	@echo ""
-	@echo "Available phases:"
-	@echo "  discovery    - Discovery (Inventory) phase"
-	@echo "  metrics      - Usage and Metrics Collection phase"
+	@echo "Available agents:"
+	@echo "  analysis     - Analysis agent (~3 min)"
 	@echo ""
-	@echo "Example: make eval PHASE=discovery"
+	@echo "Example: make eval AGENT=analysis"
 endif
 
 run-agent-local:
