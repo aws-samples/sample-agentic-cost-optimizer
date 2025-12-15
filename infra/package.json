@@ -19,7 +19,7 @@
   "dependencies": {
     "@aws-cdk/aws-bedrock-agentcore-alpha": "^2.229.0-alpha.0",
     "@mrgrain/cdk-esbuild": "^5.7.6",
-    "aws-cdk-lib": "^2.232.1",
+    "aws-cdk-lib": "^2.232.2",
     "constructs": "10.4.4",
     "esbuild": "^0.27.1"
   },
@@ -27,7 +27,7 @@
     "@trivago/prettier-plugin-sort-imports": "^6.0.0",
     "@types/node": "^24.10.1",
     "@vitest/coverage-v8": "^4.0.15",
-    "aws-cdk": "^2.1033.0",
+    "aws-cdk": "^2.1034.0",
     "cdk-nag": "^2.28.195",
     "prettier": "^3.7.4",
     "typescript": "^5.6.3",
