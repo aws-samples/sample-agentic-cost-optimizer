@@ -48,9 +48,15 @@ mock_app.async_task = lambda func: func  # Make async_task decorator a no-op
 mock_strands = MagicMock()
 mock_strands.tool = mock_tool_decorator
 
+# Create multiagent mock with GraphBuilder
+mock_multiagent = MagicMock()
+mock_graph_builder = MagicMock()
+mock_multiagent.GraphBuilder = mock_graph_builder
+
 mocks_to_apply = {
     "strands": mock_strands,
     "strands.models": MagicMock(),
+    "strands.multiagent": mock_multiagent,
     "strands_tools": MagicMock(),
     "bedrock_agentcore.runtime": MagicMock(BedrockAgentCoreApp=lambda: mock_app),
 }
