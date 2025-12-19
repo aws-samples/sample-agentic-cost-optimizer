@@ -179,7 +179,7 @@ class TestGraphBuilder:
         mock_builder.set_entry_point.assert_called_once_with("analysis")
 
         # Verify timeout was set
-        mock_builder.set_execution_timeout.assert_called_once_with(600)
+        mock_builder.set_execution_timeout.assert_called_once_with(900)
 
         # Verify build was called
         mock_builder.build.assert_called_once()
