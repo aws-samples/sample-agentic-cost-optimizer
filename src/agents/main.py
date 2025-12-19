@@ -104,6 +104,28 @@ def load_prompts() -> tuple[str, str]:
     return analysis_prompt, report_prompt
 
 
+def build_cost_optimization_graph(
+    analysis_agent: Agent,
+    report_agent: Agent,
+):
+    """Build graph with analysis -> report dependency.
+
+    Args:
+        analysis_agent: Agent for cost analysis
+        report_agent: Agent for report generation
+
+    Returns:
+        Configured Graph instance
+    """
+    builder = GraphBuilder()
+    builder.add_node(analysis_agent, "analysis")
+    builder.add_node(report_agent, "report")
+    builder.add_edge("analysis", "report")
+    builder.set_entry_point("analysis")
+    builder.set_execution_timeout(900)  # 15 minutes
+    return builder.build()
+
+
 def _handle_background_task_error(
     session_id: str,
     exception: Exception,
@@ -188,18 +210,10 @@ async def background_task(user_message: str, session_id: str):
         tools=[storage, journal],
     )
 
+    result = None
     try:
-        # Build graph with analysis -> report dependency
-        builder = GraphBuilder()
-        builder.add_node(analysis_agent, "analysis")
-        builder.add_node(report_agent, "report")
-        builder.add_edge("analysis", "report")
-        builder.set_entry_point("analysis")
-        builder.set_execution_timeout(600)  # 10 minutes
-
-        graph = builder.build()
-
-        logger.info(f"Graph built - Session: {session_id}, Nodes: 2, Entry: analysis")
+        graph = build_cost_optimization_graph(analysis_agent, report_agent)
+        logger.info(f"Graph built - Session: {session_id}")
 
         # Execute graph with session_id in invocation_state
         result = await graph.invoke_async(
@@ -207,31 +221,17 @@ async def background_task(user_message: str, session_id: str):
             invocation_state={"session_id": session_id},
         )
 
-        logger.info(
-            f"Graph execution completed - Session: {session_id}, "
-            f"Status: {result.status}, "
-            f"Completed: {result.completed_nodes}/{result.total_nodes}, "
-            f"Failed: {result.failed_nodes}, "
-            f"Time: {result.execution_time}ms"
-        )
-
         # Record successful completion
-        if result.status.value == "completed":
-            logger.info(f"Background completed - Session: {session_id}")
-            record_event(
-                session_id=session_id,
-                status=EventStatus.AGENT_BACKGROUND_TASK_COMPLETED,
-                table_name=config.journal_table_name,
-                ttl_days=config.ttl_days,
-                region_name=config.aws_region,
-            )
-            # Return final result from report node
-            return result.results["report"].result
-        else:
-            # Graph failed
-            error_msg = f"Graph execution failed with status: {result.status.value}"
-            logger.error(f"Graph failed - Session: {session_id}, Status: {result.status.value}")
-            return _handle_background_task_error(session_id, Exception(error_msg))
+        logger.info(f"Background completed - Session: {session_id}")
+        record_event(
+            session_id=session_id,
+            status=EventStatus.AGENT_BACKGROUND_TASK_COMPLETED,
+            table_name=config.journal_table_name,
+            ttl_days=config.ttl_days,
+            region_name=config.aws_region,
+        )
+        # Return final result from report node
+        return result.results["report"].result
 
     except NoCredentialsError as e:
         return _handle_background_task_error(session_id, e)
@@ -241,6 +241,16 @@ async def background_task(user_message: str, session_id: str):
 
     except Exception as e:
         return _handle_background_task_error(session_id, e)
+
+    finally:
+        if result is not None:
+            logger.info(
+                f"Graph execution completed - Session: {session_id}, "
+                f"Status: {result.status}, "
+                f"Completed: {result.completed_nodes}/{result.total_nodes}, "
+                f"Failed: {result.failed_nodes}, "
+                f"Time: {result.execution_time}ms"
+            )
 
 
 @app.entrypoint

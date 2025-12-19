@@ -146,6 +146,48 @@ class TestAgentConfiguration:
         assert call_kwargs["tools"] == []
 
 
+class TestGraphBuilder:
+    """Test cases for build_cost_optimization_graph function."""
+
+    @patch("src.agents.main.GraphBuilder")
+    def test_build_cost_optimization_graph(self, mock_graph_builder_class):
+        """Test that build_cost_optimization_graph constructs graph correctly."""
+        from src.agents.main import build_cost_optimization_graph
+
+        mock_analysis_agent = MagicMock()
+        mock_report_agent = MagicMock()
+
+        mock_builder = MagicMock()
+        mock_graph = MagicMock()
+        mock_builder.build.return_value = mock_graph
+        mock_graph_builder_class.return_value = mock_builder
+
+        result = build_cost_optimization_graph(mock_analysis_agent, mock_report_agent)
+
+        # Verify GraphBuilder was instantiated
+        mock_graph_builder_class.assert_called_once()
+
+        # Verify nodes were added
+        assert mock_builder.add_node.call_count == 2
+        mock_builder.add_node.assert_any_call(mock_analysis_agent, "analysis")
+        mock_builder.add_node.assert_any_call(mock_report_agent, "report")
+
+        # Verify edge was added
+        mock_builder.add_edge.assert_called_once_with("analysis", "report")
+
+        # Verify entry point was set
+        mock_builder.set_entry_point.assert_called_once_with("analysis")
+
+        # Verify timeout was set
+        mock_builder.set_execution_timeout.assert_called_once_with(600)
+
+        # Verify build was called
+        mock_builder.build.assert_called_once()
+
+        # Verify graph was returned
+        assert result == mock_graph
+
+
 class TestBackgroundTask:
     """Test cases for background_task function."""
 
@@ -170,21 +212,19 @@ class TestBackgroundTask:
         mock_create_task_patch.assert_called_once()
 
     @pytest.mark.asyncio
-    @patch("src.agents.main.GraphBuilder")
+    @patch("src.agents.main.build_cost_optimization_graph")
     @patch("src.agents.main.record_event")
     @patch("src.agents.main.create_agent")
-    async def test_background_task_success(self, mock_create_agent, mock_record_event, mock_graph_builder_class):
+    async def test_background_task_success(self, mock_create_agent, mock_record_event, mock_build_graph):
         """Test successful background task execution with graph pattern."""
         mock_analysis_agent = MagicMock()
         mock_report_agent = MagicMock()
         mock_report_response = MagicMock()
         mock_report_response.message = "Report generated successfully"
 
-        # create_agent is called twice: first for analysis_agent, then for report_agent
         mock_create_agent.side_effect = [mock_analysis_agent, mock_report_agent]
 
-        # Mock GraphBuilder and graph execution
-        mock_builder = MagicMock()
+        # Mock graph execution
         mock_graph = MagicMock()
         mock_graph_result = MagicMock()
         mock_graph_result.status.value = "completed"
@@ -197,8 +237,7 @@ class TestBackgroundTask:
         mock_graph_result.results = {"report": mock_node_result}
 
         mock_graph.invoke_async = AsyncMock(return_value=mock_graph_result)
-        mock_builder.build.return_value = mock_graph
-        mock_graph_builder_class.return_value = mock_builder
+        mock_build_graph.return_value = mock_graph
 
         session_id = "test-session-123"
         user_message = "Analyze costs"
@@ -206,16 +245,15 @@ class TestBackgroundTask:
         result = await background_task(user_message, session_id)
 
         assert result == mock_report_response
+        mock_build_graph.assert_called_once_with(mock_analysis_agent, mock_report_agent)
         mock_graph.invoke_async.assert_called_once()
         assert mock_record_event.call_count == 1
 
     @pytest.mark.asyncio
-    @patch("src.agents.main.GraphBuilder")
+    @patch("src.agents.main.build_cost_optimization_graph")
     @patch("src.agents.main.record_event")
     @patch("src.agents.main.create_agent")
-    async def test_background_task_no_credentials_error(
-        self, mock_create_agent, mock_record_event, mock_graph_builder_class
-    ):
+    async def test_background_task_no_credentials_error(self, mock_create_agent, mock_record_event, mock_build_graph):
         """Test background task handles NoCredentialsError."""
         from botocore.exceptions import NoCredentialsError
 
@@ -223,12 +261,10 @@ class TestBackgroundTask:
         mock_report_agent = MagicMock()
         mock_create_agent.side_effect = [mock_analysis_agent, mock_report_agent]
 
-        # Mock GraphBuilder to raise NoCredentialsError during graph execution
-        mock_builder = MagicMock()
+        # Mock graph to raise NoCredentialsError during execution
         mock_graph = MagicMock()
         mock_graph.invoke_async = AsyncMock(side_effect=NoCredentialsError())
-        mock_builder.build.return_value = mock_graph
-        mock_graph_builder_class.return_value = mock_builder
+        mock_build_graph.return_value = mock_graph
 
         session_id = "test-session-123"
         user_message = "Analyze costs"
@@ -245,10 +281,10 @@ class TestBackgroundTask:
         assert "FAILED" in call_args["status"]
 
     @pytest.mark.asyncio
-    @patch("src.agents.main.GraphBuilder")
+    @patch("src.agents.main.build_cost_optimization_graph")
     @patch("src.agents.main.record_event")
     @patch("src.agents.main.create_agent")
-    async def test_background_task_client_error(self, mock_create_agent, mock_record_event, mock_graph_builder_class):
+    async def test_background_task_client_error(self, mock_create_agent, mock_record_event, mock_build_graph):
         """Test background task handles ClientError (e.g., ThrottlingException)."""
         from botocore.exceptions import ClientError
 
@@ -260,12 +296,10 @@ class TestBackgroundTask:
         mock_report_agent = MagicMock()
         mock_create_agent.side_effect = [mock_analysis_agent, mock_report_agent]
 
-        # Mock GraphBuilder to raise ClientError during graph execution
-        mock_builder = MagicMock()
+        # Mock graph to raise ClientError during execution
         mock_graph = MagicMock()
         mock_graph.invoke_async = AsyncMock(side_effect=throttling_error)
-        mock_builder.build.return_value = mock_graph
-        mock_graph_builder_class.return_value = mock_builder
+        mock_build_graph.return_value = mock_graph
 
         session_id = "test-session-123"
         user_message = "Analyze costs"
@@ -283,23 +317,19 @@ class TestBackgroundTask:
         assert "FAILED" in call_args["status"]
 
     @pytest.mark.asyncio
-    @patch("src.agents.main.GraphBuilder")
+    @patch("src.agents.main.build_cost_optimization_graph")
     @patch("src.agents.main.record_event")
     @patch("src.agents.main.create_agent")
-    async def test_background_task_generic_exception(
-        self, mock_create_agent, mock_record_event, mock_graph_builder_class
-    ):
+    async def test_background_task_generic_exception(self, mock_create_agent, mock_record_event, mock_build_graph):
         """Test background task handles generic Exception."""
         mock_analysis_agent = MagicMock()
         mock_report_agent = MagicMock()
         mock_create_agent.side_effect = [mock_analysis_agent, mock_report_agent]
 
-        # Mock GraphBuilder to raise ValueError during graph execution
-        mock_builder = MagicMock()
+        # Mock graph to raise ValueError during execution
         mock_graph = MagicMock()
         mock_graph.invoke_async = AsyncMock(side_effect=ValueError("Invalid input"))
-        mock_builder.build.return_value = mock_graph
-        mock_graph_builder_class.return_value = mock_builder
+        mock_build_graph.return_value = mock_graph
 
         session_id = "test-session-123"
         user_message = "Analyze costs"
