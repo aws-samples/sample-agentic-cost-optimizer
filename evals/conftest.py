@@ -167,4 +167,4 @@ def capture():
 @pytest.fixture
 def judge_model():
     """Judge model for metrics evaluation (different family from agent)."""
-    return AmazonBedrockModel(model_id=JUDGE_MODEL_ID, region_name=AWS_REGION)
+    return AmazonBedrockModel(model=JUDGE_MODEL_ID, region=AWS_REGION)
