@@ -21,6 +21,10 @@ dev = [
   "pytest-asyncio>=1.2.0",
   "pytest-cov>=7.0.0",
 ]
+eval = [
+  "deepeval>=2.0.0",
+  "aiobotocore>=2.0.0",
+]
 
 [tool.ruff]
 target-version = "py312"
