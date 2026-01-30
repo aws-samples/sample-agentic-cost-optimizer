@@ -22,7 +22,7 @@ dev = [
   "pytest-cov>=7.0.0",
 ]
 eval = [
-  "deepeval>=2.0.0",
+  "deepeval>=3.8.0",
   "aiobotocore>=2.0.0",
 ]
 

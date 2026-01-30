@@ -50,7 +50,7 @@ dev = [
 ]
 eval = [
     { name = "aiobotocore", specifier = ">=2.0.0" },
-    { name = "deepeval", specifier = ">=2.0.0" },
+    { name = "deepeval", specifier = ">=3.8.0" },
 ]
 
 [[package]]
