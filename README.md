@@ -96,10 +96,32 @@ The agent will analyze your AWS Lambda functions and save a cost optimization re
 
 Set these environment variables (or use defaults):
 
-- `ENVIRONMENT`: Environment name (default: `dev`)
-- `VERSION`: Version tag (default: `v1`)
-- `MODEL_ID`: Amazon Bedrock model ID (default: Claude Sonnet 4)
-- `TTL_DAYS`: Amazon DynamoDB record retention (default: `30`)
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `ENVIRONMENT` | Environment name (`dev`, `staging`, `prod`) | `dev` |
+| `RUNTIME_VERSION` | Version suffix for runtime naming | `v2` |
+| `MODEL_ID` | Amazon Bedrock model ID | Claude Sonnet 4 |
+| `TTL_DAYS` | Amazon DynamoDB record retention | `30` |
+| `ENABLE_EVALS` | Enable Online Evaluations | `true` in prod only |
+
+### Environment-Based Features
+
+| Feature | dev | staging | prod |
+|---------|-----|---------|------|
+| Online Evaluations | ❌ | ❌ | ✅ |
+| Manual Trigger | ✅ | ❌ | ❌ |
+
+**Deploy to production:**
+```bash
+ENVIRONMENT=prod make cdk-deploy
+```
+
+**Override evals (e.g., enable in dev for testing):**
+```bash
+ENVIRONMENT=dev ENABLE_EVALS=true make cdk-deploy
+```
+
+For more on Online Evaluations, see the [AgentCore Evaluations documentation](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/evaluations.html).
 
 ## Deployment
 

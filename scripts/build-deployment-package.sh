@@ -12,7 +12,8 @@ echo "Building AgentCore Runtime package..."
 
 mkdir -p infra/dist/build-agent
 
-uv pip compile pyproject.toml --group agents --output-file infra/dist/build-agent/requirements.txt --quiet
+# Export from lockfile to ensure consistent versions between local dev and deployment
+uv export --group agents --no-hashes --output-file infra/dist/build-agent/requirements.txt --quiet
 uv pip install \
   --target infra/dist/build-agent/ \
   --python-version 3.12 \

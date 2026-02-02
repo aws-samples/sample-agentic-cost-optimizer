@@ -9,6 +9,7 @@ import { Bucket, BucketEncryption } from 'aws-cdk-lib/aws-s3';
 
 import { InfraConfig } from '../constants/infra-config';
 import { Agent } from './agent';
+import { Evals } from './evals';
 import { Workflow } from './workflow';
 
 export interface InfraStackProps extends StackProps {
@@ -24,15 +25,21 @@ export interface InfraStackProps extends StackProps {
    * Enable manual trigger rule for testing
    */
   enableManualTrigger: boolean;
+  /**
+   * Enable Online Evaluations for the agent
+   * @default - true only when environment === 'prod'
+   */
+  enableEvals?: boolean;
 }
 
 export class InfraStack extends Stack {
   public readonly agent: Agent;
+  public readonly evals?: Evals;
 
   constructor(scope: Construct, id: string, props: InfraStackProps) {
     super(scope, id, props);
 
-    const { environment, runtimeVersion, enableManualTrigger } = props;
+    const { environment, runtimeVersion, enableManualTrigger, enableEvals } = props;
 
     const agentsTable = new Table(this, 'AgentsTable', {
       tableName: `agents-table-${environment}`,
@@ -179,6 +186,24 @@ export class InfraStack extends Stack {
       new CfnOutput(this, 'ManualTriggerRuleArn', {
         value: manualTriggerRule.ruleArn,
         description: 'ARN of the EventBridge rule for manual workflow triggers',
+      });
+    }
+
+    // Online Evaluations - conditionally create when enableEvals is true
+    if (enableEvals) {
+      this.evals = new Evals(this, 'OnlineEvals', {
+        agent: this.agent,
+        environment,
+      });
+
+      new CfnOutput(this, 'EvaluationConfigId', {
+        value: this.evals.configId,
+        description: 'ID of the AgentCore Online Evaluation configuration',
+      });
+
+      new CfnOutput(this, 'EvaluationConfigArn', {
+        value: this.evals.configArn,
+        description: 'ARN of the AgentCore Online Evaluation configuration',
       });
     }
 
