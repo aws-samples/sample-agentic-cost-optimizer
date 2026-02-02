@@ -93,19 +93,19 @@ The implementation uses TypeScript for CDK constructs and vitest for testing. No
   - Run `make check` to verify code style
   - Commit: "feat(evals): integrate Evals construct into InfraStack"
 
-- [ ] 7. Final verification
-  - [ ] 7.1 Run CDK synth to verify template generation
+- [x] 7. Final verification
+  - [x] 7.1 Run CDK synth to verify template generation
     - Run `npx cdk synth` with enableEvals=true
     - Verify Custom Resource is in template
     - Verify IAM roles and policies are correct
     - _Requirements: All_
 
-  - [ ] 7.2 Update README if needed
+  - [x] 7.2 Update README if needed
     - Document enableEvals prop
     - Document how to enable/disable evaluations
     - _Requirements: Documentation_
 
-- [ ] 8. Deploy to dev environment
+- [x] 8. Deploy to dev environment
   - Run `npx cdk deploy` with enableEvals=true in dev
   - Verify evaluation config is created in AWS console
   - Verify no deployment errors

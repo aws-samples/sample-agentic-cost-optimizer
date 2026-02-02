@@ -183,40 +183,54 @@ export class Evals extends Construct {
     this.configId = evaluationConfigResource.getResponseField('onlineEvaluationConfigId');
     this.configArn = evaluationConfigResource.getResponseField('onlineEvaluationConfigArn');
 
-    this.applyNagSuppressions(evaluationConfigResource);
+    this.applyNagSuppressions(stack, evaluationConfigResource);
   }
 
-  private applyNagSuppressions(evaluationConfigResource: AwsCustomResource): void {
+  /**
+   * Apply CDK Nag suppressions for known security findings.
+   *
+   * Suppressed rules:
+   * - AwsSolutions-IAM5: Wildcard permissions for dynamic resources (CloudWatch Logs, Bedrock models)
+   * - AwsSolutions-IAM4: AWS managed policy (AWSLambdaBasicExecutionRole) for AwsCustomResource Lambda
+   * - AwsSolutions-L1: Lambda runtime managed by CDK AwsCustomResource construct
+   *
+   * The AwsCustomResource creates a singleton Lambda at the stack level with a deterministic ID
+   * (AWS679f53fac002430cb0da5b7982bd2287) that requires path-based suppressions.
+   *
+   * @see https://github.com/cdklabs/cdk-nag/blob/main/RULES.md
+   */
+  private applyNagSuppressions(stack: Stack, evaluationConfigResource: AwsCustomResource): void {
     NagSuppressions.addResourceSuppressions(
       this.executionRole,
-      [
-        {
-          id: 'AwsSolutions-IAM5',
-          reason:
-            'Wildcard permissions required for CloudWatch Logs read operations (DescribeLogGroups, GetQueryResults, StartQuery) as log groups are dynamically created. Bedrock model invocation requires wildcard as models are global resources.',
-        },
-      ],
+      [{ id: 'AwsSolutions-IAM5', reason: 'Wildcard required for dynamic CloudWatch Logs and global Bedrock models.' }],
       true,
     );
 
     NagSuppressions.addResourceSuppressions(
       evaluationConfigResource,
-      [
-        {
-          id: 'AwsSolutions-IAM5',
-          reason:
-            'Wildcard permissions required for bedrock-agentcore evaluation config management and CloudWatch index operations. Resources are dynamically created and cannot be known at deployment time.',
-        },
-        {
-          id: 'AwsSolutions-IAM4',
-          reason: 'AWS managed policy used by AwsCustomResource Lambda for basic execution permissions.',
-        },
-        {
-          id: 'AwsSolutions-L1',
-          reason: 'Lambda runtime version is managed by AwsCustomResource construct.',
-        },
-      ],
+      [{ id: 'AwsSolutions-IAM5', reason: 'Wildcard required for bedrock-agentcore and CloudWatch on dynamic resources.' }],
       true,
     );
+
+    const singletonId = `AWS${AwsCustomResource.PROVIDER_FUNCTION_UUID.replace(/-/g, '')}`;
+    const existingPaths = new Set(stack.node.findAll().map((n) => `/${n.node.path}`));
+    const serviceRolePath = `/${stack.stackName}/${singletonId}/ServiceRole/Resource`;
+    const lambdaPath = `/${stack.stackName}/${singletonId}/Resource`;
+
+    if (existingPaths.has(serviceRolePath)) {
+      NagSuppressions.addResourceSuppressionsByPath(stack, serviceRolePath, [
+        {
+          id: 'AwsSolutions-IAM4',
+          reason: 'AWS managed policy required by AwsCustomResource singleton Lambda.',
+          appliesTo: ['Policy::arn:<AWS::Partition>:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'],
+        },
+      ]);
+    }
+
+    if (existingPaths.has(lambdaPath)) {
+      NagSuppressions.addResourceSuppressionsByPath(stack, lambdaPath, [
+        { id: 'AwsSolutions-L1', reason: 'Lambda runtime managed by CDK AwsCustomResource construct.' },
+      ]);
+    }
   }
 }
