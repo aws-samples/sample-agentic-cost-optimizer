@@ -66,29 +66,29 @@ The implementation uses TypeScript for CDK constructs and vitest for testing. No
     - Test AwsCustomResource policy has PassRole permission
     - _Requirements: 4.1, 4.2, 4.3, 4.4, 4.5, 4.6, 5.1, 5.2, 5.3, 6.1, 6.3, 6.4, 6.5, 6.6_
 
-- [-] 4. Checkpoint - Run tests and commit
+- [x] 4. Checkpoint - Run tests and commit
   - Run `make test` to verify Evals construct tests pass
   - Commit: "feat(evals): add Evals construct with AwsCustomResource"
 
-- [ ] 5. Integrate Evals into InfraStack
-  - [ ] 5.1 Update `lib/infra-stack.ts` to add enableEvals prop
+- [x] 5. Integrate Evals into InfraStack
+  - [x] 5.1 Update `lib/infra-stack.ts` to add enableEvals prop
     - Add `enableEvals?: boolean` to InfraStackProps
     - Conditionally create Evals construct when enableEvals is true
     - Add CfnOutputs for evaluation config ID and ARN
     - _Requirements: 1.1, 1.3, 1.4_
 
-  - [ ] 5.2 Update `bin/infra.ts` to pass enableEvals
+  - [x] 5.2 Update `bin/infra.ts` to pass enableEvals
     - Default enableEvals to `environment === 'prod'`
     - Allow override via environment variable or context
     - _Requirements: 1.2, 1.5_
 
-  - [ ]* 5.3 Write unit tests for conditional Evals creation
+  - [x] 5.3 Write unit tests for conditional Evals creation
     - Test Evals construct is created when enableEvals=true
     - Test Evals construct is NOT created when enableEvals=false
     - Test default enableEvals behavior based on environment
     - _Requirements: 1.2, 1.3, 1.4, 6.1, 6.2_
 
-- [ ] 6. Checkpoint - Run all tests and commit
+- [x] 6. Checkpoint - Run all tests and commit
   - Run `make test` to verify all tests pass
   - Run `make check` to verify code style
   - Commit: "feat(evals): integrate Evals construct into InfraStack"

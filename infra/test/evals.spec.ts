@@ -5,6 +5,7 @@ import { Match, Template } from 'aws-cdk-lib/assertions';
 
 import { Agent } from '../lib/agent';
 import { Evals } from '../lib/evals';
+import { InfraStack } from '../lib/infra-stack';
 
 /**
  * Creates a test stack with Agent and Evals constructs for testing
@@ -299,6 +300,112 @@ describe('Evals Construct', () => {
           ]),
         },
       });
+    });
+  });
+});
+
+describe('InfraStack Conditional Evals Creation', () => {
+  describe('when enableEvals is true', () => {
+    it('should create Evals construct', () => {
+      const app = new App();
+      const stack = new InfraStack(app, 'TestStack', {
+        environment: 'dev',
+        runtimeVersion: 'v2',
+        enableManualTrigger: false,
+        enableEvals: true,
+      });
+      const template = Template.fromStack(stack);
+
+      // Verify the Custom Resource for Evals is created
+      template.hasResource('Custom::BedrockAgentCoreOnlineEvaluation', {});
+    });
+
+    it('should expose evals property on stack', () => {
+      const app = new App();
+      const stack = new InfraStack(app, 'TestStack', {
+        environment: 'dev',
+        runtimeVersion: 'v2',
+        enableManualTrigger: false,
+        enableEvals: true,
+      });
+
+      expect(stack.evals).toBeDefined();
+    });
+
+    it('should create CfnOutputs for evaluation config', () => {
+      const app = new App();
+      const stack = new InfraStack(app, 'TestStack', {
+        environment: 'dev',
+        runtimeVersion: 'v2',
+        enableManualTrigger: false,
+        enableEvals: true,
+      });
+      const template = Template.fromStack(stack);
+
+      // Verify CfnOutputs for EvaluationConfigId and EvaluationConfigArn exist
+      const outputs = template.findOutputs('*');
+      expect(Object.keys(outputs).some((key) => key.includes('EvaluationConfigId'))).toBe(true);
+      expect(Object.keys(outputs).some((key) => key.includes('EvaluationConfigArn'))).toBe(true);
+    });
+  });
+
+  describe('when enableEvals is false', () => {
+    it('should NOT create Evals construct', () => {
+      const app = new App();
+      const stack = new InfraStack(app, 'TestStack', {
+        environment: 'dev',
+        runtimeVersion: 'v2',
+        enableManualTrigger: false,
+        enableEvals: false,
+      });
+      const template = Template.fromStack(stack);
+
+      // Verify the Custom Resource for Evals is NOT created
+      const resources = template.findResources('Custom::BedrockAgentCoreOnlineEvaluation');
+      expect(Object.keys(resources).length).toBe(0);
+    });
+
+    it('should have undefined evals property on stack', () => {
+      const app = new App();
+      const stack = new InfraStack(app, 'TestStack', {
+        environment: 'dev',
+        runtimeVersion: 'v2',
+        enableManualTrigger: false,
+        enableEvals: false,
+      });
+
+      expect(stack.evals).toBeUndefined();
+    });
+
+    it('should NOT create CfnOutputs for evaluation config', () => {
+      const app = new App();
+      const stack = new InfraStack(app, 'TestStack', {
+        environment: 'dev',
+        runtimeVersion: 'v2',
+        enableManualTrigger: false,
+        enableEvals: false,
+      });
+      const template = Template.fromStack(stack);
+
+      // Verify CfnOutputs for EvaluationConfigId and EvaluationConfigArn do NOT exist
+      const outputs = template.findOutputs('*');
+      expect(Object.keys(outputs).some((key) => key.includes('EvaluationConfigId'))).toBe(false);
+      expect(Object.keys(outputs).some((key) => key.includes('EvaluationConfigArn'))).toBe(false);
+    });
+  });
+
+  describe('default enableEvals behavior based on environment', () => {
+    it('should not create Evals when enableEvals is undefined', () => {
+      const app = new App();
+      const stack = new InfraStack(app, 'TestStack', {
+        environment: 'dev',
+        runtimeVersion: 'v2',
+        enableManualTrigger: false,
+        // enableEvals not specified - should be treated as falsy
+      });
+
+      // When enableEvals is undefined, it's falsy so evals should not be created
+      expect(stack.evals).toBeUndefined();
     });
   });
 });
