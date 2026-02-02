@@ -12,8 +12,8 @@ The implementation uses TypeScript for CDK constructs and vitest for testing. No
 
 ## Tasks
 
-- [ ] 1. Create configuration constants
-  - [ ] 1.1 Create `constants/evals-config.ts` with evaluation configuration
+- [-] 1. Create configuration constants
+  - [x] 1.1 Create `constants/evals-config.ts` with evaluation configuration
     - Define `samplingPercentage` (100)
     - Define `sessionTimeoutMinutes` (5)
     - Define `evaluators` array with 10 built-in evaluators
@@ -21,13 +21,13 @@ The implementation uses TypeScript for CDK constructs and vitest for testing. No
     - Export `getEvalsConfigName(environment)` function
     - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5_
 
-  - [ ]* 1.2 Write unit tests for evals-config
+  - [x] 1.2 Write unit tests for evals-config
     - Test `getEvalsConfigName` returns correct pattern
     - Test constants have expected values
     - _Requirements: 2.1, 2.2, 2.3, 2.4_
 
-- [ ] 2. Checkpoint - Run tests and commit
-  - Run `npm test` to verify config tests pass
+- [x] 2. Checkpoint - Run tests and commit
+  - Run `make test` to verify config tests pass
   - Commit: "feat(evals): add evaluation configuration constants"
 
 - [ ] 3. Create Evals construct
@@ -67,7 +67,7 @@ The implementation uses TypeScript for CDK constructs and vitest for testing. No
     - _Requirements: 4.1, 4.2, 4.3, 4.4, 4.5, 4.6, 5.1, 5.2, 5.3, 6.1, 6.3, 6.4, 6.5, 6.6_
 
 - [ ] 4. Checkpoint - Run tests and commit
-  - Run `npm test` to verify Evals construct tests pass
+  - Run `make test` to verify Evals construct tests pass
   - Commit: "feat(evals): add Evals construct with AwsCustomResource"
 
 - [ ] 5. Integrate Evals into InfraStack
@@ -89,8 +89,8 @@ The implementation uses TypeScript for CDK constructs and vitest for testing. No
     - _Requirements: 1.2, 1.3, 1.4, 6.1, 6.2_
 
 - [ ] 6. Checkpoint - Run all tests and commit
-  - Run `npm test` to verify all tests pass
-  - Run `npm run lint` to verify code style
+  - Run `make test` to verify all tests pass
+  - Run `make check` to verify code style
   - Commit: "feat(evals): integrate Evals construct into InfraStack"
 
 - [ ] 7. Final verification
