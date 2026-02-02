@@ -30,8 +30,8 @@ The implementation uses TypeScript for CDK constructs and vitest for testing. No
   - Run `make test` to verify config tests pass
   - Commit: "feat(evals): add evaluation configuration constants"
 
-- [ ] 3. Create Evals construct
-  - [ ] 3.1 Create `lib/evals.ts` with Evals construct class
+- [x] 3. Create Evals construct
+  - [x] 3.1 Create `lib/evals.ts` with Evals construct class
     - Define `EvalsProps` interface accepting Agent and environment
     - Create execution role with trust policy for `bedrock-agentcore.amazonaws.com`
     - Add CloudWatch Logs read permissions to execution role
@@ -40,7 +40,7 @@ The implementation uses TypeScript for CDK constructs and vitest for testing. No
     - Add Bedrock model invocation permissions
     - _Requirements: 3.1, 3.4, 4.1, 4.2, 4.3, 4.4, 4.5, 4.6_
 
-  - [ ] 3.2 Add AwsCustomResource to Evals construct
+  - [x] 3.2 Add AwsCustomResource to Evals construct
     - Derive log group name from Agent runtime: `/aws/bedrock-agentcore/runtimes/{runtimeId}-DEFAULT`
     - Derive service name from Agent runtime: `{runtimeName}.DEFAULT`
     - Create AwsCustomResource with onCreate/onUpdate/onDelete handlers
@@ -50,12 +50,12 @@ The implementation uses TypeScript for CDK constructs and vitest for testing. No
     - Export configId and configArn from custom resource response
     - _Requirements: 3.2, 3.3, 3.5, 3.6, 3.7, 3.8, 3.9, 5.1, 5.2, 5.3_
 
-  - [ ] 3.3 Add CDK Nag suppressions to Evals construct
+  - [x] 3.3 Add CDK Nag suppressions to Evals construct
     - Suppress wildcard warnings with appropriate justifications
     - Follow existing patterns from Agent construct
     - _Requirements: 3.4_
 
-  - [ ]* 3.4 Write unit tests for Evals construct
+  - [x] 3.4 Write unit tests for Evals construct
     - Test execution role has correct trust policy
     - Test execution role has CloudWatch Logs read permissions
     - Test execution role has CloudWatch Logs write permissions
@@ -66,7 +66,7 @@ The implementation uses TypeScript for CDK constructs and vitest for testing. No
     - Test AwsCustomResource policy has PassRole permission
     - _Requirements: 4.1, 4.2, 4.3, 4.4, 4.5, 4.6, 5.1, 5.2, 5.3, 6.1, 6.3, 6.4, 6.5, 6.6_
 
-- [ ] 4. Checkpoint - Run tests and commit
+- [-] 4. Checkpoint - Run tests and commit
   - Run `make test` to verify Evals construct tests pass
   - Commit: "feat(evals): add Evals construct with AwsCustomResource"
 

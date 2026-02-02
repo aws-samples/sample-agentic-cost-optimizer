@@ -41,6 +41,7 @@ export interface AgentProps {
 export class Agent extends Construct {
   public readonly runtime: Runtime;
   public readonly runtimeArn: string;
+  public readonly runtimeName: string;
 
   constructor(scope: Construct, id: string, props: AgentProps) {
     super(scope, id);
@@ -146,6 +147,7 @@ export class Agent extends Construct {
     monitoringPolicy.attachToRole(this.runtime.role);
 
     this.runtimeArn = this.runtime.agentRuntimeArn;
+    this.runtimeName = agentRuntimeName;
 
     this.applyNagSuppressions(bedrockPolicy, monitoringPolicy);
   }
