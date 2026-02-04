@@ -42,13 +42,13 @@ describe('Model ID Construction Logic', () => {
   it('should construct modelId with region prefix when inferenceProfileRegion is set', () => {
     const actualModelId = extractModelId(invokeStatement.Resource, ':inference-profile/');
 
-    expect(actualModelId).toBe('us.anthropic.claude-sonnet-4-20250514-v1:0');
+    expect(actualModelId).toBe('us.anthropic.claude-sonnet-4-5-20250929-v1:0');
   });
 
   it('should use base modelId without prefix in foundation model ARN', () => {
     const foundationModelId = extractModelId(invokeStatement.Resource, ':foundation-model/');
 
-    expect(foundationModelId).toBe('anthropic.claude-sonnet-4-20250514-v1:0');
+    expect(foundationModelId).toBe('anthropic.claude-sonnet-4-5-20250929-v1:0');
     expect(foundationModelId).not.toContain('us.');
   });
 
@@ -59,14 +59,14 @@ describe('Model ID Construction Logic', () => {
     new Agent(stack, 'TestAgent', {
       agentRuntimeName: 'testAgent_dev_v1',
       environment: 'dev',
-      modelId: 'anthropic.claude-sonnet-4-20250514-v1:0',
+      modelId: 'anthropic.claude-sonnet-4-5-20250929-v1:0',
       inferenceProfileRegion: null,
     });
 
     const agentTemplate = Template.fromStack(stack);
     const stmt = getInvokeStatement(agentTemplate);
 
-    expect(extractModelId(stmt.Resource, ':inference-profile/')).toBe('anthropic.claude-sonnet-4-20250514-v1:0');
-    expect(extractModelId(stmt.Resource, ':foundation-model/')).toBe('anthropic.claude-sonnet-4-20250514-v1:0');
+    expect(extractModelId(stmt.Resource, ':inference-profile/')).toBe('anthropic.claude-sonnet-4-5-20250929-v1:0');
+    expect(extractModelId(stmt.Resource, ':foundation-model/')).toBe('anthropic.claude-sonnet-4-5-20250929-v1:0');
   });
 });

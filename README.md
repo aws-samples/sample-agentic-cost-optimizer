@@ -100,16 +100,22 @@ Set these environment variables (or use defaults):
 |----------|-------------|---------|
 | `ENVIRONMENT` | Environment name (`dev`, `staging`, `prod`) | `dev` |
 | `RUNTIME_VERSION` | Version suffix for runtime naming | `v2` |
-| `MODEL_ID` | Amazon Bedrock model ID | Claude Sonnet 4 |
+| `MODEL_ID` | Amazon Bedrock model ID | Claude Sonnet 4.5 |
 | `TTL_DAYS` | Amazon DynamoDB record retention | `30` |
 | `ENABLE_EVALS` | Enable Online Evaluations | `true` in prod only |
+| `ENABLE_SCHEDULED_TRIGGER` | Enable daily scheduled trigger (6am UTC) | `true` in prod only |
 
 ### Environment-Based Features
 
+By default, the scheduled agent trigger is disabled in `dev` and `staging` environments to avoid unnecessary costs. You'll need to invoke the agent manually using `make trigger-workflow`. The daily 6am UTC schedule is only enabled if you set `ENVIRONMENT` to `prod`.
+
+Online Evaluations (AgentCore Evals) are also disabled by default except in `prod`. To enable them in other environments, set `ENABLE_EVALS=true` when deploying.
+
 | Feature | dev | staging | prod |
 |---------|-----|---------|------|
+| Scheduled Trigger (6am UTC) | ❌ | ❌ | ✅ |
+| Manual Trigger | ✅ | ✅ | ❌ |
 | Online Evaluations | ❌ | ❌ | ✅ |
-| Manual Trigger | ✅ | ❌ | ❌ |
 
 **Deploy to production:**
 ```bash
@@ -119,6 +125,11 @@ ENVIRONMENT=prod make cdk-deploy
 **Override evals (e.g., enable in dev for testing):**
 ```bash
 ENVIRONMENT=dev ENABLE_EVALS=true make cdk-deploy
+```
+
+**Override scheduled trigger (e.g., enable in staging):**
+```bash
+ENVIRONMENT=staging ENABLE_SCHEDULED_TRIGGER=true make cdk-deploy
 ```
 
 For more on Online Evaluations, see the [AgentCore Evaluations documentation](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/evaluations.html).

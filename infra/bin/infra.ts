@@ -19,11 +19,16 @@ const enableEvals =
       ? enableEvalsContext === true || enableEvalsContext === 'true'
       : environment === 'prod';
 
+// Enable scheduled trigger: default to true only for prod
+const enableScheduledTriggerEnv = process.env.ENABLE_SCHEDULED_TRIGGER;
+const enableScheduledTrigger = enableScheduledTriggerEnv !== undefined ? enableScheduledTriggerEnv === 'true' : environment === 'prod';
+
 new InfraStack(app, 'InfraStack', {
   description: InfraConfig.stackDescription,
   environment,
   runtimeVersion,
-  enableManualTrigger: environment === 'dev',
+  enableScheduledTrigger,
+  enableManualTrigger: environment !== 'prod', // dev and staging get manual trigger, prod does not
   enableEvals,
 });
 

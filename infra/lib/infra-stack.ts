@@ -22,14 +22,17 @@ export interface InfraStackProps extends StackProps {
    */
   runtimeVersion: string;
   /**
+   * Enable scheduled trigger rule
+   */
+  enableScheduledTrigger: boolean;
+  /**
    * Enable manual trigger rule for testing
    */
   enableManualTrigger: boolean;
   /**
    * Enable Online Evaluations for the agent
-   * @default - true only when environment === 'prod'
    */
-  enableEvals?: boolean;
+  enableEvals: boolean;
 }
 
 export class InfraStack extends Stack {
@@ -39,7 +42,7 @@ export class InfraStack extends Stack {
   constructor(scope: Construct, id: string, props: InfraStackProps) {
     super(scope, id, props);
 
-    const { environment, runtimeVersion, enableManualTrigger, enableEvals } = props;
+    const { environment, runtimeVersion, enableScheduledTrigger, enableManualTrigger, enableEvals } = props;
 
     const agentsTable = new Table(this, 'AgentsTable', {
       tableName: `agents-table-${environment}`,
@@ -151,21 +154,29 @@ export class InfraStack extends Stack {
       }),
     );
 
-    const scheduledTriggerRule = new Rule(this, 'ScheduledTriggerRule', {
-      schedule: Schedule.cron({ hour: '6', minute: '0' }),
-      description: 'Rule to trigger agent workflow daily at 6am UTC',
-    });
+    // Scheduled trigger rule - only deployed when enabled (default: prod only)
+    if (enableScheduledTrigger) {
+      const scheduledTriggerRule = new Rule(this, 'ScheduledTriggerRule', {
+        schedule: Schedule.cron({ hour: '6', minute: '0' }),
+        description: 'Rule to trigger agent workflow daily at 6am UTC',
+      });
 
-    scheduledTriggerRule.addTarget(
-      new SfnStateMachine(workflow.stateMachine, {
-        input: RuleTargetInput.fromObject({
-          // Use EventField.eventId (UUID format, 36 chars) to meet AgentCore's 33+ character requirement
-          session_id: EventField.eventId,
+      scheduledTriggerRule.addTarget(
+        new SfnStateMachine(workflow.stateMachine, {
+          input: RuleTargetInput.fromObject({
+            // Use EventField.eventId (UUID format, 36 chars) to meet AgentCore's 33+ character requirement
+            session_id: EventField.eventId,
+          }),
         }),
-      }),
-    );
+      );
 
-    // Manual trigger rule is only deployed when explicitly enabled (dev only)
+      new CfnOutput(this, 'ScheduledTriggerRuleArn', {
+        value: scheduledTriggerRule.ruleArn,
+        description: 'ARN of the EventBridge rule for scheduled workflow triggers (daily at 6am UTC)',
+      });
+    }
+
+    // Manual trigger rule is only deployed for any environment but prod
     if (enableManualTrigger) {
       const manualTriggerRule = new Rule(this, 'ManualTriggerRule', {
         eventPattern: {
@@ -189,7 +200,7 @@ export class InfraStack extends Stack {
       });
     }
 
-    // Online Evaluations - conditionally create when enableEvals is true
+    // Online Evaluations - conditionally create when enableEvals is true (default: prod only)
     if (enableEvals) {
       this.evals = new Evals(this, 'OnlineEvals', {
         agent: this.agent,
@@ -235,11 +246,6 @@ export class InfraStack extends Stack {
     new CfnOutput(this, 'WorkflowStateMachineArn', {
       value: workflow.stateMachine.stateMachineArn,
       description: 'ARN of the Step Function state machine for agent workflow',
-    });
-
-    new CfnOutput(this, 'ScheduledTriggerRuleArn', {
-      value: scheduledTriggerRule.ruleArn,
-      description: 'ARN of the EventBridge rule for scheduled workflow triggers (daily at 6am UTC)',
     });
   }
 }

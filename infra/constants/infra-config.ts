@@ -12,10 +12,10 @@ export type CrossRegionProfile = 'us' | 'eu' | 'apac' | 'global' | null;
 export const InfraConfig = {
   /**
    * Bedrock model ID to use for the agent
-   * Default: Claude Sonnet 4
+   * Default: Claude Sonnet 4.5
    * Note: Do not include region prefix (us./eu.) - use crossRegionInferenceProfile instead
    */
-  modelId: 'anthropic.claude-sonnet-4-20250514-v1:0',
+  modelId: 'anthropic.claude-sonnet-4-5-20250929-v1:0',
 
   /**
    * Bedrock cross-region inference profile prefix
