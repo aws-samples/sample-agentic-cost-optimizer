@@ -7,6 +7,7 @@ from botocore.config import Config as BotocoreConfig
 from botocore.exceptions import ClientError, NoCredentialsError
 from strands import Agent
 from strands.models import BedrockModel
+from strands.multiagent import GraphBuilder
 from strands_tools import calculator, use_aws
 
 from src.shared import (
@@ -103,6 +104,28 @@ def load_prompts() -> tuple[str, str]:
     return analysis_prompt, report_prompt
 
 
+def build_cost_optimization_graph(
+    analysis_agent: Agent,
+    report_agent: Agent,
+):
+    """Build graph with analysis -> report dependency.
+
+    Args:
+        analysis_agent: Agent for cost analysis
+        report_agent: Agent for report generation
+
+    Returns:
+        Configured Graph instance
+    """
+    builder = GraphBuilder()
+    builder.add_node(analysis_agent, "analysis")
+    builder.add_node(report_agent, "report")
+    builder.add_edge("analysis", "report")
+    builder.set_entry_point("analysis")
+    builder.set_execution_timeout(900)  # 15 minutes
+    return builder.build()
+
+
 def _handle_background_task_error(
     session_id: str,
     exception: Exception,
@@ -166,31 +189,39 @@ def _handle_background_task_error(
 # Decorator automatically manages AgentCore status: HEALTHY_BUSY while running, HEALTHY when complete
 @app.async_task
 async def background_task(user_message: str, session_id: str):
-    """Background task using workflow pattern."""
+    """Background task using Graph multi-agent pattern."""
     logger.info(f"Background task started - Session: {session_id}")
 
     analysis_prompt, report_prompt = load_prompts()
 
     analysis_agent = create_agent(
         system_prompt=analysis_prompt,
-        tools=[use_aws, journal, calculator, storage, current_time_unix_utc, convert_time_unix_to_iso],
+        tools=[
+            use_aws,
+            journal,
+            calculator,
+            storage,
+            current_time_unix_utc,
+            convert_time_unix_to_iso,
+        ],
     )
     report_agent = create_agent(
         system_prompt=report_prompt,
         tools=[storage, journal],
     )
 
+    result = None
     try:
-        await analysis_agent.invoke_async(
-            "Analyze AWS costs and identify optimization opportunities",
-            session_id=session_id,
+        graph = build_cost_optimization_graph(analysis_agent, report_agent)
+        logger.info(f"Graph built - Session: {session_id}")
+
+        # Execute graph with session_id in invocation_state
+        result = await graph.invoke_async(
+            "Analyze AWS costs and generate optimization report",
+            invocation_state={"session_id": session_id},
         )
 
-        response = await report_agent.invoke_async(
-            "Generate cost optimization report based on analysis results",
-            session_id=session_id,
-        )
-
+        # Record successful completion
         logger.info(f"Background completed - Session: {session_id}")
         record_event(
             session_id=session_id,
@@ -199,7 +230,8 @@ async def background_task(user_message: str, session_id: str):
             ttl_days=config.ttl_days,
             region_name=config.aws_region,
         )
-        return response
+        # Return final result from report node
+        return result.results["report"].result
 
     except NoCredentialsError as e:
         return _handle_background_task_error(session_id, e)
@@ -209,6 +241,16 @@ async def background_task(user_message: str, session_id: str):
 
     except Exception as e:
         return _handle_background_task_error(session_id, e)
+
+    finally:
+        if result is not None:
+            logger.info(
+                f"Graph execution completed - Session: {session_id}, "
+                f"Status: {result.status}, "
+                f"Completed: {result.completed_nodes}/{result.total_nodes}, "
+                f"Failed: {result.failed_nodes}, "
+                f"Time: {result.execution_time}ms"
+            )
 
 
 @app.entrypoint

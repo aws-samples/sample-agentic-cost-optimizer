@@ -12,6 +12,9 @@ help:
 	@echo "  make check        - Run all code quality checks (pre-commit)"
 	@echo "  make test         - Run all tests"
 	@echo ""
+	@echo "Agent Evaluations:"
+	@echo "  make eval AGENT=<name>  - Run agent E2E eval (e.g., analysis)"
+	@echo ""
 	@echo "Local Development:"
 	@echo "  make run-agent-local   - Run agent locally with reload"
 	@echo "  make invoke-agent-local - Invoke local agent (run in separate terminal)"
@@ -31,7 +34,7 @@ setup: init pre-commit-install
 	@echo "✓ Project setup complete!"
 
 init:
-	uv sync --group agents --group dev
+	uv sync --group agents --group dev --group eval
 	npm install --prefix infra
 	@echo "✓ Python deps installed in .venv/"
 	@echo "✓ Node deps installed in infra/"
@@ -49,6 +52,20 @@ test:
 	@echo "Running TypeScript tests..."
 	npm test --prefix infra
 	@echo "✓ All tests completed!"
+
+eval:
+ifdef AGENT
+	@echo "Running $(AGENT) agent evaluation..."
+	uv run pytest evals/test_$(AGENT).py -v -s
+else
+	@echo "Usage: make eval AGENT=<agent_name>"
+	@echo ""
+	@echo "Available agents:"
+	@echo "  analysis     - Analysis agent (~3 min)"
+	@echo "  report       - Report agent (~1 min)"
+	@echo ""
+	@echo "Example: make eval AGENT=analysis"
+endif
 
 run-agent-local:
 	./scripts/run-agent-locally.sh

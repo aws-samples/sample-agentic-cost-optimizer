@@ -51,6 +51,7 @@ mock_strands.tool = mock_tool_decorator
 mocks_to_apply = {
     "strands": mock_strands,
     "strands.models": MagicMock(),
+    "strands.multiagent": MagicMock(),
     "strands_tools": MagicMock(),
     "bedrock_agentcore.runtime": MagicMock(BedrockAgentCoreApp=lambda: mock_app),
 }
