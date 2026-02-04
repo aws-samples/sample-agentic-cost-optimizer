@@ -27,7 +27,9 @@ export function createTestStack(enableManualTrigger = true) {
   const stack = new InfraStack(app, 'TestStack', {
     environment: 'dev',
     runtimeVersion: 'v2',
+    enableScheduledTrigger: true,
     enableManualTrigger,
+    enableEvals: false,
   });
   const template = Template.fromStack(stack);
 
