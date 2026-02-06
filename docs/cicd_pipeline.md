@@ -4,9 +4,23 @@
 
 | Environment | Purpose | OIDC Setup | Deployed via |
 |-------------|---------|------------|--------------|
-| `dev` | Local development | No | Manual (`npm run deploy`) |
+| `dev` | Local development | No | Manual (`make cdk-deploy`) |
 | `staging` | Pre-prod testing, integ tests | Yes | CI/CD on merge to main |
 | `prod` | Production | Yes | CI/CD after staging tests pass |
+
+## Environment-Based Features
+
+Features are automatically configured based on the `ENVIRONMENT` variable:
+
+| Feature | dev | staging | prod |
+|---------|-----|---------|------|
+| Scheduled Trigger (6am UTC) | ❌ | ❌ | ✅ |
+| Manual Trigger | ✅ | ✅ | ❌ |
+| Online Evaluations | ❌ | ❌ | ✅ |
+
+Override defaults with environment variables:
+- `ENABLE_EVALS=true` - Enable Online Evaluations in any environment
+- `ENABLE_SCHEDULED_TRIGGER=true` - Enable scheduled trigger in any environment
 
 ## Prerequisites (One-time setup per AWS account)
 
@@ -22,15 +36,24 @@
 
 ### 1. PR Created/Updated
 
-- Runs: `test-python`, `test-typescript`, `test-cdk-nag`
-- No deployment, no AWS credentials needed
+Runs test jobs (no AWS credentials needed):
+- `test-python` - Python unit tests with coverage
+- `test-typescript` - TypeScript/CDK unit tests
+- `test-cdk-nag` - CDK security checks via cdk-nag
 
 ### 2. PR Merged to Main
 
-- Unit tests run again
-- `deploy-staging` → deploys to staging account (GitHub environment: `staging`)
-- `test-integration` → runs integration/eval tests against staging
-- `deploy-prod` → deploys to prod account (GitHub environment: `prod`)
+Deployments only trigger when relevant files change:
+- `src/**`, `infra/**`, `tests/**`, `evals/**`, `scripts/**`
+- `pyproject.toml`, `uv.lock`
+- `.github/workflows/ci.yml`
+
+Pipeline sequence:
+1. Unit tests run again (`test-python`, `test-typescript`, `test-cdk-nag`)
+2. `deploy-staging` → deploys with `ENVIRONMENT=staging`
+3. `deploy-prod` → deploys with `ENVIRONMENT=prod`
+
+Changes to docs, reports, or other non-deployment files skip the deployment jobs.
 
 ## GitHub Environments
 

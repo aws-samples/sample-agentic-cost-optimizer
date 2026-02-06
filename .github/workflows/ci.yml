@@ -10,6 +10,15 @@ on:
   push:
     branches:
       - main
+    paths:
+      - 'src/**'
+      - 'infra/**'
+      - 'tests/**'
+      - 'evals/**'
+      - 'scripts/**'
+      - 'pyproject.toml'
+      - 'uv.lock'
+      - '.github/workflows/ci.yml'
 
 jobs:
   test-python:
@@ -156,17 +165,9 @@ jobs:
         env:
           ENVIRONMENT: staging
 
-  test-integration:
-    runs-on: ubuntu-latest
-    needs: [deploy-staging]
-    steps:
-      # TODO: Implement integration tests against staging environment
-      - name: Placeholder - Integration tests
-        run: echo "Integration tests placeholder - implement when staging environment is deployed"
-
   deploy-prod:
     runs-on: ubuntu-latest
-    needs: [test-integration]
+    needs: [deploy-staging]
     environment: prod
     permissions:
       contents: read
