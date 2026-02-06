@@ -7,7 +7,7 @@ making them easy to find, update, and maintain.
 
 # AWS Configuration Defaults
 DEFAULT_AWS_REGION = "us-east-1"
-DEFAULT_MODEL_ID = "us.anthropic.claude-sonnet-4-20250514-v1:0"
+DEFAULT_MODEL_ID = "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
 DEFAULT_TTL_DAYS = 30
 
 # Boto3 Configuration Defaults

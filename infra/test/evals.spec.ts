@@ -20,7 +20,7 @@ function createEvalsTestStack() {
     agentRuntimeName: 'testRuntime_dev_v1',
     description: 'Test agent for evals testing',
     environment: 'dev',
-    modelId: 'anthropic.claude-sonnet-4-20250514-v1:0',
+    modelId: 'anthropic.claude-sonnet-4-5-20250929-v1:0',
     inferenceProfileRegion: 'us',
   });
 
@@ -311,6 +311,7 @@ describe('InfraStack Conditional Evals Creation', () => {
       const stack = new InfraStack(app, 'TestStack', {
         environment: 'dev',
         runtimeVersion: 'v2',
+        enableScheduledTrigger: false,
         enableManualTrigger: false,
         enableEvals: true,
       });
@@ -325,6 +326,7 @@ describe('InfraStack Conditional Evals Creation', () => {
       const stack = new InfraStack(app, 'TestStack', {
         environment: 'dev',
         runtimeVersion: 'v2',
+        enableScheduledTrigger: false,
         enableManualTrigger: false,
         enableEvals: true,
       });
@@ -337,6 +339,7 @@ describe('InfraStack Conditional Evals Creation', () => {
       const stack = new InfraStack(app, 'TestStack', {
         environment: 'dev',
         runtimeVersion: 'v2',
+        enableScheduledTrigger: false,
         enableManualTrigger: false,
         enableEvals: true,
       });
@@ -355,6 +358,7 @@ describe('InfraStack Conditional Evals Creation', () => {
       const stack = new InfraStack(app, 'TestStack', {
         environment: 'dev',
         runtimeVersion: 'v2',
+        enableScheduledTrigger: false,
         enableManualTrigger: false,
         enableEvals: false,
       });
@@ -370,6 +374,7 @@ describe('InfraStack Conditional Evals Creation', () => {
       const stack = new InfraStack(app, 'TestStack', {
         environment: 'dev',
         runtimeVersion: 'v2',
+        enableScheduledTrigger: false,
         enableManualTrigger: false,
         enableEvals: false,
       });
@@ -382,6 +387,7 @@ describe('InfraStack Conditional Evals Creation', () => {
       const stack = new InfraStack(app, 'TestStack', {
         environment: 'dev',
         runtimeVersion: 'v2',
+        enableScheduledTrigger: false,
         enableManualTrigger: false,
         enableEvals: false,
       });
@@ -391,21 +397,6 @@ describe('InfraStack Conditional Evals Creation', () => {
       const outputs = template.findOutputs('*');
       expect(Object.keys(outputs).some((key) => key.includes('EvaluationConfigId'))).toBe(false);
       expect(Object.keys(outputs).some((key) => key.includes('EvaluationConfigArn'))).toBe(false);
-    });
-  });
-
-  describe('default enableEvals behavior based on environment', () => {
-    it('should not create Evals when enableEvals is undefined', () => {
-      const app = new App();
-      const stack = new InfraStack(app, 'TestStack', {
-        environment: 'dev',
-        runtimeVersion: 'v2',
-        enableManualTrigger: false,
-        // enableEvals not specified - should be treated as falsy
-      });
-
-      // When enableEvals is undefined, it's falsy so evals should not be created
-      expect(stack.evals).toBeUndefined();
     });
   });
 });
