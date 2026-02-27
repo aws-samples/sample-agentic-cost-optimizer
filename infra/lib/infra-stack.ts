@@ -1,4 +1,5 @@
 import { CfnOutput, Fn, RemovalPolicy, Stack, type StackProps } from 'aws-cdk-lib';
+import { NagSuppressions } from 'cdk-nag';
 import { Construct } from 'constructs';
 
 import { AttributeType, BillingMode, Table } from 'aws-cdk-lib/aws-dynamodb';
@@ -10,6 +11,7 @@ import { Bucket, BucketEncryption } from 'aws-cdk-lib/aws-s3';
 import { InfraConfig } from '../constants/infra-config';
 import { Agent } from './agent';
 import { Evals } from './evals';
+import { Gateway } from './gateway';
 import { Workflow } from './workflow';
 
 export interface InfraStackProps extends StackProps {
@@ -81,6 +83,31 @@ export class InfraStack extends Stack {
       serverAccessLogsPrefix: 'agent-data-logs/',
     });
 
+    const gateway = new Gateway(this, 'Gateway', {
+      agentDataBucket,
+      journalTableName: agentsTable.tableName,
+      journalTableArn: agentsTable.tableArn,
+      ttlDays: InfraConfig.ttlDays,
+      environment,
+    });
+
+    NagSuppressions.addResourceSuppressionsByPath(
+      this,
+      `/${this.node.path}/AWS679f53fac002430cb0da5b7982bd2287`,
+      [
+        {
+          id: 'AwsSolutions-IAM4',
+          reason: 'CDK auto-generated custom resource Lambda for AgentCore Gateway L2 construct. Managed by CDK.',
+          appliesTo: ['Policy::arn:<AWS::Partition>:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'],
+        },
+        {
+          id: 'AwsSolutions-L1',
+          reason: 'CDK auto-generated custom resource Lambda. Runtime managed by CDK.',
+        },
+      ],
+      true,
+    );
+
     this.agent = new Agent(this, 'AgentCore', {
       agentRuntimeName: `agentRuntime_${environment}_${runtimeVersion}`,
       description: `Agent runtime for ${environment} environment`,
@@ -89,22 +116,16 @@ export class InfraStack extends Stack {
       inferenceProfileRegion: InfraConfig.inferenceProfileRegion,
       environmentVariables: {
         BYPASS_TOOL_CONSENT: 'true',
-        S3_BUCKET_NAME: agentDataBucket.bucketName,
         JOURNAL_TABLE_NAME: agentsTable.tableName,
         AWS_REGION: this.region,
         TTL_DAYS: InfraConfig.ttlDays.toString(),
+        GATEWAY_MCP_URL: gateway.gatewayUrl,
+        GATEWAY_TOKEN_ENDPOINT: gateway.tokenEndpoint,
+        GATEWAY_CLIENT_ID: gateway.clientId,
+        GATEWAY_CLIENT_SECRET: gateway.clientSecret.unsafeUnwrap(),
+        GATEWAY_SCOPE: gateway.scope,
       },
     });
-
-    agentDataBucket.addToResourcePolicy(
-      new PolicyStatement({
-        sid: 'AllowAgentRuntimeAccess',
-        effect: Effect.ALLOW,
-        principals: [new ArnPrincipal(this.agent.runtime.role.roleArn)],
-        actions: ['s3:GetObject', 's3:PutObject'],
-        resources: [`${agentDataBucket.bucketArn}/*`],
-      }),
-    );
 
     const workflow = new Workflow(this, 'AgentWorkflow', {
       agentRuntimeArn: this.agent.runtimeArn,
@@ -246,6 +267,21 @@ export class InfraStack extends Stack {
     new CfnOutput(this, 'WorkflowStateMachineArn', {
       value: workflow.stateMachine.stateMachineArn,
       description: 'ARN of the Step Function state machine for agent workflow',
+    });
+
+    new CfnOutput(this, 'GatewayUrl', {
+      value: gateway.gatewayUrl,
+      description: 'AgentCore Gateway MCP endpoint URL',
+    });
+
+    new CfnOutput(this, 'GatewayTokenEndpoint', {
+      value: gateway.tokenEndpoint,
+      description: 'Cognito OAuth2 token endpoint for gateway auth',
+    });
+
+    new CfnOutput(this, 'GatewayClientId', {
+      value: gateway.clientId,
+      description: 'Cognito client ID for gateway auth',
     });
   }
 }
