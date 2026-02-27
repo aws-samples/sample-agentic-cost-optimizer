@@ -16,7 +16,6 @@ class TestAppConfigFromEnv:
         with patch.dict(
             os.environ,
             {
-                "S3_BUCKET_NAME": "test-bucket",
                 "JOURNAL_TABLE_NAME": "test-table",
                 "AWS_REGION": "us-west-2",
                 "MODEL_ID": "test-model-id",
@@ -25,7 +24,6 @@ class TestAppConfigFromEnv:
         ):
             config = load_config()
 
-            assert config.s3_bucket_name == "test-bucket"
             assert config.journal_table_name == "test-table"
             assert config.aws_region == "us-west-2"
             assert config.model_id == "test-model-id"
@@ -36,38 +34,22 @@ class TestAppConfigFromEnv:
         with patch.dict(
             os.environ,
             {
-                "S3_BUCKET_NAME": "test-bucket",
                 "JOURNAL_TABLE_NAME": "test-table",
             },
             clear=True,
         ):
             config = load_config()
 
-            assert config.s3_bucket_name == "test-bucket"
             assert config.journal_table_name == "test-table"
             assert config.aws_region == "us-east-1"
             assert config.model_id == "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
             assert config.ttl_days == 30
 
-    def test_raises_error_when_s3_bucket_name_missing(self):
-        """Test that ValueError is raised when S3_BUCKET_NAME is missing."""
-        with patch.dict(
-            os.environ,
-            {
-                "JOURNAL_TABLE_NAME": "test-table",
-            },
-            clear=True,
-        ):
-            with pytest.raises(ValueError, match="S3_BUCKET_NAME environment variable is required"):
-                load_config()
-
     def test_raises_error_when_journal_table_name_missing(self):
         """Test that ValueError is raised when JOURNAL_TABLE_NAME is missing."""
         with patch.dict(
             os.environ,
-            {
-                "S3_BUCKET_NAME": "test-bucket",
-            },
+            {},
             clear=True,
         ):
             with pytest.raises(ValueError, match="JOURNAL_TABLE_NAME environment variable is required"):
@@ -76,7 +58,7 @@ class TestAppConfigFromEnv:
     def test_raises_error_when_all_required_vars_missing(self):
         """Test that ValueError is raised when all required vars are missing."""
         with patch.dict(os.environ, {}, clear=True):
-            with pytest.raises(ValueError, match="S3_BUCKET_NAME environment variable is required"):
+            with pytest.raises(ValueError, match="JOURNAL_TABLE_NAME environment variable is required"):
                 load_config()
 
     def test_converts_ttl_days_to_int(self):
@@ -84,7 +66,6 @@ class TestAppConfigFromEnv:
         with patch.dict(
             os.environ,
             {
-                "S3_BUCKET_NAME": "test-bucket",
                 "JOURNAL_TABLE_NAME": "test-table",
                 "TTL_DAYS": "365",
             },
@@ -99,7 +80,6 @@ class TestAppConfigFromEnv:
         with patch.dict(
             os.environ,
             {
-                "S3_BUCKET_NAME": "test-bucket",
                 "JOURNAL_TABLE_NAME": "test-table",
                 "AWS_REGION": "eu-central-1",
             },
@@ -113,7 +93,6 @@ class TestAppConfigFromEnv:
         with patch.dict(
             os.environ,
             {
-                "S3_BUCKET_NAME": "test-bucket",
                 "JOURNAL_TABLE_NAME": "test-table",
                 "MODEL_ID": "custom-model-v2",
             },
@@ -129,14 +108,12 @@ class TestAppConfigDataclass:
     def test_creates_instance_with_all_fields(self):
         """Test that AppConfig can be instantiated with all fields."""
         config = AppConfig(
-            s3_bucket_name="my-bucket",
             journal_table_name="my-table",
             aws_region="ap-southeast-1",
             model_id="my-model",
             ttl_days=180,
         )
 
-        assert config.s3_bucket_name == "my-bucket"
         assert config.journal_table_name == "my-table"
         assert config.aws_region == "ap-southeast-1"
         assert config.model_id == "my-model"
@@ -145,14 +122,12 @@ class TestAppConfigDataclass:
     def test_creates_instance_with_all_required_fields(self):
         """Test that AppConfig requires all fields."""
         config = AppConfig(
-            s3_bucket_name="my-bucket",
             journal_table_name="my-table",
             aws_region="ap-southeast-1",
             model_id="my-model",
             ttl_days=180,
         )
 
-        assert config.s3_bucket_name == "my-bucket"
         assert config.journal_table_name == "my-table"
         assert config.aws_region == "ap-southeast-1"
         assert config.model_id == "my-model"
@@ -161,7 +136,6 @@ class TestAppConfigDataclass:
     def test_is_mutable_after_creation(self):
         """Test that AppConfig fields can be modified (dataclass is not frozen)."""
         config = AppConfig(
-            s3_bucket_name="my-bucket",
             journal_table_name="my-table",
             aws_region="us-east-1",
             model_id="test-model",
@@ -181,20 +155,18 @@ class TestLoadConfig:
         with patch.dict(
             os.environ,
             {
-                "S3_BUCKET_NAME": "test-bucket",
                 "JOURNAL_TABLE_NAME": "test-table",
             },
         ):
             config = load_config()
 
             assert isinstance(config, AppConfig)
-            assert config.s3_bucket_name == "test-bucket"
             assert config.journal_table_name == "test-table"
 
     def test_propagates_validation_errors(self):
         """Test that load_config propagates validation errors."""
         with patch.dict(os.environ, {}, clear=True):
-            with pytest.raises(ValueError, match="S3_BUCKET_NAME environment variable is required"):
+            with pytest.raises(ValueError, match="JOURNAL_TABLE_NAME environment variable is required"):
                 load_config()
 
 
@@ -208,7 +180,6 @@ class TestAppConfigIntegration:
         with patch.dict(
             os.environ,
             {
-                "S3_BUCKET_NAME": "integration-bucket",
                 "JOURNAL_TABLE_NAME": "integration-table",
                 "AWS_REGION": "us-west-1",
                 "TTL_DAYS": "60",
@@ -217,7 +188,6 @@ class TestAppConfigIntegration:
             config = load_config()
 
             # Verify all values are accessible
-            assert config.s3_bucket_name
             assert config.journal_table_name
             assert config.aws_region
             assert config.model_id
@@ -228,38 +198,23 @@ class TestAppConfigIntegration:
         from src.shared.config import config
 
         assert isinstance(config, AppConfig)
-        assert config.s3_bucket_name
         assert config.journal_table_name
 
 
 class TestAppConfigEdgeCases:
     """Tests for edge cases and error conditions."""
 
-    def test_handles_empty_string_for_s3_bucket_name(self):
-        """Test that empty string for S3_BUCKET_NAME is treated as missing."""
-        with patch.dict(
-            os.environ,
-            {
-                "S3_BUCKET_NAME": "",
-                "JOURNAL_TABLE_NAME": "test-table",
-            },
-        ):
-            with pytest.raises(ValueError, match="S3_BUCKET_NAME environment variable is required"):
-                load_config()
-
     def test_handles_whitespace_in_env_vars(self):
         """Test that whitespace in env vars is preserved."""
         with patch.dict(
             os.environ,
             {
-                "S3_BUCKET_NAME": "  test-bucket  ",
                 "JOURNAL_TABLE_NAME": "  test-table  ",
             },
         ):
             config = load_config()
 
             # Environment variables preserve whitespace
-            assert config.s3_bucket_name == "  test-bucket  "
             assert config.journal_table_name == "  test-table  "
 
     def test_handles_invalid_ttl_days_format(self):
@@ -267,7 +222,6 @@ class TestAppConfigEdgeCases:
         with patch.dict(
             os.environ,
             {
-                "S3_BUCKET_NAME": "test-bucket",
                 "JOURNAL_TABLE_NAME": "test-table",
                 "TTL_DAYS": "not-a-number",
             },
@@ -280,7 +234,6 @@ class TestAppConfigEdgeCases:
         with patch.dict(
             os.environ,
             {
-                "S3_BUCKET_NAME": "test-bucket",
                 "JOURNAL_TABLE_NAME": "test-table",
                 "TTL_DAYS": "-1",
             },
@@ -295,7 +248,6 @@ class TestAppConfigEdgeCases:
         with patch.dict(
             os.environ,
             {
-                "S3_BUCKET_NAME": "test-bucket",
                 "JOURNAL_TABLE_NAME": "test-table",
                 "TTL_DAYS": "0",
             },
