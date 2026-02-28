@@ -7,10 +7,13 @@ Event contains inputSchema properties directly. Tool name from context.
 import json
 import logging
 import os
+import re
 from datetime import datetime, timezone
 
 import boto3
 from botocore.exceptions import ClientError
+
+SAFE_FILENAME_RE = re.compile(r"^[a-zA-Z0-9._-]+$")
 
 s3 = boto3.resource("s3", region_name=os.environ.get("AWS_REGION", "us-east-1"))
 BUCKET_NAME = os.environ.get("S3_BUCKET_NAME", "")
@@ -19,6 +22,25 @@ logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 DELIMITER = "___"
+
+
+def _create_error_response(error_message):
+    return {
+        "success": False,
+        "error": error_message,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+def _validate_filename(filename: str) -> str | None:
+    """Validate filename against path traversal. Returns error message or None."""
+    if "\x00" in filename:
+        return "Filename contains null bytes"
+    if ".." in filename or "/" in filename or "\\" in filename:
+        return "Filename contains path traversal characters"
+    if not SAFE_FILENAME_RE.match(filename):
+        return "Filename contains invalid characters. Allowed: a-z, A-Z, 0-9, '.', '_', '-'"
+    return None
 
 
 def lambda_handler(event, context):
@@ -41,11 +63,11 @@ def storage_read(event):
     timestamp = datetime.now(timezone.utc).isoformat()
 
     if not session_id or not filename:
-        return {
-            "success": False,
-            "error": "Missing required parameters: session_id, filename",
-            "timestamp": timestamp,
-        }
+        return _create_error_response("Missing required parameters: session_id, filename")
+
+    filename_error = _validate_filename(filename)
+    if filename_error:
+        return _create_error_response(filename_error)
 
     key = f"{session_id}/{filename}"
 
@@ -84,11 +106,11 @@ def storage_write(event):
     timestamp = datetime.now(timezone.utc).isoformat()
 
     if not session_id or not filename or not content:
-        return {
-            "success": False,
-            "error": "Missing required parameters: session_id, filename, content",
-            "timestamp": timestamp,
-        }
+        return _create_error_response("Missing required parameters: session_id, filename, content")
+
+    filename_error = _validate_filename(filename)
+    if filename_error:
+        return _create_error_response(filename_error)
 
     key = f"{session_id}/{filename}"
     content_bytes = content.encode("utf-8")

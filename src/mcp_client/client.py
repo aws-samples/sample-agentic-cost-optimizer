@@ -1,11 +1,14 @@
 """MCP Client for AgentCore Gateway with OAuth2 auth."""
 
+import logging
 import os
 from datetime import datetime, timedelta
 
 import httpx
 from mcp.client.streamable_http import streamablehttp_client
 from strands.tools.mcp import MCPClient
+
+logger = logging.getLogger(__name__)
 
 _token_cache: dict = {"token": None, "expires_at": None}
 
@@ -37,7 +40,8 @@ def get_oauth_token() -> str:
     )
 
     if response.status_code != 200:
-        raise Exception(f"OAuth token request failed: {response.status_code} - {response.text}")
+        logger.debug("OAuth token request failed - response body: %s", response.text)
+        raise Exception(f"OAuth token request failed: {response.status_code}")
 
     data = response.json()
     token = data["access_token"]

@@ -104,3 +104,37 @@ class TestStorageWrite:
 
         assert result["success"] is False
         assert result["error_code"] == "AccessDenied"
+
+
+class TestFilenameValidation:
+    """Tests that invalid filenames are rejected by storage_read/storage_write."""
+
+    def test_read_rejects_path_traversal(self):
+        result = storage_tool.storage_read({"session_id": "s1", "filename": "../../etc/passwd"})
+        assert result["success"] is False
+        assert "path traversal" in result["error"].lower()
+
+    def test_write_rejects_path_traversal(self):
+        result = storage_tool.storage_write({"session_id": "s1", "filename": "../secret.txt", "content": "data"})
+        assert result["success"] is False
+        assert "path traversal" in result["error"].lower()
+
+    def test_read_rejects_forward_slash(self):
+        result = storage_tool.storage_read({"session_id": "s1", "filename": "foo/bar.txt"})
+        assert result["success"] is False
+        assert "path traversal" in result["error"].lower()
+
+    def test_write_rejects_backslash(self):
+        result = storage_tool.storage_write({"session_id": "s1", "filename": "foo\\bar.txt", "content": "data"})
+        assert result["success"] is False
+        assert "path traversal" in result["error"].lower()
+
+    def test_read_rejects_null_bytes(self):
+        result = storage_tool.storage_read({"session_id": "s1", "filename": "file\x00.txt"})
+        assert result["success"] is False
+        assert "null bytes" in result["error"].lower()
+
+    def test_write_rejects_special_characters(self):
+        result = storage_tool.storage_write({"session_id": "s1", "filename": "file@name.txt", "content": "data"})
+        assert result["success"] is False
+        assert "invalid characters" in result["error"].lower()

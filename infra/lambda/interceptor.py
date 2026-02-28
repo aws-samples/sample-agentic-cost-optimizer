@@ -8,41 +8,43 @@ logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 BLOCKED_PATTERNS = [
-    r"ignore\s+(previous|all)\s+instructions",
-    r"disregard\s+(previous|all)\s+instructions",
-    r"forget\s+(previous|all)\s+instructions",
-    r"you\s+are\s+now\s+in\s+developer\s+mode",
-    r"jailbreak",
-    r"bypass\s+(security|filter|restriction)",
-    r"<script[^>]*>",
-    r"javascript:",
-    r"eval\s*\(",
-    r"exec\s*\(",
-    r"__import__",
-    r"os\.system",
-    r"subprocess",
+    re.compile(p, re.IGNORECASE)
+    for p in [
+        r"ignore\s+(previous|all)\s+instructions",
+        r"disregard\s+(previous|all)\s+instructions",
+        r"forget\s+(previous|all)\s+instructions",
+        r"you\s+are\s+now\s+in\s+developer\s+mode",
+        r"jailbreak",
+        r"bypass\s+(security|filter|restriction)",
+        r"<script[^>]*>",
+        r"javascript:",
+        r"eval\s*\(",
+        r"exec\s*\(",
+        r"__import__",
+        r"os\.system",
+        r"subprocess",
+    ]
 ]
 
-PII_PATTERNS = {
-    "email": (r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}", "[EMAIL_REDACTED]"),
-    "phone": (r"\b\d{3}[-.]?\d{3}[-.]?\d{4}\b", "[PHONE_REDACTED]"),
-    "ssn": (r"\b\d{3}-\d{2}-\d{4}\b", "[SSN_REDACTED]"),
-    "credit_card": (r"\b\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}\b", "[CC_REDACTED]"),
-    "ip_address": (r"\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b", "[IP_REDACTED]"),
-}
+PII_PATTERNS = [
+    (re.compile(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}"), "[EMAIL_REDACTED]"),
+    (re.compile(r"\b\d{3}[-.]?\d{3}[-.]?\d{4}\b"), "[PHONE_REDACTED]"),
+    (re.compile(r"\b\d{3}-\d{2}-\d{4}\b"), "[SSN_REDACTED]"),
+    (re.compile(r"\b\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}\b"), "[CC_REDACTED]"),
+    (re.compile(r"\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b"), "[IP_REDACTED]"),
+]
 
 
 def check_malicious_content(text):
-    text_lower = text.lower()
     for pattern in BLOCKED_PATTERNS:
-        if re.search(pattern, text_lower, re.IGNORECASE):
-            return True, pattern
+        if pattern.search(text):
+            return True, pattern.pattern
     return False, ""
 
 
 def redact_pii(text):
-    for _name, (pattern, replacement) in PII_PATTERNS.items():
-        text = re.sub(pattern, replacement, text)
+    for pattern, replacement in PII_PATTERNS:
+        text = pattern.sub(replacement, text)
     return text
 
 
