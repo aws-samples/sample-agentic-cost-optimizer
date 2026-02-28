@@ -10,7 +10,7 @@ from opentelemetry import context as otel_context
 from strands import Agent
 from strands.models import BedrockModel
 from strands.multiagent import GraphBuilder
-from strands_tools import calculator, use_aws
+from strands_tools import calculator
 
 from src.mcp_client import get_mcp_client
 from src.shared import (
@@ -205,7 +205,6 @@ async def background_task(user_message: str, session_id: str):
     analysis_agent = create_agent(
         system_prompt=analysis_prompt,
         tools=[
-            use_aws,
             calculator,
             mcp_client,
             current_time_unix_utc,
