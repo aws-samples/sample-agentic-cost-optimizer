@@ -117,7 +117,7 @@ def storage_write(event):
     size_bytes = len(content_bytes)
 
     try:
-        s3.Bucket(BUCKET_NAME).put_object(Key=key, Body=content_bytes, ContentType="text/plain")
+        s3.Bucket(BUCKET_NAME).put_object(Key=key, Body=content_bytes, ContentType="text/plain; charset=utf-8")
         s3_uri = f"s3://{BUCKET_NAME}/{key}"
 
         return {
