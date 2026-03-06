@@ -5,11 +5,14 @@ from typing import Optional
 from bedrock_agentcore.runtime import BedrockAgentCoreApp, RequestContext
 from botocore.config import Config as BotocoreConfig
 from botocore.exceptions import ClientError, NoCredentialsError
+from opentelemetry import baggage
+from opentelemetry import context as otel_context
 from strands import Agent
 from strands.models import BedrockModel
 from strands.multiagent import GraphBuilder
-from strands_tools import calculator, use_aws
+from strands_tools import calculator
 
+from src.mcp_client import get_mcp_client
 from src.shared import (
     DEFAULT_CONNECT_TIMEOUT,
     DEFAULT_MAX_ATTEMPTS,
@@ -20,11 +23,13 @@ from src.shared import (
     record_event,
 )
 from src.shared.config import config
-from src.tools import convert_time_unix_to_iso, current_time_unix_utc, journal, storage
+from src.tools import convert_time_unix_to_iso, current_time_unix_utc
 
 app = BedrockAgentCoreApp()
 logger = app.logger
 logger.info("Agent and AgentCore app initialized successfully")
+
+mcp_client = get_mcp_client()
 
 
 def create_boto_config(
@@ -192,22 +197,23 @@ async def background_task(user_message: str, session_id: str):
     """Background task using Graph multi-agent pattern."""
     logger.info(f"Background task started - Session: {session_id}")
 
+    ctx = baggage.set_baggage("session.id", session_id)
+    otel_context.attach(ctx)
+
     analysis_prompt, report_prompt = load_prompts()
 
     analysis_agent = create_agent(
         system_prompt=analysis_prompt,
         tools=[
-            use_aws,
-            journal,
             calculator,
-            storage,
+            mcp_client,
             current_time_unix_utc,
             convert_time_unix_to_iso,
         ],
     )
     report_agent = create_agent(
         system_prompt=report_prompt,
-        tools=[storage, journal],
+        tools=[mcp_client],
     )
 
     result = None

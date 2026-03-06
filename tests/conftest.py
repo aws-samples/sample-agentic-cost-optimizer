@@ -35,9 +35,9 @@ def mock_tool_decorator(*args, **kwargs):
 
 
 # Set required environment variables before any imports
-os.environ["S3_BUCKET_NAME"] = "test-bucket"
 os.environ["JOURNAL_TABLE_NAME"] = "test-journal-table"
 os.environ["AWS_REGION"] = "us-east-1"
+os.environ["GATEWAY_MCP_URL"] = "http://test-gateway"
 
 # Mock all dependencies before any imports of src.agents.main
 mock_app = MagicMock()
@@ -52,7 +52,13 @@ mocks_to_apply = {
     "strands": mock_strands,
     "strands.models": MagicMock(),
     "strands.multiagent": MagicMock(),
+    "strands.tools": MagicMock(),
+    "strands.tools.mcp": MagicMock(),
     "strands_tools": MagicMock(),
+    "mcp": MagicMock(),
+    "mcp.client": MagicMock(),
+    "mcp.client.streamable_http": MagicMock(),
+    "httpx": MagicMock(),
     "bedrock_agentcore.runtime": MagicMock(BedrockAgentCoreApp=lambda: mock_app),
 }
 
