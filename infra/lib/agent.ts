@@ -98,61 +98,13 @@ export class Agent extends Construct {
     });
     bedrockPolicy.attachToRole(this.runtime.role);
 
-    const monitoringPolicy = new Policy(this, 'MonitoringPolicy', {
-      policyName: 'MonitoringPolicy',
-      document: new PolicyDocument({
-        statements: [
-          new PolicyStatement({
-            sid: 'LambdaMonitoring',
-            effect: Effect.ALLOW,
-            actions: [
-              'lambda:GetFunction',
-              'lambda:GetFunctionConfiguration',
-              'lambda:GetFunctionConcurrency',
-              'lambda:GetProvisionedConcurrencyConfig',
-              'lambda:ListProvisionedConcurrencyConfigs',
-              'lambda:ListFunctions',
-            ],
-            resources: ['*'],
-          }),
-          new PolicyStatement({
-            sid: 'CloudWatchMetricsAccess',
-            effect: Effect.ALLOW,
-            actions: ['cloudwatch:GetMetricStatistics', 'cloudwatch:ListMetrics'],
-            resources: ['*'],
-          }),
-          new PolicyStatement({
-            sid: 'CloudWatchLogsQueryAccess',
-            effect: Effect.ALLOW,
-            actions: ['logs:StopQuery', 'logs:GetQueryResults'],
-            resources: ['*'],
-          }),
-          new PolicyStatement({
-            sid: 'CloudWatchLogsAccess',
-            effect: Effect.ALLOW,
-            actions: ['logs:StartQuery', 'logs:GetLogEvents', 'logs:GetLogRecord', 'logs:FilterLogEvents'],
-            // Scoped to Lambda log groups to control which CloudWatch Logs the agent can access.
-            // Modify the resource pattern below (e.g., restrict to specific function names or log group patterns)
-            resources: [`arn:${stack.partition}:logs:*:*:log-group:/aws/lambda/*`],
-          }),
-          new PolicyStatement({
-            sid: 'PricingAccess',
-            effect: Effect.ALLOW,
-            actions: ['pricing:GetProducts'],
-            resources: ['*'],
-          }),
-        ],
-      }),
-    });
-    monitoringPolicy.attachToRole(this.runtime.role);
-
     this.runtimeArn = this.runtime.agentRuntimeArn;
     this.runtimeName = agentRuntimeName;
 
-    this.applyNagSuppressions(bedrockPolicy, monitoringPolicy);
+    this.applyNagSuppressions(bedrockPolicy);
   }
 
-  private applyNagSuppressions(bedrockPolicy: Policy, monitoringPolicy: Policy): void {
+  private applyNagSuppressions(bedrockPolicy: Policy): void {
     NagSuppressions.addResourceSuppressions(
       this.runtime,
       [
@@ -172,18 +124,6 @@ export class Agent extends Construct {
           id: 'AwsSolutions-IAM5',
           reason:
             'Region wildcard required for Bedrock foundation model access. Foundation models are global resources accessible from any region. Model ID is specifically scoped.',
-        },
-      ],
-      true,
-    );
-
-    NagSuppressions.addResourceSuppressions(
-      monitoringPolicy,
-      [
-        {
-          id: 'AwsSolutions-IAM5',
-          reason:
-            'Wildcard resources required for read-only monitoring operations. Lambda functions and CloudWatch resources are created dynamically. Pricing API does not support resource-level permissions. All actions are read-only.',
         },
       ],
       true,
