@@ -23,7 +23,7 @@ dev = [
 ]
 eval = [
   "deepeval>=3.8.0",
-  "aiobotocore>=2.0.0",
+  "aiobotocore>=3.4.0",
 ]
 
 [tool.ruff]
