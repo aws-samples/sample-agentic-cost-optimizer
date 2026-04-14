@@ -42,7 +42,7 @@ agents = [
 ]
 dev = [
     { name = "pre-commit", specifier = ">=4.5.1" },
-    { name = "pytest", specifier = ">=8.4.2" },
+    { name = "pytest", specifier = ">=9.0.3" },
     { name = "pytest-asyncio", specifier = ">=1.2.0" },
     { name = "pytest-cov", specifier = ">=7.0.0" },
     { name = "pytest-mock", specifier = ">=3.15.1" },
@@ -50,7 +50,7 @@ dev = [
 ]
 eval = [
     { name = "aiobotocore", specifier = ">=2.0.0" },
-    { name = "deepeval", specifier = ">=3.8.0" },
+    { name = "deepeval", specifier = ">=3.9.6" },
 ]
 
 [[package]]
@@ -670,7 +670,7 @@ wheels = [
 
 [[package]]
 name = "deepeval"
-version = "3.8.1"
+version = "3.9.7"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiohttp" },
@@ -680,7 +680,6 @@ dependencies = [
     { name = "nest-asyncio" },
     { name = "openai" },
     { name = "opentelemetry-api" },
-    { name = "opentelemetry-exporter-otlp-proto-grpc" },
     { name = "opentelemetry-sdk" },
     { name = "portalocker" },
     { name = "posthog" },
@@ -703,9 +702,9 @@ dependencies = [
     { name = "typer" },
     { name = "wheel" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/89/d8/4648757dde8173cf912381651b7894c33d826dc990f5b687310b53001909/deepeval-3.8.1.tar.gz", hash = "sha256:8da24e1fa2385b1c27a3a577fbda36922a4adf8186702154129b5e3c9cc03e8b", size = 588180, upload-time = "2026-01-22T07:01:26.865Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/4f/1d/dd103cf4771ca5cc27251388a0320ec3e595c4c1239bdaff0ee7ab7d5a61/deepeval-3.9.7.tar.gz", hash = "sha256:33e636ed5ebadc815b30d1ba5cb8385575b319be37e982a9668415c4abb631ad", size = 615839, upload-time = "2026-04-14T06:39:39.425Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/2c/45/e0e546a459c0763fbe9dcc8ec851b92ceec8bbb8a526a702b885dae3a3ce/deepeval-3.8.1-py3-none-any.whl", hash = "sha256:66a58e661e1e4a46838842831e8064faaa6d4da9e9fe4974b84ffc57ddb6ad91", size = 813591, upload-time = "2026-01-22T07:01:24.892Z" },
+    { url = "https://files.pythonhosted.org/packages/fd/9f/448ced919bd1a8f0a31a13d50db7b813d80a82f99362ef271188f9cf11e5/deepeval-3.9.7-py3-none-any.whl", hash = "sha256:db5f0373291c0c10c7dc3fdeb53fb91dfc29293a4b42fb75f31dd36cd09b506a", size = 844620, upload-time = "2026-04-14T06:39:37.448Z" },
 ]
 
 [[package]]
@@ -2365,7 +2364,7 @@ wheels = [
 
 [[package]]
 name = "posthog"
-version = "5.4.0"
+version = "7.11.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "backoff" },
@@ -2373,10 +2372,11 @@ dependencies = [
     { name = "python-dateutil" },
     { name = "requests" },
     { name = "six" },
+    { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/48/20/60ae67bb9d82f00427946218d49e2e7e80fb41c15dc5019482289ec9ce8d/posthog-5.4.0.tar.gz", hash = "sha256:701669261b8d07cdde0276e5bc096b87f9e200e3b9589c5ebff14df658c5893c", size = 88076, upload-time = "2025-06-20T23:19:23.485Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/57/29/8fed5bc33a79d2f71446a5b688cdb1d186e360b00d4656ac10fddbdc37f5/posthog-7.11.0.tar.gz", hash = "sha256:9c15d998aaa94d40d2291078616c16a5919c30f0ddab9c82a98d77da4cc415ee", size = 189175, upload-time = "2026-04-10T15:17:23.056Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/4f/98/e480cab9a08d1c09b1c59a93dade92c1bb7544826684ff2acbfd10fcfbd4/posthog-5.4.0-py3-none-any.whl", hash = "sha256:284dfa302f64353484420b52d4ad81ff5c2c2d1d607c4e2db602ac72761831bd", size = 105364, upload-time = "2025-06-20T23:19:22.001Z" },
+    { url = "https://files.pythonhosted.org/packages/9d/36/e746e253c6f39866bb22b1c749f85f96079c84fb698440f130a043c8105d/posthog-7.11.0-py3-none-any.whl", hash = "sha256:be51ab01d5e7a28864bbd67bc9d7545c79625195ac56be724d287d8ea2cd2efa", size = 219909, upload-time = "2026-04-10T15:17:21.13Z" },
 ]
 
 [[package]]
@@ -2677,7 +2677,7 @@ crypto = [
 
 [[package]]
 name = "pytest"
-version = "9.0.2"
+version = "9.0.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "colorama", marker = "sys_platform == 'win32'" },
@@ -2686,9 +2686,9 @@ dependencies = [
     { name = "pluggy" },
     { name = "pygments" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/d1/db/7ef3487e0fb0049ddb5ce41d3a49c235bf9ad299b6a25d5780a89f19230f/pytest-9.0.2.tar.gz", hash = "sha256:75186651a92bd89611d1d9fc20f0b4345fd827c41ccd5c299a868a05d70edf11", size = 1568901, upload-time = "2025-12-06T21:30:51.014Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/7d/0d/549bd94f1a0a402dc8cf64563a117c0f3765662e2e668477624baeec44d5/pytest-9.0.3.tar.gz", hash = "sha256:b86ada508af81d19edeb213c681b1d48246c1a91d304c6c81a427674c17eb91c", size = 1572165, upload-time = "2026-04-07T17:16:18.027Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/3b/ab/b3226f0bd7cdcf710fbede2b3548584366da3b19b5021e74f5bde2a8fa3f/pytest-9.0.2-py3-none-any.whl", hash = "sha256:711ffd45bf766d5264d487b917733b453d917afd2b0ad65223959f59089f875b", size = 374801, upload-time = "2025-12-06T21:30:49.154Z" },
+    { url = "https://files.pythonhosted.org/packages/d4/24/a372aaf5c9b7208e7112038812994107bc65a84cd00e0354a88c2c77a617/pytest-9.0.3-py3-none-any.whl", hash = "sha256:2c5efc453d45394fdd706ade797c0a81091eccd1d6e4bccfcd476e2b8e0ab5d9", size = 375249, upload-time = "2026-04-07T17:16:16.13Z" },
 ]
 
 [[package]]
