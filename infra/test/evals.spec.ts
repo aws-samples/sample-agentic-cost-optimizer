@@ -8,6 +8,10 @@ import { Agent } from '../lib/agent';
 import { Evals } from '../lib/evals';
 import { InfraStack } from '../lib/infra-stack';
 
+// Stable AgentCore evaluator IDs used as a spot-check that the L2 wires
+// EvaluatorSelector.builtin() through to the CFN EvaluatorId field.
+const KNOWN_EVALUATOR_IDS = ['Builtin.Helpfulness', 'Builtin.GoalSuccessRate'];
+
 const ONLINE_EVAL_RESOURCE_TYPE = 'AWS::BedrockAgentCore::OnlineEvaluationConfig';
 
 function createEvalsTestStack() {
@@ -44,10 +48,31 @@ describe('Evals Construct', () => {
 
   it('configures all builtin evaluators from EvalsConfig', () => {
     const template = createEvalsTestStack();
-    const expectedEvaluators = EvalsConfig.evaluators.map((e) => Match.objectLike({ EvaluatorId: e.value }));
+    const resources = template.findResources(ONLINE_EVAL_RESOURCE_TYPE);
+    const evaluators = (Object.values(resources)[0] as { Properties: { Evaluators: unknown[] } }).Properties.Evaluators;
+    expect(evaluators).toHaveLength(EvalsConfig.evaluators.length);
+
+    const spotChecks = KNOWN_EVALUATOR_IDS.map((id) => Match.objectLike({ EvaluatorId: id }));
     template.hasResourceProperties(ONLINE_EVAL_RESOURCE_TYPE, {
-      Evaluators: Match.arrayWith(expectedEvaluators),
+      Evaluators: Match.arrayWith(spotChecks),
     });
+  });
+
+  // Regression guard: locks in the AgentCore log-group/service-name convention the L2
+  // produces from `DataSourceConfig.fromAgentRuntimeEndpoint`. If a future cdk-lib release
+  // changes either pattern silently, this test fails before evals do in production.
+  it('derives the trace data source from the canonical runtime log-group convention', () => {
+    const template = createEvalsTestStack();
+    const resources = template.findResources(ONLINE_EVAL_RESOURCE_TYPE);
+    const dataSource = (
+      Object.values(resources)[0] as {
+        Properties: { DataSourceConfig: { CloudWatchLogs: { LogGroupNames: unknown[]; ServiceNames: string[] } } };
+      }
+    ).Properties.DataSourceConfig.CloudWatchLogs;
+
+    expect(JSON.stringify(dataSource.LogGroupNames)).toContain('/aws/bedrock-agentcore/runtimes/');
+    expect(JSON.stringify(dataSource.LogGroupNames)).toContain('-DEFAULT');
+    expect(dataSource.ServiceNames).toEqual(['testRuntime_dev_v1.DEFAULT']);
   });
 });
 
