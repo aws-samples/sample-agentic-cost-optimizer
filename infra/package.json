@@ -28,7 +28,7 @@
     "@vitest/coverage-v8": "^4.1.9",
     "aws-cdk": "^2.1128.0",
     "cdk-nag": "^2.38.2",
-    "prettier": "^3.8.4",
+    "prettier": "^3.9.4",
     "typescript": "^6.0.3",
     "vitest": "^4.0.14"
   }
