@@ -17,7 +17,7 @@
     "test:watch": "npm run build && vitest"
   },
   "dependencies": {
-    "@mrgrain/cdk-esbuild": "^5.7.11",
+    "@mrgrain/cdk-esbuild": "^5.8.0",
     "aws-cdk-lib": "^2.261.0",
     "constructs": "^10.6.0",
     "esbuild": "^0.28.1"
