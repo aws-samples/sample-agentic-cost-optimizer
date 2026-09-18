@@ -17,7 +17,7 @@ uv export --group agents --no-hashes --output-file infra/dist/build-agent/requir
 uv pip install \
   --target infra/dist/build-agent/ \
   --python-version 3.12 \
-  --python-platform aarch64-manylinux2014 \
+  --python-platform aarch64-manylinux_2_28 \
   --only-binary :all: \
   -r infra/dist/build-agent/requirements.txt
 
