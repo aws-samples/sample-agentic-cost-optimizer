@@ -9,6 +9,7 @@ infra/node_modules/
 infra/dist/
 infra/cdk.out/
 infra/coverage
+infra/constants/event-statuses.ts
 
 
 # DeepEval
