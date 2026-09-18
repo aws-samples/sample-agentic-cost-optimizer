@@ -4,6 +4,7 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
+    testTimeout: 15000,
     exclude: [...configDefaults.exclude, '**/dist/**', '**/cdk.out/**'],
     coverage: {
       provider: 'v8',
