@@ -13,3 +13,5 @@ The skills speak in terms of five canonical triage roles. This file maps those r
 When a skill mentions a role (e.g. "apply the AFK-ready triage label"), use the corresponding label string from this table.
 
 Edit the right-hand column to match whatever vocabulary you actually use.
+
+Note: `wontfix` is shared with GitHub's default label of the same name — same label, same meaning. Type labels (`bug`, `enhancement`, `documentation`) are orthogonal to these state labels; issues carry both.
