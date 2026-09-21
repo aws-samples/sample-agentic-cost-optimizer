@@ -24,7 +24,7 @@
   },
   "devDependencies": {
     "@trivago/prettier-plugin-sort-imports": "^6.0.2",
-    "@types/node": "^26.1.1",
+    "@types/node": "^26.6.1",
     "@vitest/coverage-v8": "^4.1.10",
     "aws-cdk": "^2.1141.0",
     "cdk-nag": "^2.38.2",
