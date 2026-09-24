@@ -1,6 +1,7 @@
 name: Maintenance
 description: Suggest an activity to help address governance and anything internal
 title: "Maintenance: TITLE"
+labels: ["needs-triage"]
 body:
   - type: markdown
     attributes:

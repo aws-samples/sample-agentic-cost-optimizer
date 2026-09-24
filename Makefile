@@ -1,6 +1,6 @@
 export UV_PROJECT_ENVIRONMENT := .venv
 
-.PHONY: help setup init pre-commit-install check test run-agent-local invoke-agent-local cdk-bootstrap cdk-deploy cdk-hotswap cdk-watch cdk-destroy trigger-workflow clean
+.PHONY: help setup init pre-commit-install check test synth run-agent-local invoke-agent-local cdk-bootstrap cdk-deploy cdk-hotswap cdk-watch cdk-destroy trigger-workflow clean
 
 help:
 	@echo "Development Workflow:"
@@ -11,6 +11,7 @@ help:
 	@echo "Code Quality:"
 	@echo "  make check        - Run all code quality checks (pre-commit)"
 	@echo "  make test         - Run all tests"
+	@echo "  make synth        - Synthesize CDK stack (runs cdk-nag checks)"
 	@echo ""
 	@echo "Agent Evaluations:"
 	@echo "  make eval AGENT=<name>  - Run agent E2E eval (e.g., analysis)"
@@ -45,6 +46,11 @@ pre-commit-install:
 
 check:
 	uv run pre-commit run --all-files
+
+synth:
+	@echo "Synthesizing CDK stack (runs cdk-nag checks)..."
+	cd infra && npm run synth > /dev/null
+	@echo "✓ CDK synth + cdk-nag passed"
 
 test:
 	@echo "Running Python tests with coverage..."
